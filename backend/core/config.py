@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     alpaca_api_secret: str | None = None
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
 
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-4-6"
+
     fred_api_key: str | None = None
     sec_user_agent: str = "bloomberg-terminal research@example.com"
 

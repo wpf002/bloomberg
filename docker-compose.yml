@@ -56,6 +56,8 @@ services:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       ALPACA_BASE_URL: ${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       FRED_API_KEY: ${FRED_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-bloomberg-terminal research@example.com}
     ports:

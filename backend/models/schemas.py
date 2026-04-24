@@ -212,3 +212,37 @@ class Position(BaseModel):
     unrealized_intraday_pl_percent: Optional[float] = None
     change_today_percent: Optional[float] = None
     source: str = "alpaca-paper"
+
+
+class SizingRow(BaseModel):
+    risk_pct: float  # % of account equity at risk per trade
+    max_loss_usd: float  # dollar amount at risk
+    shares: int  # floor(max_loss / risk_per_share)
+    notional_usd: float  # shares * price
+    notional_pct: float  # notional / equity * 100
+
+
+class PositionSize(BaseModel):
+    symbol: str
+    price: float
+    equity: float
+    stop_pct: float  # % below entry you'd exit a losing trade
+    rows: List[SizingRow] = Field(default_factory=list)
+    source: str = "alpaca-paper"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Brief(BaseModel):
+    """LLM-synthesized single-symbol briefing (EXPLAIN)."""
+    symbol: str
+    body: str
+    model: str
+    as_of: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ComparisonBrief(BaseModel):
+    """LLM-synthesized multi-symbol comparison (COMPARE)."""
+    symbols: List[str]
+    body: str
+    model: str
+    as_of: datetime = Field(default_factory=datetime.utcnow)

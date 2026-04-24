@@ -62,4 +62,9 @@ export const api = {
   },
   portfolioAccount: () => request(`/api/portfolio/account`),
   portfolioPositions: () => request(`/api/portfolio/positions`),
+  sizing: (symbol, stopPct = 5) =>
+    request(`/api/sizing/${encodeURIComponent(symbol)}?stop_pct=${stopPct}`),
+  explain: (symbol) => request(`/api/explain/${encodeURIComponent(symbol)}`),
+  compare: (symbolA, symbolB) =>
+    request(`/api/compare?symbols=${encodeURIComponent(`${symbolA},${symbolB}`)}`),
 };

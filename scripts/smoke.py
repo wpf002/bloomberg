@@ -38,6 +38,7 @@ MODULES = [
     "backend.core.database",
     "backend.core.cache_utils",
     "backend.core.bsm",
+    "backend.core.llm",
     "backend.models.schemas",
     "backend.api",
     "backend.api.routes.quotes",
@@ -51,6 +52,9 @@ MODULES = [
     "backend.api.routes.news",
     "backend.api.routes.filings",
     "backend.api.routes.portfolio",
+    "backend.api.routes.sizing",
+    "backend.api.routes.explain",
+    "backend.api.routes.compare",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
     "backend.data.sources.fred_source",
@@ -70,12 +74,16 @@ for name in MODULES:
 print("\n== schemas ==")
 from backend.models.schemas import (  # noqa: E402
     Account,
+    Brief,
+    ComparisonBrief,
     EarningsEvent,
     Fundamentals,
     OptionChain,
     OptionContract,
     Position,
+    PositionSize,
     Quote,
+    SizingRow,
 )
 
 check("Quote", bool(Quote(symbol="AAPL", price=200.0)))
@@ -129,6 +137,23 @@ check(
         )
     ),
 )
+check(
+    "PositionSize",
+    bool(
+        PositionSize(
+            symbol="AAPL",
+            price=200.0,
+            equity=100_000.0,
+            stop_pct=5.0,
+            rows=[SizingRow(risk_pct=1.0, max_loss_usd=1000.0, shares=100, notional_usd=20_000.0, notional_pct=20.0)],
+        )
+    ),
+)
+check("Brief", bool(Brief(symbol="AAPL", body="…", model="claude-sonnet-4-6")))
+check(
+    "ComparisonBrief",
+    bool(ComparisonBrief(symbols=["AAPL", "MSFT"], body="…", model="claude-sonnet-4-6")),
+)
 
 
 # ─── BSM Greeks sanity ──────────────────────────────────────────────────────
@@ -175,6 +200,9 @@ EXPECTED = [
     ("GET", "/api/filings/{symbol}"),
     ("GET", "/api/portfolio/account"),
     ("GET", "/api/portfolio/positions"),
+    ("GET", "/api/sizing/{symbol}"),
+    ("GET", "/api/explain/{symbol}"),
+    ("GET", "/api/compare"),
 ]
 for method, path in EXPECTED:
     check(f"{method} {path}", (method, path) in registered)

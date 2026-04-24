@@ -100,6 +100,9 @@ npm run dev
 | GET    | `/api/filings/{symbol}`           | Recent SEC EDGAR filings                   |
 | GET    | `/api/portfolio/account`          | Alpaca paper account (cash/equity/BP)      |
 | GET    | `/api/portfolio/positions`        | Alpaca paper positions with unrealized P/L |
+| GET    | `/api/sizing/{symbol}?stop_pct=5` | Position-size grid at 0.5/1/2/5% risk      |
+| GET    | `/api/explain/{symbol}`           | LLM briefing (fundamentals + news + 10-Qs) |
+| GET    | `/api/compare?symbols=AAPL,MSFT`  | LLM side-by-side of two symbols            |
 
 Option contracts returned by `/api/options/{symbol}` now include analytical
 Black-Scholes Greeks (`delta`, `gamma`, `vega`, `theta`, `rho`) derived from
@@ -147,10 +150,14 @@ A command bar at the top accepts a ticker and sets it as the active symbol
 
 See `.env.example`. Notable keys:
 
-- `ALPACA_API_KEY` / `ALPACA_API_SECRET` — required for `/api/news` and
-  `/api/portfolio/*`. Get a free paper account at
+- `ALPACA_API_KEY` / `ALPACA_API_SECRET` — required for `/api/news`,
+  `/api/portfolio/*`, `/api/sizing/*`, and to back `/api/quotes` with
+  real-time IEX. Get a free paper account at
   [alpaca.markets/signup](https://alpaca.markets/signup); the default
   `ALPACA_BASE_URL` already points at `https://paper-api.alpaca.markets`.
+- `ANTHROPIC_API_KEY` — required for `/api/explain/*` and `/api/compare`.
+  Generate at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys).
+  `ANTHROPIC_MODEL` defaults to `claude-sonnet-4-6`.
 - `FRED_API_KEY`   — required for real FRED observations on `/api/macro/*`
 - `SEC_USER_AGENT` — SEC requires a descriptive UA for EDGAR requests
 

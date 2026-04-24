@@ -2,7 +2,9 @@ from fastapi import APIRouter
 
 from .routes import (
     calendar,
+    compare,
     crypto,
+    explain,
     filings,
     fundamentals,
     fx,
@@ -12,6 +14,7 @@ from .routes import (
     overview,
     portfolio,
     quotes,
+    sizing,
 )
 
 api_router = APIRouter()
@@ -26,5 +29,8 @@ api_router.include_router(calendar.router, prefix="/calendar", tags=["calendar"]
 api_router.include_router(news.router, prefix="/news", tags=["news"])
 api_router.include_router(filings.router, prefix="/filings", tags=["filings"])
 api_router.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
+api_router.include_router(sizing.router, prefix="/sizing", tags=["sizing"])
+api_router.include_router(explain.router, prefix="/explain", tags=["explain"])
+api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
 
 __all__ = ["api_router"]
