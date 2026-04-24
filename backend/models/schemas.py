@@ -118,6 +118,62 @@ class OverviewTile(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+class Fundamentals(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    description: Optional[str] = None
+    country: Optional[str] = None
+    employees: Optional[int] = None
+    website: Optional[str] = None
+    market_cap: Optional[float] = None
+    enterprise_value: Optional[float] = None
+    shares_outstanding: Optional[float] = None
+    float_shares: Optional[float] = None
+    pe_ratio: Optional[float] = None
+    forward_pe: Optional[float] = None
+    peg_ratio: Optional[float] = None
+    price_to_book: Optional[float] = None
+    price_to_sales: Optional[float] = None
+    ev_to_ebitda: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    payout_ratio: Optional[float] = None
+    beta: Optional[float] = None
+    fifty_two_week_high: Optional[float] = None
+    fifty_two_week_low: Optional[float] = None
+    revenue_ttm: Optional[float] = None
+    revenue_growth_yoy: Optional[float] = None
+    gross_margin: Optional[float] = None
+    operating_margin: Optional[float] = None
+    profit_margin: Optional[float] = None
+    net_income_ttm: Optional[float] = None
+    earnings_growth_yoy: Optional[float] = None
+    eps_ttm: Optional[float] = None
+    free_cash_flow_ttm: Optional[float] = None
+    debt_to_equity: Optional[float] = None
+    return_on_equity: Optional[float] = None
+    return_on_assets: Optional[float] = None
+    analyst_target: Optional[float] = None
+    analyst_recommendation: Optional[str] = None
+    currency: Optional[str] = None
+    exchange: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EarningsEvent(BaseModel):
+    symbol: str
+    name: Optional[str] = None
+    event_date: date
+    when: Optional[str] = None
+    eps_estimate: Optional[float] = None
+    eps_actual: Optional[float] = None
+    eps_surprise_percent: Optional[float] = None
+    revenue_estimate: Optional[float] = None
+    revenue_actual: Optional[float] = None
+    source: str = "yfinance"
+
+
 class MarketOverview(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     tiles: List[OverviewTile] = Field(default_factory=list)

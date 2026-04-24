@@ -90,9 +90,11 @@ npm run dev
 | GET    | `/api/fx?pairs=EURUSD,USDJPY`     | FX pair quotes (yfinance)                  |
 | GET    | `/api/options/{symbol}`           | Option chain (calls/puts, IV, OI, volume)  |
 | GET    | `/api/overview`                   | Markets overview (indices, VIX, DXY, …)    |
+| GET    | `/api/fundamentals/{symbol}`      | Valuation, margins, returns, 52-wk range   |
+| GET    | `/api/calendar/earnings?symbols=` | Upcoming earnings with EPS surprise        |
 | GET    | `/api/macro/series`               | Supported FRED series IDs                  |
 | GET    | `/api/macro/series/{id}`          | FRED series with observations              |
-| GET    | `/api/news?symbols=…`             | Alpaca news stream                         |
+| GET    | `/api/news?symbols=…`             | Alpaca + public RSS news, merged           |
 | GET    | `/api/filings/{symbol}`           | Recent SEC EDGAR filings                   |
 
 Option contracts returned by `/api/options/{symbol}` now include analytical

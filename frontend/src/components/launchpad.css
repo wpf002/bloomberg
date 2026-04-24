@@ -1,0 +1,61 @@
+/* Overrides for react-grid-layout to fit the terminal theme */
+
+.launchpad {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+}
+
+.launchpad .react-grid-item {
+  background: transparent;
+  border: none;
+}
+
+.launchpad .react-grid-item.react-draggable-dragging,
+.launchpad .react-grid-item.resizing {
+  z-index: 20;
+  outline: 1px solid #ff9f1c;
+  outline-offset: -1px;
+}
+
+.launchpad .react-grid-item.react-grid-placeholder {
+  background: rgba(255, 159, 28, 0.18) !important;
+  border: 1px dashed #ff9f1c !important;
+  opacity: 1 !important;
+  border-radius: 0;
+}
+
+.launchpad .react-resizable-handle {
+  filter: invert(0.8) sepia(1) saturate(5) hue-rotate(-10deg);
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.launchpad.edit-mode .react-resizable-handle {
+  opacity: 0.9;
+}
+
+.panel-drag-handle {
+  cursor: grab;
+}
+
+.launchpad.edit-mode .panel-drag-handle::before {
+  content: "⋮⋮ ";
+  color: #ff9f1c;
+  letter-spacing: -1px;
+}
+
+.launchpad.edit-mode .panel-drag-handle:active {
+  cursor: grabbing;
+}
+
+@keyframes panelFlash {
+  0% { box-shadow: 0 0 0 2px rgba(255, 159, 28, 0.9); }
+  100% { box-shadow: 0 0 0 2px rgba(255, 159, 28, 0); }
+}
+
+.panel-flash {
+  animation: panelFlash 1.2s ease-out;
+}

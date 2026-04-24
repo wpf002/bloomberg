@@ -42,4 +42,12 @@ export const api = {
     return request(`/api/options/${encodeURIComponent(symbol)}${q}`);
   },
   overview: () => request(`/api/overview`),
+  fundamentals: (symbol) =>
+    request(`/api/fundamentals/${encodeURIComponent(symbol)}`),
+  earningsCalendar: (symbols, limit = 8) => {
+    const q = new URLSearchParams();
+    q.set("symbols", symbols.join(","));
+    q.set("limit", String(limit));
+    return request(`/api/calendar/earnings?${q.toString()}`);
+  },
 };

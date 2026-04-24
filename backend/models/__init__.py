@@ -1,6 +1,8 @@
 from .schemas import (
     CryptoQuote,
+    EarningsEvent,
     FilingEntry,
+    Fundamentals,
     FxQuote,
     MacroSeries,
     MacroSeriesPoint,
@@ -15,7 +17,9 @@ from .schemas import (
 
 __all__ = [
     "CryptoQuote",
+    "EarningsEvent",
     "FilingEntry",
+    "Fundamentals",
     "FxQuote",
     "MacroSeries",
     "MacroSeriesPoint",

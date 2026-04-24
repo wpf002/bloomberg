@@ -10,6 +10,8 @@ from ...core.cache_utils import cached
 from ...core.config import settings
 from ...models.schemas import (
     CryptoQuote,
+    EarningsEvent,
+    Fundamentals,
     FxQuote,
     OptionChain,
     OptionContract,
@@ -18,6 +20,18 @@ from ...models.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        fv = float(value)
+    except (TypeError, ValueError):
+        return None
+    if fv != fv or fv in (float("inf"), float("-inf")):
+        return None
+    return fv
 
 
 class YFinanceSource:
@@ -50,6 +64,14 @@ class YFinanceSource:
     @cached("yf:options", ttl=120, model=OptionChain)
     async def get_option_chain(self, symbol: str, expiration: str | None = None) -> OptionChain:
         return await asyncio.to_thread(self._option_chain_sync, symbol, expiration)
+
+    @cached("yf:fundamentals", ttl=3600, model=Fundamentals)
+    async def get_fundamentals(self, symbol: str) -> Fundamentals:
+        return await asyncio.to_thread(self._fundamentals_sync, symbol)
+
+    @cached("yf:earnings", ttl=3600, model=EarningsEvent)
+    async def get_upcoming_earnings(self, symbol: str, limit: int = 8) -> List[EarningsEvent]:
+        return await asyncio.to_thread(self._earnings_sync, symbol, limit)
 
     def _quote_sync(self, symbol: str) -> Quote:
         ticker = yf.Ticker(symbol)
@@ -88,6 +110,111 @@ class YFinanceSource:
                 )
             )
         return points
+
+    def _fundamentals_sync(self, symbol: str) -> Fundamentals:
+        ticker = yf.Ticker(symbol)
+        info: dict = {}
+        try:
+            info = ticker.get_info() or {}
+        except Exception as exc:
+            logger.debug("yfinance get_info(%s) failed: %s", symbol, exc)
+
+        def _f(key: str) -> float | None:
+            value = info.get(key)
+            if value in (None, "Infinity", "-Infinity"):
+                return None
+            try:
+                fv = float(value)
+                if fv != fv or fv in (float("inf"), float("-inf")):
+                    return None
+                return fv
+            except (TypeError, ValueError):
+                return None
+
+        def _i(key: str) -> int | None:
+            value = info.get(key)
+            try:
+                return int(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        return Fundamentals(
+            symbol=symbol.upper(),
+            name=info.get("longName") or info.get("shortName"),
+            sector=info.get("sector"),
+            industry=info.get("industry"),
+            description=info.get("longBusinessSummary"),
+            country=info.get("country"),
+            employees=_i("fullTimeEmployees"),
+            website=info.get("website"),
+            market_cap=_f("marketCap"),
+            enterprise_value=_f("enterpriseValue"),
+            shares_outstanding=_f("sharesOutstanding"),
+            float_shares=_f("floatShares"),
+            pe_ratio=_f("trailingPE"),
+            forward_pe=_f("forwardPE"),
+            peg_ratio=_f("pegRatio"),
+            price_to_book=_f("priceToBook"),
+            price_to_sales=_f("priceToSalesTrailing12Months"),
+            ev_to_ebitda=_f("enterpriseToEbitda"),
+            dividend_yield=_f("dividendYield"),
+            payout_ratio=_f("payoutRatio"),
+            beta=_f("beta"),
+            fifty_two_week_high=_f("fiftyTwoWeekHigh"),
+            fifty_two_week_low=_f("fiftyTwoWeekLow"),
+            revenue_ttm=_f("totalRevenue"),
+            revenue_growth_yoy=_f("revenueGrowth"),
+            gross_margin=_f("grossMargins"),
+            operating_margin=_f("operatingMargins"),
+            profit_margin=_f("profitMargins"),
+            net_income_ttm=_f("netIncomeToCommon"),
+            earnings_growth_yoy=_f("earningsGrowth"),
+            eps_ttm=_f("trailingEps"),
+            free_cash_flow_ttm=_f("freeCashflow"),
+            debt_to_equity=_f("debtToEquity"),
+            return_on_equity=_f("returnOnEquity"),
+            return_on_assets=_f("returnOnAssets"),
+            analyst_target=_f("targetMeanPrice"),
+            analyst_recommendation=info.get("recommendationKey"),
+            currency=info.get("currency"),
+            exchange=info.get("exchange"),
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    def _earnings_sync(self, symbol: str, limit: int) -> List[EarningsEvent]:
+        ticker = yf.Ticker(symbol)
+        events: List[EarningsEvent] = []
+        try:
+            frame = ticker.get_earnings_dates(limit=limit)
+        except Exception as exc:
+            logger.debug("yfinance get_earnings_dates(%s) failed: %s", symbol, exc)
+            return events
+        if frame is None or frame.empty:
+            return events
+        name = None
+        try:
+            info = ticker.fast_info
+            name = None  # fast_info is a dict-like without longName
+        except Exception:
+            pass
+        for ts, row in frame.iterrows():
+            try:
+                event_date = ts.date() if hasattr(ts, "date") else datetime.fromisoformat(str(ts)).date()
+            except Exception:
+                continue
+            events.append(
+                EarningsEvent(
+                    symbol=symbol.upper(),
+                    name=name,
+                    event_date=event_date,
+                    when=str(row.get("Event Type") or "").strip() or None,
+                    eps_estimate=_safe_float(row.get("EPS Estimate")),
+                    eps_actual=_safe_float(row.get("Reported EPS")),
+                    eps_surprise_percent=_safe_float(row.get("Surprise(%)")),
+                )
+            )
+        events.sort(key=lambda e: e.event_date)
+        return events
 
     def _fx_sync(self, pair: str) -> FxQuote:
         yf_symbol = pair if pair.endswith("=X") else f"{pair.replace('/', '')}=X"

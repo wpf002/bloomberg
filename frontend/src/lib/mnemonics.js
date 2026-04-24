@@ -4,13 +4,14 @@
 
 export const MNEMONICS = {
   GO:     { intent: "focus",    description: "Load symbol as active" },
-  DES:    { intent: "describe", description: "Company description / key stats" },
+  DES:    { intent: "describe", description: "Company description / fundamentals" },
+  FA:     { intent: "describe", description: "Financial analysis / fundamentals" },
   GP:     { intent: "chart",    description: "Price chart" },
   GIP:    { intent: "chart",    description: "Intraday price chart" },
   HP:     { intent: "chart",    description: "Historical price chart" },
   N:      { intent: "news",     description: "News stream" },
   TOP:    { intent: "news",     description: "Top news headlines" },
-  OMON:   { intent: "options",  description: "Options monitor (chain)" },
+  OMON:   { intent: "options",  description: "Options monitor (chain + Greeks)" },
   OV:     { intent: "options",  description: "Options overview" },
   FIL:    { intent: "filings",  description: "SEC filings (EDGAR)" },
   CF:     { intent: "filings",  description: "Company filings" },
@@ -20,6 +21,10 @@ export const MNEMONICS = {
   ECO:    { intent: "macro",    description: "Economic data (FRED)" },
   FXIP:   { intent: "fx",       description: "FX dashboard" },
   XBTC:   { intent: "crypto",   description: "Crypto overview" },
+  CAL:    { intent: "calendar", description: "Earnings & event calendar" },
+  EVTS:   { intent: "calendar", description: "Events / earnings calendar" },
+  LAYOUT: { intent: "layout",   description: "Toggle launchpad edit mode" },
+  RESET:  { intent: "reset",    description: "Reset launchpad layout" },
   HELP:   { intent: "help",     description: "Show mnemonics" },
 };
 

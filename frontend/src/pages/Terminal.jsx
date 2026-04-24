@@ -1,8 +1,11 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import CalendarPanel from "../components/CalendarPanel.jsx";
 import Chart from "../components/Chart.jsx";
 import CommandBar, { MnemonicHelp } from "../components/CommandBar.jsx";
 import CryptoPanel from "../components/CryptoPanel.jsx";
 import FilingsPanel from "../components/FilingsPanel.jsx";
+import FundamentalsPanel from "../components/FundamentalsPanel.jsx";
+import Launchpad from "../components/Launchpad.jsx";
 import MacroPanel from "../components/MacroPanel.jsx";
 import MarketOverview from "../components/MarketOverview.jsx";
 import NewsFeed from "../components/NewsFeed.jsx";
@@ -27,44 +30,80 @@ const DEFAULT_WATCHLIST = [
 const INTENT_TO_PANEL = {
   focus: "chart",
   chart: "chart",
-  news: "right",
-  options: "right",
-  filings: "right",
+  describe: "fundamentals",
+  news: "news",
+  options: "options",
+  filings: "filings",
   portfolio: "portfolio",
   markets: "markets",
   macro: "macro",
   fx: "markets",
   crypto: "crypto",
-  describe: "chart",
+  calendar: "calendar",
   help: "help",
+  layout: "layout",
+  reset: "reset",
   unknown: null,
 };
 
-const INTENT_TO_RIGHT_MODE = {
-  news: "news",
-  options: "options",
-  filings: "filings",
+// 12-col default layout. The grid layout library reads `x`, `y`, `w`, `h`, `i`.
+// `minW/minH` prevent the user from shrinking panels into uselessness.
+const DEFAULT_LAYOUTS = {
+  lg: [
+    { i: "watchlist",    x: 0,  y: 0,  w: 3, h: 8, minW: 2, minH: 4 },
+    { i: "chart",        x: 3,  y: 0,  w: 6, h: 8, minW: 4, minH: 4 },
+    { i: "news",         x: 9,  y: 0,  w: 3, h: 8, minW: 2, minH: 4 },
+    { i: "markets",      x: 0,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
+    { i: "macro",        x: 3,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
+    { i: "portfolio",    x: 6,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
+    { i: "crypto",       x: 9,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
+    { i: "fundamentals", x: 0,  y: 12, w: 4, h: 8, minW: 3, minH: 4 },
+    { i: "options",      x: 4,  y: 12, w: 5, h: 8, minW: 3, minH: 4 },
+    { i: "filings",      x: 9,  y: 12, w: 3, h: 8, minW: 2, minH: 4 },
+    { i: "calendar",     x: 0,  y: 20, w: 12, h: 4, minW: 4, minH: 3 },
+  ],
+  md: [
+    { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
+    { i: "chart",        x: 4,  y: 0,  w: 8, h: 8 },
+    { i: "news",         x: 0,  y: 8,  w: 6, h: 6 },
+    { i: "markets",      x: 6,  y: 8,  w: 6, h: 6 },
+    { i: "macro",        x: 0,  y: 14, w: 6, h: 5 },
+    { i: "portfolio",    x: 6,  y: 14, w: 6, h: 5 },
+    { i: "crypto",       x: 0,  y: 19, w: 6, h: 5 },
+    { i: "fundamentals", x: 6,  y: 19, w: 6, h: 8 },
+    { i: "options",      x: 0,  y: 24, w: 12, h: 8 },
+    { i: "filings",      x: 0,  y: 32, w: 6, h: 6 },
+    { i: "calendar",     x: 6,  y: 32, w: 6, h: 6 },
+  ],
+  sm: [
+    { i: "watchlist",    x: 0, y: 0,  w: 6, h: 6 },
+    { i: "chart",        x: 0, y: 6,  w: 6, h: 7 },
+    { i: "news",         x: 0, y: 13, w: 6, h: 6 },
+    { i: "markets",      x: 0, y: 19, w: 6, h: 5 },
+    { i: "macro",        x: 0, y: 24, w: 6, h: 5 },
+    { i: "portfolio",    x: 0, y: 29, w: 6, h: 5 },
+    { i: "crypto",       x: 0, y: 34, w: 6, h: 5 },
+    { i: "fundamentals", x: 0, y: 39, w: 6, h: 8 },
+    { i: "options",      x: 0, y: 47, w: 6, h: 8 },
+    { i: "filings",      x: 0, y: 55, w: 6, h: 6 },
+    { i: "calendar",     x: 0, y: 61, w: 6, h: 4 },
+  ],
 };
-
-const RIGHT_TABS = [
-  ["news", "News"],
-  ["options", "Options"],
-  ["filings", "Filings"],
-];
 
 export default function Terminal() {
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [activeSymbol, setActiveSymbol] = useState(DEFAULT_WATCHLIST[0]);
-  const [rightMode, setRightMode] = useState("news");
-  const [focusPanel, setFocusPanel] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
   const [lastCommand, setLastCommand] = useState(null);
-  const focusTimer = useRef(null);
+  const [flash, setFlash] = useState(null);
+  const flashTimer = useRef(null);
 
-  const flashPanel = useCallback((panel) => {
-    setFocusPanel(panel);
-    if (focusTimer.current) clearTimeout(focusTimer.current);
-    focusTimer.current = setTimeout(() => setFocusPanel(null), 1500);
+  const triggerFlash = useCallback((panel) => {
+    setFlash(panel);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1500);
   }, []);
 
   const onCommand = useCallback(
@@ -76,37 +115,49 @@ export default function Terminal() {
           prev.includes(parsed.symbol) ? prev : [parsed.symbol, ...prev]
         );
       }
-      const rightMapped = INTENT_TO_RIGHT_MODE[parsed.intent];
-      if (rightMapped) setRightMode(rightMapped);
-      const panel = INTENT_TO_PANEL[parsed.intent];
-      if (parsed.intent === "help") {
-        setHelpOpen(true);
-        return;
+      switch (parsed.intent) {
+        case "help":
+          setHelpOpen(true);
+          return;
+        case "layout":
+          setEditMode((prev) => !prev);
+          return;
+        case "reset":
+          setResetKey((k) => k + 1);
+          return;
+        default: {
+          const panel = INTENT_TO_PANEL[parsed.intent];
+          if (panel) triggerFlash(panel);
+        }
       }
-      if (panel) flashPanel(panel);
     },
-    [flashPanel]
+    [triggerFlash]
   );
 
   const handleSelect = useCallback(
     (symbol) => {
       setActiveSymbol(symbol);
-      flashPanel("chart");
+      triggerFlash("chart");
     },
-    [flashPanel]
+    [triggerFlash]
   );
 
-  const highlight = (panel) =>
-    focusPanel === panel
-      ? "ring-1 ring-terminal-amber/70 shadow-[0_0_0_1px_#ff9f1c]"
-      : "";
-
-  const RightPanel =
-    rightMode === "options"
-      ? <OptionsPanel symbol={activeSymbol} />
-      : rightMode === "filings"
-        ? <FilingsPanel symbol={activeSymbol} />
-        : <NewsFeed symbols={[activeSymbol]} />;
+  const panels = useMemo(
+    () => [
+      { id: "watchlist",    render: () => <Watchlist symbols={watchlist} activeSymbol={activeSymbol} onSelect={handleSelect} /> },
+      { id: "chart",        render: () => <Chart symbol={activeSymbol} /> },
+      { id: "news",         render: () => <NewsFeed symbols={[activeSymbol]} /> },
+      { id: "markets",      render: () => <MarketOverview onSelect={handleSelect} /> },
+      { id: "macro",        render: () => <MacroPanel /> },
+      { id: "portfolio",    render: () => <Portfolio /> },
+      { id: "crypto",       render: () => <CryptoPanel /> },
+      { id: "fundamentals", render: () => <FundamentalsPanel symbol={activeSymbol} /> },
+      { id: "options",      render: () => <OptionsPanel symbol={activeSymbol} /> },
+      { id: "filings",      render: () => <FilingsPanel symbol={activeSymbol} /> },
+      { id: "calendar",     render: () => <CalendarPanel symbols={watchlist.slice(0, 8)} /> },
+    ],
+    [watchlist, activeSymbol, handleSelect]
+  );
 
   return (
     <div className="flex h-screen flex-col bg-terminal-bg text-terminal-text">
@@ -115,59 +166,39 @@ export default function Terminal() {
         activeSymbol={activeSymbol}
         lastCommand={lastCommand}
       />
-      <main className="grid flex-1 min-h-0 grid-cols-12 grid-rows-12 gap-2 p-2">
-        <div className={`col-span-3 row-span-8 min-h-0 ${highlight("watchlist")}`}>
-          <Watchlist
-            symbols={watchlist}
-            activeSymbol={activeSymbol}
-            onSelect={handleSelect}
-          />
-        </div>
-        <div className={`col-span-6 row-span-8 min-h-0 ${highlight("chart")}`}>
-          <Chart symbol={activeSymbol} />
-        </div>
-        <div className={`col-span-3 row-span-8 min-h-0 flex flex-col ${highlight("right")}`}>
-          <div className="mb-1 flex items-center gap-1 text-[10px] uppercase tracking-widest">
-            {RIGHT_TABS.map(([mode, label]) => (
-              <button
-                key={mode}
-                onClick={() => setRightMode(mode)}
-                className={`px-2 py-0.5 border ${
-                  rightMode === mode
-                    ? "border-terminal-amber text-terminal-amber"
-                    : "border-terminal-border text-terminal-muted hover:text-terminal-text"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 min-h-0">{RightPanel}</div>
-        </div>
-        <div className={`col-span-3 row-span-4 min-h-0 ${highlight("markets")}`}>
-          <MarketOverview onSelect={handleSelect} />
-        </div>
-        <div className={`col-span-3 row-span-4 min-h-0 ${highlight("macro")}`}>
-          <MacroPanel />
-        </div>
-        <div className={`col-span-3 row-span-4 min-h-0 ${highlight("portfolio")}`}>
-          <Portfolio />
-        </div>
-        <div className={`col-span-3 row-span-4 min-h-0 ${highlight("crypto")}`}>
-          <CryptoPanel />
-        </div>
+      <main className="flex-1 min-h-0 overflow-auto">
+        <Launchpad
+          panels={panels}
+          defaultLayouts={DEFAULT_LAYOUTS}
+          editMode={editMode}
+          resetKey={resetKey}
+          flash={flash}
+        />
       </main>
       <footer className="flex items-center justify-between border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
         <span>
           Active: <span className="text-terminal-amber">{activeSymbol}</span>
         </span>
         <span>
-          HELP mnemonics ·{" "}
+          <button
+            onClick={() => setEditMode((p) => !p)}
+            className={editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
+          >
+            LAYOUT {editMode ? "ON" : "OFF"}
+          </button>
+          {" · "}
+          <button
+            onClick={() => setResetKey((k) => k + 1)}
+            className="text-terminal-muted hover:text-terminal-text"
+          >
+            RESET
+          </button>
+          {" · "}
           <button onClick={() => setHelpOpen(true)} className="text-terminal-amber">
-            ?
+            HELP
           </button>
         </span>
-        <span>Phase 2 · Greeks · RSS · Redis cache</span>
+        <span>Phase 3 · Launchpad · Fundamentals · Earnings</span>
       </footer>
       {helpOpen ? (
         <div
@@ -190,12 +221,10 @@ export default function Terminal() {
               <MnemonicHelp />
               <p className="mt-3 text-[11px] text-terminal-muted">
                 Enter <span className="text-terminal-amber">&lt;SYMBOL&gt; &lt;FN&gt;</span>{" "}
-                in the command bar. Example:{" "}
-                <span className="text-terminal-amber">AAPL DES</span>,{" "}
-                <span className="text-terminal-amber">SPY GP</span>,{" "}
-                <span className="text-terminal-amber">EURUSD FXIP</span>,{" "}
-                <span className="text-terminal-amber">NVDA OMON</span>,{" "}
-                <span className="text-terminal-amber">AAPL FIL</span>.
+                in the command bar. Layout is draggable when{" "}
+                <span className="text-terminal-amber">LAYOUT</span> is on and is
+                persisted per-browser. <span className="text-terminal-amber">RESET</span>{" "}
+                restores the factory layout.
               </p>
             </Panel>
           </div>
