@@ -55,6 +55,8 @@ cp .env.example .env
 ### 2. Docker Compose (recommended)
 
 ```bash
+make up        # runs scripts/check_docker.sh, then `docker compose up --build`
+# or, without the preflight:
 docker compose up --build
 ```
 
@@ -96,6 +98,8 @@ npm run dev
 | GET    | `/api/macro/series/{id}`          | FRED series with observations              |
 | GET    | `/api/news?symbols=…`             | Alpaca + public RSS news, merged           |
 | GET    | `/api/filings/{symbol}`           | Recent SEC EDGAR filings                   |
+| GET    | `/api/portfolio/account`          | Alpaca paper account (cash/equity/BP)      |
+| GET    | `/api/portfolio/positions`        | Alpaca paper positions with unrealized P/L |
 
 Option contracts returned by `/api/options/{symbol}` now include analytical
 Black-Scholes Greeks (`delta`, `gamma`, `vega`, `theta`, `rho`) derived from
@@ -133,7 +137,7 @@ Mono, amber accents). Panels:
 - **Chart** — Recharts area chart, period picker (1D → 5Y)
 - **News Feed** — per-symbol headlines from Alpaca
 - **Macro** — FRED series switcher (DGS10, FEDFUNDS, CPI, VIX, …)
-- **Portfolio** — sample positions with live P/L
+- **Portfolio** — live Alpaca paper account + positions (unrealized P/L)
 - **Crypto** — top pairs with 24h change
 
 A command bar at the top accepts a ticker and sets it as the active symbol
@@ -143,12 +147,40 @@ A command bar at the top accepts a ticker and sets it as the active symbol
 
 See `.env.example`. Notable keys:
 
-- `ALPACA_API_KEY` / `ALPACA_API_SECRET` — required for `/api/news`
+- `ALPACA_API_KEY` / `ALPACA_API_SECRET` — required for `/api/news` and
+  `/api/portfolio/*`. Get a free paper account at
+  [alpaca.markets/signup](https://alpaca.markets/signup); the default
+  `ALPACA_BASE_URL` already points at `https://paper-api.alpaca.markets`.
 - `FRED_API_KEY`   — required for real FRED observations on `/api/macro/*`
 - `SEC_USER_AGENT` — SEC requires a descriptive UA for EDGAR requests
 
 The app degrades gracefully: routes return empty lists when a key is missing,
 rather than crashing.
+
+## Troubleshooting
+
+### `Cannot connect to the Docker daemon` (macOS)
+
+Docker Desktop is actually two processes: the Electron UI, and a separate
+Linux VM that runs `dockerd`. The UI can be open while the VM is paused or
+stopped, which produces an opaque error like:
+
+```text
+Cannot connect to the Docker daemon at unix:///Users/you/.docker/run/docker.sock.
+```
+
+How to tell which state you're in, and what to do:
+
+1. Run `docker version`. A healthy install shows both a **Client** block
+   *and* a **Server** block. Client-only means the VM isn't running.
+2. Click the whale icon in the macOS menu bar → **Resume** (or **Start**).
+   Don't restart the app unless you have to — it kills any running
+   containers.
+3. Re-run `docker version`. Once the Server block appears, you're good.
+4. Last resort (kills other containers): `osascript -e 'quit app "Docker"' && open -a Docker`.
+
+`make up` runs `scripts/check_docker.sh` first and prints a human-readable
+diagnosis instead of the cryptic socket error. Use `make up` by default.
 
 ## Phase 1 → Next
 

@@ -3,11 +3,11 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...data.sources import AlpacaSource, RssSource
+from ...data.sources import RssSource, get_alpaca_source
 from ...models.schemas import NewsItem
 
 router = APIRouter()
-_alpaca = AlpacaSource()
+_alpaca = get_alpaca_source()
 _rss = RssSource()
 
 

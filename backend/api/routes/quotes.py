@@ -1,12 +1,32 @@
+import asyncio
+import logging
 from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...data.sources import YFinanceSource
+from ...data.sources import YFinanceSource, get_alpaca_source
 from ...models.schemas import Quote, QuoteHistoryPoint
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 _yf = YFinanceSource()
+_alpaca = get_alpaca_source()
+
+
+async def _best_quote(symbol: str) -> Quote:
+    """Alpaca snapshot first (real-time, rate-limit-free for paper accounts),
+    falling back to yfinance for symbols Alpaca doesn't carry — indices
+    (^VIX), futures (CL=F), currency indices (DX-Y.NYB), most non-US tickers.
+    Yahoo is scraped and gets throttled under load; keep it as a fallback
+    only, not the primary."""
+    sym = symbol.upper()
+    try:
+        alpaca_quote = await _alpaca.get_stock_quote(sym)
+        if alpaca_quote is not None:
+            return alpaca_quote
+    except Exception as exc:
+        logger.warning("alpaca snapshot failed for %s: %s", sym, exc)
+    return await _yf.get_quote(sym)
 
 
 @router.get("", response_model=List[Quote])
@@ -15,7 +35,7 @@ async def get_quotes(symbols: str = Query(..., description="Comma-separated tick
     if not parsed:
         raise HTTPException(status_code=400, detail="At least one symbol is required")
     try:
-        return await _yf.get_quotes(parsed)
+        return await asyncio.gather(*(_best_quote(s) for s in parsed))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"quote provider error: {exc}") from exc
 
@@ -23,7 +43,7 @@ async def get_quotes(symbols: str = Query(..., description="Comma-separated tick
 @router.get("/{symbol}", response_model=Quote)
 async def get_quote(symbol: str) -> Quote:
     try:
-        return await _yf.get_quote(symbol.upper())
+        return await _best_quote(symbol)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"quote provider error: {exc}") from exc
 

@@ -177,3 +177,38 @@ class EarningsEvent(BaseModel):
 class MarketOverview(BaseModel):
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     tiles: List[OverviewTile] = Field(default_factory=list)
+
+
+class Account(BaseModel):
+    account_number: Optional[str] = None
+    status: Optional[str] = None
+    currency: str = "USD"
+    cash: float = 0.0
+    buying_power: float = 0.0
+    portfolio_value: float = 0.0
+    equity: float = 0.0
+    last_equity: float = 0.0
+    long_market_value: float = 0.0
+    short_market_value: float = 0.0
+    daytrade_count: int = 0
+    pattern_day_trader: bool = False
+    source: str = "alpaca-paper"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Position(BaseModel):
+    symbol: str
+    asset_class: Optional[str] = None
+    exchange: Optional[str] = None
+    qty: float
+    side: str = "long"
+    avg_entry_price: float
+    current_price: Optional[float] = None
+    market_value: Optional[float] = None
+    cost_basis: Optional[float] = None
+    unrealized_pl: Optional[float] = None
+    unrealized_pl_percent: Optional[float] = None
+    unrealized_intraday_pl: Optional[float] = None
+    unrealized_intraday_pl_percent: Optional[float] = None
+    change_today_percent: Optional[float] = None
+    source: str = "alpaca-paper"

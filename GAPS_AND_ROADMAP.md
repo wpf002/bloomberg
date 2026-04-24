@@ -18,7 +18,7 @@ programmability, and crypto-native coverage.**
 | **1.1** | `c2ea8b9` | ✅ shipped | Gap-analysis doc; `/api/fx`, `/api/options/{symbol}`, `/api/overview`; Markets Overview panel; Bloomberg-style mnemonic dispatcher (`AAPL DES`, `SPY GP`, `NVDA OMON`, `EURUSD FXIP`, `HELP`, …). |
 | **2** | `9803bb0` | ✅ shipped | Black-Scholes Greeks (stdlib; verified vs. Hull); Redis TTL cache decorator with pydantic-aware (de)serialization; multi-source RSS news (Yahoo / Nasdaq / MarketWatch / SEC) merged with Alpaca; **Options panel** with IV smile + call/put Greeks table; **Filings panel**; right-column tab switcher (News / Options / Filings) driven by intent. |
 | **3** | `b4e3664` | ✅ shipped | Fundamentals endpoint + panel (valuation / performance / margins / 52w); earnings-calendar endpoint + panel with EPS surprise; **draggable/resizable Launchpad** (`react-grid-layout`, localStorage-persisted, show/hide per panel, `LAYOUT` + `RESET` mnemonics); Python 3.11 smoke test (`uv` + `/tmp/bt_smoke.py`) that passes: 22/22 modules, 4/4 schemas, 6/6 Greek checks, 17/17 routes. |
-| **3.1** | _next_ | 📌 queued | **Resume here next session.** See §1. |
+| **3.1** | _pending commit_ | ✅ shipped | Mock portfolio retired — `/api/portfolio/account` + `/api/portfolio/positions` hit live Alpaca paper (`@cached` 10s); new `Account` + `Position` schemas; Portfolio.jsx rewritten with real NAV/cash/BP/equity/day-trade header and unrealized P/L table; shared `get_alpaca_source()` singleton across news + portfolio; creds-missing empty state (no mock fallback). Docker preflight (`scripts/check_docker.sh` + `make up`) with README troubleshooting for the UI-open / VM-paused case. Smoke test lifted to `scripts/smoke.py` (46/46: 24 modules, 6 schemas, 6 Greeks, 16 routes). **Bonuses unscoped in 3.1 but shipped same session:** options route now returns empty chain instead of 502 when yfinance throttles; `/api/quotes` routes through Alpaca snapshots first, yfinance only as fallback for symbols Alpaca doesn't carry (indices, futures, FX, non-US). |
 
 Clone & run: `git clone https://github.com/wpf002/bloomberg.git && cd bloomberg/bloomberg-terminal && cp .env.example .env && docker compose up --build`.
 
@@ -138,7 +138,7 @@ Status updated for everything shipped through Phase 3.
 | **News** | `TOP` `N` `NI` `MLIV` | ✅ Phase 2 (Alpaca + RSS merged) | Phase 4: LLM summarization |
 | **Research (BI)** | Bloomberg Intelligence | ❌ | Phase 4: LLM-synthesized from 10-K + calls |
 | **Filings** | `CF` `FIL` | ✅ Phase 2 | Phase 6: full-text search |
-| **Portfolio analytics** | `PORT` `MARS` | ⚠️ sample data in UI | **Phase 3.1:** Alpaca paper (see §1.1) |
+| **Portfolio analytics** | `PORT` `MARS` | ✅ Phase 3.1 (live Alpaca paper) | Phase 5: order entry |
 | **Trading / OMS/EMS** | `BXT` `TSOX` `EMSX` | ❌ | Phase 5: Alpaca paper orders |
 | **Alerting** | `ALRT` | ❌ | Phase 5: Redis Streams + WS push |
 | **Messaging / IB** | `MSG` `IB` | ❌ | Phase 7: optional Matrix room |

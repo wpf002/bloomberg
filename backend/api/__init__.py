@@ -10,6 +10,7 @@ from .routes import (
     news,
     options,
     overview,
+    portfolio,
     quotes,
 )
 
@@ -24,5 +25,6 @@ api_router.include_router(fundamentals.router, prefix="/fundamentals", tags=["fu
 api_router.include_router(calendar.router, prefix="/calendar", tags=["calendar"])
 api_router.include_router(news.router, prefix="/news", tags=["news"])
 api_router.include_router(filings.router, prefix="/filings", tags=["filings"])
+api_router.include_router(portfolio.router, prefix="/portfolio", tags=["portfolio"])
 
 __all__ = ["api_router"]

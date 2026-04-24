@@ -8,7 +8,17 @@ async function request(path, options = {}) {
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new Error(`${resp.status} ${resp.statusText} :: ${text}`);
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && parsed.detail) detail = parsed.detail;
+    } catch (_) {
+      // leave detail as text
+    }
+    const err = new Error(`${resp.status} ${resp.statusText} :: ${detail}`);
+    err.status = resp.status;
+    err.detail = detail;
+    throw err;
   }
   return resp.json();
 }
@@ -50,4 +60,6 @@ export const api = {
     q.set("limit", String(limit));
     return request(`/api/calendar/earnings?${q.toString()}`);
   },
+  portfolioAccount: () => request(`/api/portfolio/account`),
+  portfolioPositions: () => request(`/api/portfolio/positions`),
 };
