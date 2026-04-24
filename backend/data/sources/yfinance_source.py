@@ -5,7 +5,14 @@ from typing import List
 
 import yfinance as yf
 
-from ...models.schemas import CryptoQuote, Quote, QuoteHistoryPoint
+from ...models.schemas import (
+    CryptoQuote,
+    FxQuote,
+    OptionChain,
+    OptionContract,
+    Quote,
+    QuoteHistoryPoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +36,12 @@ class YFinanceSource:
 
     async def get_crypto_quote(self, symbol: str) -> CryptoQuote:
         return await asyncio.to_thread(self._crypto_sync, symbol)
+
+    async def get_fx_quote(self, pair: str) -> FxQuote:
+        return await asyncio.to_thread(self._fx_sync, pair)
+
+    async def get_option_chain(self, symbol: str, expiration: str | None = None) -> OptionChain:
+        return await asyncio.to_thread(self._option_chain_sync, symbol, expiration)
 
     def _quote_sync(self, symbol: str) -> Quote:
         ticker = yf.Ticker(symbol)
@@ -67,6 +80,63 @@ class YFinanceSource:
                 )
             )
         return points
+
+    def _fx_sync(self, pair: str) -> FxQuote:
+        yf_symbol = pair if pair.endswith("=X") else f"{pair.replace('/', '')}=X"
+        ticker = yf.Ticker(yf_symbol)
+        fast = ticker.fast_info
+        price = float(fast.get("last_price") or 0.0)
+        prev = float(fast.get("previous_close") or price)
+        change = price - prev
+        change_pct = (change / prev * 100.0) if prev else 0.0
+        base, quote = (pair[:3], pair[3:6]) if len(pair.replace("/", "")) >= 6 else (pair, "USD")
+        return FxQuote(
+            pair=pair.upper(),
+            base=base.upper(),
+            quote=quote.upper() or "USD",
+            price=price,
+            change=change,
+            change_percent=change_pct,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+    def _option_chain_sync(self, symbol: str, expiration: str | None) -> OptionChain:
+        ticker = yf.Ticker(symbol)
+        expirations: List[str] = list(ticker.options) if ticker.options else []
+        if not expirations:
+            return OptionChain(symbol=symbol.upper(), expirations=[], calls=[], puts=[])
+        target = expiration if expiration in expirations else expirations[0]
+        chain = ticker.option_chain(target)
+        underlying_price = float(ticker.fast_info.get("last_price") or 0.0)
+
+        def _rows(frame, option_type: str) -> List[OptionContract]:
+            contracts: List[OptionContract] = []
+            for _, row in frame.iterrows():
+                contracts.append(
+                    OptionContract(
+                        contract_symbol=str(row.get("contractSymbol", "")),
+                        option_type=option_type,
+                        strike=float(row.get("strike", 0.0)),
+                        expiration=target,
+                        bid=float(row.get("bid", 0.0) or 0.0),
+                        ask=float(row.get("ask", 0.0) or 0.0),
+                        last=float(row.get("lastPrice", 0.0) or 0.0),
+                        volume=int(row.get("volume", 0) or 0),
+                        open_interest=int(row.get("openInterest", 0) or 0),
+                        implied_volatility=float(row.get("impliedVolatility", 0.0) or 0.0),
+                        in_the_money=bool(row.get("inTheMoney", False)),
+                    )
+                )
+            return contracts
+
+        return OptionChain(
+            symbol=symbol.upper(),
+            underlying_price=underlying_price,
+            selected_expiration=target,
+            expirations=expirations,
+            calls=_rows(chain.calls, "call"),
+            puts=_rows(chain.puts, "put"),
+        )
 
     def _crypto_sync(self, symbol: str) -> CryptoQuote:
         yf_symbol = symbol if "-" in symbol else f"{symbol}-USD"

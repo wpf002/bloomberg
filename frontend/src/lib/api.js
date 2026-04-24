@@ -35,4 +35,11 @@ export const api = {
     return request(`/api/news?${q.toString()}`);
   },
   filings: (symbol) => request(`/api/filings/${encodeURIComponent(symbol)}`),
+  fx: (pairs) =>
+    request(`/api/fx${pairs ? `?pairs=${encodeURIComponent(pairs.join(","))}` : ""}`),
+  options: (symbol, expiration) => {
+    const q = expiration ? `?expiration=${encodeURIComponent(expiration)}` : "";
+    return request(`/api/options/${encodeURIComponent(symbol)}${q}`);
+  },
+  overview: () => request(`/api/overview`),
 };

@@ -1,8 +1,14 @@
-# Bloomberg Terminal (Self-Hosted)
+# Bloomberg Terminal — Public Edition
 
 A self-hosted, Bloomberg-style financial terminal that aggregates real-time and
-historical market data across equities, options, crypto, futures, and
+historical market data across equities, options, crypto, futures, FX, and
 macroeconomics into a dense, multi-panel dashboard.
+
+**Positioning:** a terminal for the 99%. Same dense workflow, open data
+sources, $0 seat cost. See [GAPS_AND_ROADMAP.md](./GAPS_AND_ROADMAP.md) for a
+feature-by-feature comparison against the commercial Bloomberg Terminal and
+the roadmap to parity (and beyond, on the things that actually matter to
+retail and prosumer users).
 
 ## Stack
 
@@ -14,7 +20,7 @@ macroeconomics into a dense, multi-panel dashboard.
 
 ## Layout
 
-```
+```text
 bloomberg-terminal/
 ├── backend/                FastAPI app, data adapters, routes
 │   ├── api/routes/         /quotes /macro /crypto /news /filings
@@ -52,8 +58,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- Backend:   http://localhost:8000 (OpenAPI docs at `/docs`)
-- Frontend:  http://localhost:5173
+- Backend:   <http://localhost:8000> (OpenAPI docs at `/docs`)
+- Frontend:  <http://localhost:5173>
 - Postgres:  `localhost:5432`  (user/db/password: `bloomberg`)
 - Redis:     `localhost:6379`
 
@@ -81,10 +87,34 @@ npm run dev
 | GET    | `/api/quotes/{symbol}`            | Single quote                               |
 | GET    | `/api/quotes/{symbol}/history`    | OHLCV history (`period`, `interval` query) |
 | GET    | `/api/crypto?symbols=BTC-USD,…`   | Crypto quotes                              |
+| GET    | `/api/fx?pairs=EURUSD,USDJPY`     | FX pair quotes (yfinance)                  |
+| GET    | `/api/options/{symbol}`           | Option chain (calls/puts, IV, OI, volume)  |
+| GET    | `/api/overview`                   | Markets overview (indices, VIX, DXY, …)    |
 | GET    | `/api/macro/series`               | Supported FRED series IDs                  |
 | GET    | `/api/macro/series/{id}`          | FRED series with observations              |
 | GET    | `/api/news?symbols=…`             | Alpaca news stream                         |
 | GET    | `/api/filings/{symbol}`           | Recent SEC EDGAR filings                   |
+
+## Command Mnemonics
+
+The command bar accepts Bloomberg-style mnemonics: `<SYMBOL> <FN>`.
+
+| Mnemonic | Action |
+| -------- | ------ |
+| `GO` | Focus symbol (same as Enter with symbol alone) |
+| `DES` | Company description / key stats |
+| `GP` / `GIP` / `HP` | Price chart |
+| `N` / `TOP` | News |
+| `OMON` / `OV` | Options chain |
+| `FIL` / `CF` | SEC filings |
+| `PORT` | Portfolio |
+| `WEI` / `MMAP` | Markets overview |
+| `ECO` | Macro / FRED |
+| `FXIP` | FX |
+| `XBTC` | Crypto |
+| `HELP` | Mnemonic reference modal |
+
+Try `AAPL DES`, `SPY GP`, `NVDA OMON`, `EURUSD FXIP`, or just `HELP`.
 
 ## Terminal UI
 

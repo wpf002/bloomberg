@@ -67,3 +67,51 @@ class FilingEntry(BaseModel):
     filed_at: datetime
     primary_document: Optional[str] = None
     url: str
+
+
+class FxQuote(BaseModel):
+    pair: str
+    base: str
+    quote: str
+    price: float
+    change: float = 0.0
+    change_percent: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OptionContract(BaseModel):
+    contract_symbol: str
+    option_type: str
+    strike: float
+    expiration: str
+    bid: float = 0.0
+    ask: float = 0.0
+    last: float = 0.0
+    volume: int = 0
+    open_interest: int = 0
+    implied_volatility: float = 0.0
+    in_the_money: bool = False
+
+
+class OptionChain(BaseModel):
+    symbol: str
+    underlying_price: Optional[float] = None
+    selected_expiration: Optional[str] = None
+    expirations: List[str] = Field(default_factory=list)
+    calls: List[OptionContract] = Field(default_factory=list)
+    puts: List[OptionContract] = Field(default_factory=list)
+
+
+class OverviewTile(BaseModel):
+    symbol: str
+    label: str
+    asset_class: str
+    price: float
+    change: float = 0.0
+    change_percent: float = 0.0
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MarketOverview(BaseModel):
+    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    tiles: List[OverviewTile] = Field(default_factory=list)
