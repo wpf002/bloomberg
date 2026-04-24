@@ -13,12 +13,12 @@ programmability, and crypto-native coverage.**
 ## 0. Progress at a glance
 
 | Phase | Commit | Status | What shipped |
-|-------|--------|--------|--------------|
-| **1**    | `d77515c` | ✅ shipped | FastAPI + asyncpg + Redis scaffold; yfinance / Alpaca / FRED / SEC EDGAR adapters; React 18 + Vite + Tailwind + Recharts panels; Watchlist / Chart / News / Macro / Portfolio (mock) / Crypto; Docker Compose (Postgres 15 + Redis 7 + backend + frontend). |
-| **1.1**  | `c2ea8b9` | ✅ shipped | Gap-analysis doc; `/api/fx`, `/api/options/{symbol}`, `/api/overview`; Markets Overview panel; Bloomberg-style mnemonic dispatcher (`AAPL DES`, `SPY GP`, `NVDA OMON`, `EURUSD FXIP`, `HELP`, …). |
-| **2**    | `9803bb0` | ✅ shipped | Black-Scholes Greeks (stdlib; verified vs. Hull); Redis TTL cache decorator with pydantic-aware (de)serialization; multi-source RSS news (Yahoo / Nasdaq / MarketWatch / SEC) merged with Alpaca; **Options panel** with IV smile + call/put Greeks table; **Filings panel**; right-column tab switcher (News / Options / Filings) driven by intent. |
-| **3**    | `b4e3664` | ✅ shipped | Fundamentals endpoint + panel (valuation / performance / margins / 52w); earnings-calendar endpoint + panel with EPS surprise; **draggable/resizable Launchpad** (`react-grid-layout`, localStorage-persisted, show/hide per panel, `LAYOUT` + `RESET` mnemonics); Python 3.11 smoke test (`uv` + `/tmp/bt_smoke.py`) that passes: 22/22 modules, 4/4 schemas, 6/6 Greek checks, 17/17 routes. |
-| **3.1**  | _next_ | 📌 queued | **Resume here next session.** See §1. |
+| --- | --- | --- | --- |
+| **1** | `d77515c` | ✅ shipped | FastAPI + asyncpg + Redis scaffold; yfinance / Alpaca / FRED / SEC EDGAR adapters; React 18 + Vite + Tailwind + Recharts panels; Watchlist / Chart / News / Macro / Portfolio (mock) / Crypto; Docker Compose (Postgres 15 + Redis 7 + backend + frontend). |
+| **1.1** | `c2ea8b9` | ✅ shipped | Gap-analysis doc; `/api/fx`, `/api/options/{symbol}`, `/api/overview`; Markets Overview panel; Bloomberg-style mnemonic dispatcher (`AAPL DES`, `SPY GP`, `NVDA OMON`, `EURUSD FXIP`, `HELP`, …). |
+| **2** | `9803bb0` | ✅ shipped | Black-Scholes Greeks (stdlib; verified vs. Hull); Redis TTL cache decorator with pydantic-aware (de)serialization; multi-source RSS news (Yahoo / Nasdaq / MarketWatch / SEC) merged with Alpaca; **Options panel** with IV smile + call/put Greeks table; **Filings panel**; right-column tab switcher (News / Options / Filings) driven by intent. |
+| **3** | `b4e3664` | ✅ shipped | Fundamentals endpoint + panel (valuation / performance / margins / 52w); earnings-calendar endpoint + panel with EPS surprise; **draggable/resizable Launchpad** (`react-grid-layout`, localStorage-persisted, show/hide per panel, `LAYOUT` + `RESET` mnemonics); Python 3.11 smoke test (`uv` + `/tmp/bt_smoke.py`) that passes: 22/22 modules, 4/4 schemas, 6/6 Greek checks, 17/17 routes. |
+| **3.1** | _next_ | 📌 queued | **Resume here next session.** See §1. |
 
 Clone & run: `git clone https://github.com/wpf002/bloomberg.git && cd bloomberg/bloomberg-terminal && cp .env.example .env && docker compose up --build`.
 
@@ -109,13 +109,13 @@ Work items:
 - [ ] `scripts/check_docker.sh`:
   - Probes `docker version` (client vs. server)
   - If server is missing, probes the socket directly with `curl --unix-socket ~/.docker/run/docker.sock /_ping`
-  - Prints a human message: *"Docker Desktop is running but the engine is paused. Click the whale icon in the menu bar → **Resume**, then re-run."*
+  - Prints a human message: _"Docker Desktop is running but the engine is paused. Click the whale icon in the menu bar → **Resume**, then re-run."_
   - Exits non-zero so `make` / CI surfaces it.
 - [ ] Wrap `docker compose up` in a `make up` target that runs the preflight first.
 - [ ] README "Troubleshooting" section:
   - The UI-open / engine-paused distinction
   - Verify with `docker version` (client-only ≠ healthy)
-  - Resume from the whale menu → *Start* / *Resume*
+  - Resume from the whale menu → _Start_ / _Resume_
   - Last resort: `osascript -e 'quit app "Docker"' && open -a Docker`
 - [ ] Not an action on the user's machine: we **never** auto-restart Docker from this repo's scripts — it kills any running containers.
 
@@ -126,7 +126,7 @@ Work items:
 Status updated for everything shipped through Phase 3.
 
 | Area | Bloomberg (functions / products) | Our status | Next step |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Equities — quotes & charts** | `EQS` `DES` `GP` `GIP` `HP` | ✅ Phase 1 + Phase 3 | — |
 | **Fundamentals** | `FA` `FS` `RV` `EE` | ✅ Phase 3 (DES / FA mnemonic) | Phase 4: add YoY bar charts |
 | **Fixed income** | `TK` `YAS` `BVAL` `TRACE` | ⚠️ FRED treasuries only | Phase 8: add FINRA TRACE + Treasury auctions |
@@ -187,6 +187,7 @@ Honest moats. Not trying to close these.
 ## 5. Future phases
 
 ### Phase 4 — LLM synthesis + command bar polish
+
 - `AAPL EXPLAIN`: summarize recent 10-K + latest earnings call + last-7-day
   news. Prompts stored in a YAML registry so they're swappable.
 - `AAPL vs MSFT COMPARE`: side-by-side on the same dimensions.
@@ -194,30 +195,35 @@ Honest moats. Not trying to close these.
 - Fuzzy mnemonic matching, recent-command history, tab completion.
 
 ### Phase 5 — Real-time + alerts + trading
+
 - WebSocket quote/news streaming from Alpaca + IEX.
 - Rule-based alerts (Redis Streams + rule DSL) with WS fan-out.
 - Alpaca paper order entry (`/api/orders` POST) — a proper EMS panel.
 - Options payoff builder.
 
 ### Phase 6 — Persistence + scripting
+
 - Auth (magic-link email or GitHub OAuth).
 - Per-user watchlists and Launchpad layouts in Postgres.
 - `/api/sql` endpoint over DuckDB on cached time-series data — our `BQL`.
 - Full-text filings search (Meilisearch or Typesense on EDGAR text).
 
 ### Phase 7 — Community + sharing
+
 - Shareable Launchpad layouts via URL or JSON file.
 - Public-read dashboards ("Dave's Watchlist").
 - Optional Matrix-backed chat room.
 - Alert marketplace (public rules others can subscribe to).
 
 ### Phase 8 — Asset-class depth
+
 - FINRA TRACE corporate prints; Treasury.gov auctions.
 - Continuous futures + term structure (CL, GC, NG, ZC, ZS).
 - Factor-model portfolio analytics (Fama-French 5, Carhart).
 - ESG / climate disclosures from SEC climate rule filings.
 
 ### Phase 9 — Mobile + i18n
+
 - PWA manifest + service worker.
 - Mobile-tuned Launchpad (lg / md / sm already responsive; needs design).
 - i18n: EN, ES, PT, ZH.
