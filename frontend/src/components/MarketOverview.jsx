@@ -11,6 +11,22 @@ function fmt(value, digits = 2) {
   });
 }
 
+// Short, never-wrap display names for the tile grid. Full label stays in
+// the tooltip so nothing is lost.
+const SHORT = {
+  SPY: "S&P",
+  QQQ: "NDX",
+  DIA: "DOW",
+  IWM: "RUT",
+  VIXY: "VIX",
+  TLT: "TSY 20Y",
+  UUP: "DXY",
+  USO: "OIL",
+  GLD: "GOLD",
+  "BTC-USD": "BTC",
+  "ETH-USD": "ETH",
+};
+
 export default function MarketOverview({ onSelect }) {
   const { data, error, loading } = usePolling(() => api.overview(), 30_000, []);
 
@@ -21,26 +37,32 @@ export default function MarketOverview({ onSelect }) {
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs tabular">
+        <div className="grid grid-cols-3 gap-2 text-xs tabular">
           {(data?.tiles || []).map((t) => {
             const positive = t.change >= 0;
+            const short = SHORT[t.symbol] ?? t.symbol;
             return (
               <button
                 key={t.symbol}
                 onClick={() => onSelect?.(t.symbol)}
-                className="flex items-baseline justify-between border-b border-terminal-border/40 py-1 text-left hover:bg-terminal-panelAlt"
+                title={`${t.label} · ${t.symbol}`}
+                className="group min-w-0 rounded border border-terminal-border/40 px-2 py-1 text-left hover:border-terminal-amber/80"
               >
-                <span className="min-w-[72px] text-terminal-amber">{t.label}</span>
-                <span className="flex-1 pl-2 text-right">{fmt(t.price)}</span>
-                <span
+                <div className="truncate whitespace-nowrap text-[10px] uppercase tracking-wider text-terminal-amber">
+                  {short}
+                </div>
+                <div className="truncate whitespace-nowrap text-terminal-text">
+                  {fmt(t.price)}
+                </div>
+                <div
                   className={clsx(
-                    "min-w-[64px] pl-2 text-right",
+                    "truncate whitespace-nowrap text-[11px]",
                     positive ? "text-terminal-green" : "text-terminal-red"
                   )}
                 >
                   {positive ? "+" : ""}
                   {fmt(t.change_percent)}%
-                </span>
+                </div>
               </button>
             );
           })}

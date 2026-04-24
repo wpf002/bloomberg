@@ -220,28 +220,59 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
           {clock.toUTCString().split(" ").slice(0, 5).join(" ")} UTC
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-terminal-border/60 px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
-        <span className="truncate">{mnemonicHint}</span>
-        {lastCommand ? (
-          <span>
-            Last: <span className="text-terminal-amber">{lastCommand}</span>
-            {history.length > 0 && (
-              <span className="pl-2 text-terminal-muted/70">
-                · ↑/↓ history ({history.length})
-              </span>
-            )}
-          </span>
-        ) : (
-          <span>
-            Try: <span className="text-terminal-amber">AAPL DES</span> ·{" "}
-            <span className="text-terminal-amber">SPY GP</span> ·{" "}
-            <span className="text-terminal-amber">FXIP</span>
-          </span>
-        )}
+      <div className="flex items-center gap-2 overflow-x-auto border-t border-terminal-border/60 px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+        <span className="shrink-0">Quick:</span>
+        {QUICK_ACTIONS.map(({ mnemonic, label, title }) => (
+          <button
+            key={mnemonic}
+            onClick={() => {
+              const symbolsPart =
+                mnemonic === "COMPARE"
+                  ? (activeSymbol ? `${activeSymbol} SPY` : "AAPL SPY")
+                  : (activeSymbol ?? "");
+              const cmd = [symbolsPart, mnemonic].filter(Boolean).join(" ").trim();
+              runCommand(cmd);
+            }}
+            title={title}
+            className="shrink-0 border border-terminal-border/60 px-2 py-0.5 text-terminal-amber hover:border-terminal-amber hover:bg-terminal-amber/10"
+          >
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto shrink-0 truncate">
+          {lastCommand ? (
+            <>
+              Last: <span className="text-terminal-amber">{lastCommand}</span>
+              {history.length > 0 && (
+                <span className="pl-2 text-terminal-muted/70">
+                  · ↑/↓ history ({history.length})
+                </span>
+              )}
+            </>
+          ) : (
+            <>Click a chip · or type <span className="text-terminal-amber">HELP</span></>
+          )}
+        </span>
       </div>
     </header>
   );
 }
+
+// Chips always visible beneath the command bar. Each runs "<active> <MNEMONIC>"
+// when clicked. The COMPARE chip supplies SPY as a default second symbol so
+// new users aren't blocked by parser requirements.
+const QUICK_ACTIONS = [
+  { mnemonic: "DES",     label: "DES · describe",          title: "Company description + fundamentals" },
+  { mnemonic: "GP",      label: "GP · chart",              title: "Price chart" },
+  { mnemonic: "N",       label: "N · news",                title: "Latest news" },
+  { mnemonic: "OMON",    label: "OMON · options",          title: "Options chain + Greeks" },
+  { mnemonic: "FIL",     label: "FIL · filings",           title: "SEC filings" },
+  { mnemonic: "SIZE",    label: "SIZE · position size",    title: "Position-size calculator" },
+  { mnemonic: "EXPLAIN", label: "EXPLAIN · AI briefing",   title: "LLM briefing (news + filings + fundamentals)" },
+  { mnemonic: "COMPARE", label: "COMPARE · vs SPY",        title: "LLM side-by-side (active vs SPY by default)" },
+  { mnemonic: "PORT",    label: "PORT · portfolio",        title: "Paper portfolio" },
+  { mnemonic: "HELP",    label: "HELP · all mnemonics",    title: "Full mnemonic reference" },
+];
 
 export function MnemonicHelp() {
   return (

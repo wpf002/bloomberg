@@ -6,13 +6,24 @@ import httpx
 
 from ...core.cache_utils import cached
 from ...core.config import settings
-from ...models.schemas import Account, NewsItem, Position, Quote
+from ...models.schemas import Account, NewsItem, Position, Quote, QuoteHistoryPoint
 
 logger = logging.getLogger(__name__)
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2"
 ALPACA_NEWS_BASE = "https://data.alpaca.markets/v1beta1/news"
 ALPACA_CRYPTO_BASE = "https://data.alpaca.markets/v1beta3/crypto/us"
+
+# yfinance-style → Alpaca bar timeframe enum
+_INTERVAL_TO_TIMEFRAME = {
+    "1m": "1Min",  "2m": "5Min",  "5m": "5Min",  "15m": "15Min",
+    "30m": "30Min","60m": "1Hour","90m": "1Hour","1h": "1Hour",
+    "1d": "1Day",  "5d": "1Day",  "1wk": "1Week","1mo": "1Month",
+}
+_PERIOD_TO_DAYS = {
+    "1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180,
+    "1y": 365, "2y": 730, "5y": 1825, "10y": 3650, "max": 5475,
+}
 
 
 def _f(value) -> float:
@@ -94,6 +105,59 @@ class AlpacaSource:
                     ),
                 )
             )
+        return out
+
+    @cached("alpaca:bars", ttl=60, model=QuoteHistoryPoint)
+    async def get_stock_bars(
+        self,
+        symbol: str,
+        period: str = "1mo",
+        interval: str = "1d",
+    ) -> List[QuoteHistoryPoint]:
+        """OHLCV bars from Alpaca's /v2/stocks/{symbol}/bars. Maps the
+        yfinance-style period/interval strings (e.g. '1mo' / '1d') onto
+        Alpaca's timeframe enum and a start/end window. Free-tier IEX feed."""
+        if not self._enabled():
+            return []
+        tf = _INTERVAL_TO_TIMEFRAME.get(interval, "1Day")
+        now = datetime.now(timezone.utc)
+        if period == "ytd":
+            start = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+        else:
+            days = _PERIOD_TO_DAYS.get(period, 30)
+            start = now - timedelta(days=days)
+        url = f"{ALPACA_DATA_BASE}/stocks/{symbol}/bars"
+        params = {
+            "timeframe": tf,
+            "start": start.isoformat().replace("+00:00", "Z"),
+            "limit": 10000,
+            "feed": "iex",
+            "adjustment": "raw",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=self._headers, params=params)
+        if resp.status_code != 200:
+            logger.warning(
+                "Alpaca bars %s (%s/%s) -> %s: %s",
+                symbol, period, interval, resp.status_code, resp.text[:200],
+            )
+            return []
+        bars = (resp.json() or {}).get("bars") or []
+        out: List[QuoteHistoryPoint] = []
+        for b in bars:
+            try:
+                out.append(
+                    QuoteHistoryPoint(
+                        timestamp=datetime.fromisoformat(b["t"].replace("Z", "+00:00")),
+                        open=_f(b.get("o")),
+                        high=_f(b.get("h")),
+                        low=_f(b.get("l")),
+                        close=_f(b.get("c")),
+                        volume=int(_f(b.get("v"))),
+                    )
+                )
+            except Exception as exc:
+                logger.debug("skipping malformed bar for %s: %s", symbol, exc)
         return out
 
     @cached("alpaca:crypto", ttl=15, model=Quote)

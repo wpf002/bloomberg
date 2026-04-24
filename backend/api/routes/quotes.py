@@ -54,7 +54,16 @@ async def get_history(
     period: str = Query("1mo", description="e.g. 1d, 5d, 1mo, 3mo, 6mo, 1y, 5y, max"),
     interval: str = Query("1d", description="e.g. 1m, 5m, 15m, 1h, 1d, 1wk"),
 ) -> List[QuoteHistoryPoint]:
+    sym = symbol.upper()
+    # Alpaca bars first — real-time IEX, no rate limit on paper tier.
     try:
-        return await _yf.get_history(symbol.upper(), period=period, interval=interval)
+        bars = await _alpaca.get_stock_bars(sym, period, interval)
+        if bars:
+            return bars
+    except Exception as exc:
+        logger.warning("alpaca bars failed for %s: %s", sym, exc)
+    # yfinance fallback for indices / non-US / anything Alpaca doesn't carry.
+    try:
+        return await _yf.get_history(sym, period=period, interval=interval)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"history provider error: {exc}") from exc

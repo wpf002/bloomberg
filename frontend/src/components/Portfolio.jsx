@@ -98,15 +98,13 @@ export default function Portfolio() {
           {account && (
             <div className="grid grid-cols-4 gap-2 text-xs tabular">
               <Stat label="CASH" value={fmt(account.cash)} />
-              <Stat
-                label="BUYING POWER"
-                value={fmt(account.buying_power)}
-              />
+              <Stat label="BUY PWR" value={fmt(account.buying_power)} title="Buying power" />
               <Stat label="EQUITY" value={fmt(account.equity)} />
               <Stat
-                label="DAY TRADES"
+                label="DAY TR"
+                title="Day trades (pattern day trader if 4+ in 5 biz days)"
                 value={`${account.daytrade_count}${
-                  account.pattern_day_trader ? " (PDT)" : ""
+                  account.pattern_day_trader ? " PDT" : ""
                 }`}
               />
             </div>
@@ -178,13 +176,16 @@ export default function Portfolio() {
   );
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, title }) {
   return (
-    <div className="rounded border border-terminal-border/60 px-2 py-1">
-      <div className="text-[10px] uppercase tracking-wider text-terminal-muted">
+    <div
+      className="min-w-0 rounded border border-terminal-border/60 px-2 py-1 overflow-hidden"
+      title={title}
+    >
+      <div className="truncate whitespace-nowrap text-[10px] uppercase tracking-wider text-terminal-muted">
         {label}
       </div>
-      <div className="text-terminal-text">{value}</div>
+      <div className="truncate whitespace-nowrap text-terminal-text">{value}</div>
     </div>
   );
 }

@@ -115,7 +115,16 @@ export default function OptionsPanel({ symbol }) {
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : !data || (!data.calls.length && !data.puts.length) ? (
-        <div className="text-terminal-muted">No option chain available for {symbol}.</div>
+        <div className="text-xs leading-relaxed text-terminal-muted">
+          <p className="mb-1 text-terminal-amber">
+            No option chain available for {symbol}.
+          </p>
+          <p>
+            Options come from Yahoo Finance, which rate-limits this IP under
+            load. Usually clears in 10–30 min. Alpaca only exposes options on
+            its paid data tier.
+          </p>
+        </div>
       ) : (
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-baseline justify-between text-xs">

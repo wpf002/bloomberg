@@ -80,6 +80,16 @@ export default function FundamentalsPanel({ symbol }) {
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : !data ? (
         <div className="text-terminal-muted">No data.</div>
+      ) : !data.name && data.market_cap == null && data.pe_ratio == null ? (
+        <div className="text-xs leading-relaxed text-terminal-muted">
+          <p className="mb-1 text-terminal-amber">
+            Fundamentals source (Yahoo Finance) is rate-limiting this IP.
+          </p>
+          <p>
+            This usually clears in 10–30 min. Alpaca doesn't ship fundamentals
+            on the free tier, so there's no clean fallback here.
+          </p>
+        </div>
       ) : (
         <div className="space-y-3">
           <header>
