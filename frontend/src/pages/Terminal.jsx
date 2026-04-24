@@ -117,9 +117,11 @@ export default function Terminal() {
   const flashTimer = useRef(null);
 
   const triggerFlash = useCallback((panel) => {
-    setFlash(panel);
+    // Force a re-render even when the same panel flashes twice in a row.
+    setFlash(null);
+    requestAnimationFrame(() => setFlash(panel));
     if (flashTimer.current) clearTimeout(flashTimer.current);
-    flashTimer.current = setTimeout(() => setFlash(null), 1500);
+    flashTimer.current = setTimeout(() => setFlash(null), 2300);
   }, []);
 
   const onCommand = useCallback(

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2"
 ALPACA_NEWS_BASE = "https://data.alpaca.markets/v1beta1/news"
+ALPACA_CRYPTO_BASE = "https://data.alpaca.markets/v1beta3/crypto/us"
 
 
 def _f(value) -> float:
@@ -94,6 +95,51 @@ class AlpacaSource:
                 )
             )
         return out
+
+    @cached("alpaca:crypto", ttl=15, model=Quote)
+    async def get_crypto_quote(self, symbol: str) -> Quote | None:
+        """Alpaca crypto snapshot. Accepts 'BTC-USD' or 'BTC/USD'; normalises
+        internally to the 'BTC/USD' form Alpaca expects. Returns None when
+        credentials are missing or the symbol isn't carried."""
+        if not self._enabled():
+            return None
+        alp_sym = symbol.replace("-", "/").upper()
+        url = f"{ALPACA_CRYPTO_BASE}/snapshots"
+        params = {"symbols": alp_sym}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=self._headers, params=params)
+        if resp.status_code != 200:
+            logger.warning(
+                "Alpaca crypto snapshot %s -> %s: %s",
+                symbol,
+                resp.status_code,
+                resp.text[:200],
+            )
+            return None
+        snaps = (resp.json() or {}).get("snapshots") or {}
+        data = snaps.get(alp_sym) or {}
+        latest_trade = data.get("latestTrade") or {}
+        daily_bar = data.get("dailyBar") or {}
+        prev_daily = data.get("prevDailyBar") or {}
+
+        price = _f(latest_trade.get("p")) or _f(daily_bar.get("c"))
+        if price <= 0:
+            return None
+        prev_close = _f(prev_daily.get("c"))
+        change = price - prev_close if prev_close else 0.0
+        change_pct = (change / prev_close * 100.0) if prev_close else 0.0
+
+        return Quote(
+            symbol=symbol.upper(),
+            price=price,
+            change=change,
+            change_percent=change_pct,
+            volume=int(_f(daily_bar.get("v"))),
+            day_high=_of(daily_bar.get("h")),
+            day_low=_of(daily_bar.get("l")),
+            previous_close=prev_close if prev_close else None,
+            timestamp=datetime.now(timezone.utc),
+        )
 
     @cached("alpaca:quote", ttl=10, model=Quote)
     async def get_stock_quote(self, symbol: str) -> Quote | None:

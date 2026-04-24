@@ -52,10 +52,13 @@
 }
 
 @keyframes panelFlash {
-  0% { box-shadow: 0 0 0 2px rgba(255, 159, 28, 0.9); }
-  100% { box-shadow: 0 0 0 2px rgba(255, 159, 28, 0); }
+  0%   { box-shadow: 0 0 0 3px rgba(255, 159, 28, 1), 0 0 24px 4px rgba(255, 159, 28, 0.6); }
+  40%  { box-shadow: 0 0 0 3px rgba(255, 159, 28, 0.9), 0 0 20px 4px rgba(255, 159, 28, 0.4); }
+  100% { box-shadow: 0 0 0 3px rgba(255, 159, 28, 0), 0 0 24px 4px rgba(255, 159, 28, 0); }
 }
 
 .panel-flash {
-  animation: panelFlash 1.2s ease-out;
+  animation: panelFlash 2.2s ease-out;
+  position: relative;
+  z-index: 5;
 }

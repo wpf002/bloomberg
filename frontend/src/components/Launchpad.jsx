@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -63,6 +63,18 @@ export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, 
     [panels, hidden]
   );
 
+  // Scroll the flashed panel into view when a command fires. Without this
+  // you can type "AAPL EXPLAIN" and see nothing happen because the panel
+  // is below the fold in the dense grid.
+  const tileRefs = useRef({});
+  useEffect(() => {
+    if (!flash) return;
+    const el = tileRefs.current[flash];
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  }, [flash]);
+
   return (
     <div className={editMode ? "launchpad edit-mode" : "launchpad"}>
       {editMode ? (
@@ -104,6 +116,10 @@ export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, 
         {visiblePanels.map((p) => (
           <div
             key={p.id}
+            ref={(node) => {
+              if (node) tileRefs.current[p.id] = node;
+              else delete tileRefs.current[p.id];
+            }}
             className={`flex min-h-0 ${flash === p.id ? "panel-flash" : ""}`}
           >
             {p.render()}
