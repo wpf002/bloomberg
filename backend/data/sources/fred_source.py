@@ -5,6 +5,7 @@ from typing import List
 
 from fredapi import Fred
 
+from ...core.cache_utils import cached
 from ...core.config import settings
 from ...models.schemas import MacroSeries, MacroSeriesPoint
 
@@ -32,6 +33,7 @@ class FredSource:
     def _enabled(self) -> bool:
         return self._client is not None
 
+    @cached("fred:series", ttl=600, model=MacroSeries)
     async def get_series(self, series_id: str, limit: int = 120) -> MacroSeries:
         if not self._enabled():
             title, units, freq = DEFAULT_SERIES_METADATA.get(

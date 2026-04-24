@@ -4,6 +4,7 @@ from typing import List
 
 import httpx
 
+from ...core.cache_utils import cached
 from ...core.config import settings
 from ...models.schemas import FilingEntry
 
@@ -35,6 +36,7 @@ class SecEdgarSource:
         }
         return self._ticker_cache
 
+    @cached("edgar:filings", ttl=600, model=FilingEntry)
     async def recent_filings(
         self,
         symbol: str,

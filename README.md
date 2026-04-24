@@ -95,6 +95,12 @@ npm run dev
 | GET    | `/api/news?symbols=…`             | Alpaca news stream                         |
 | GET    | `/api/filings/{symbol}`           | Recent SEC EDGAR filings                   |
 
+Option contracts returned by `/api/options/{symbol}` now include analytical
+Black-Scholes Greeks (`delta`, `gamma`, `vega`, `theta`, `rho`) derived from
+the provider's implied volatility and the configured `RISK_FREE_RATE`. News
+is merged from Alpaca **and** public RSS (Yahoo Finance, Nasdaq, MarketWatch,
+SEC press releases) so the feed degrades gracefully without an Alpaca key.
+
 ## Command Mnemonics
 
 The command bar accepts Bloomberg-style mnemonics: `<SYMBOL> <FN>`.

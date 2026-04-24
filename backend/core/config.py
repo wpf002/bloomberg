@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     fred_api_key: str | None = None
     sec_user_agent: str = "bloomberg-terminal research@example.com"
 
+    risk_free_rate: float = 0.045
+    default_cache_ttl: int = 60
+    rss_timeout_seconds: float = 6.0
+
     cors_origins: List[str] = Field(
         default_factory=lambda: [
             "http://localhost:5173",
