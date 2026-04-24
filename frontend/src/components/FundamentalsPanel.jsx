@@ -83,11 +83,13 @@ export default function FundamentalsPanel({ symbol }) {
       ) : !data.name && data.market_cap == null && data.pe_ratio == null ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
           <p className="mb-1 text-terminal-amber">
-            Fundamentals source (Yahoo Finance) is rate-limiting this IP.
+            No fundamentals returned for this ticker.
           </p>
           <p>
-            This usually clears in 10–30 min. Alpaca doesn't ship fundamentals
-            on the free tier, so there's no clean fallback here.
+            Both providers (Financial Modeling Prep primary, Yahoo Finance
+            fallback) came back empty. Most common causes: ticker isn't a US
+            common stock (ETFs, ADRs, OTC tickers often miss), or both
+            services are rate-limiting this IP. Usually clears in 10–30 min.
           </p>
         </div>
       ) : (

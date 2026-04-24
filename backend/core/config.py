@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-4-6"
 
     fred_api_key: str | None = None
+    finnhub_api_key: str | None = None
+    fmp_api_key: str | None = None
     sec_user_agent: str = "bloomberg-terminal research@example.com"
 
     risk_free_rate: float = 0.045

@@ -59,6 +59,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-6}
       FRED_API_KEY: ${FRED_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FMP_API_KEY: ${FMP_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-bloomberg-terminal research@example.com}
     ports:
       - "${BACKEND_PORT:-8000}:8000"

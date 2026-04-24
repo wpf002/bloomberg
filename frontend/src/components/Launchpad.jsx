@@ -63,15 +63,16 @@ export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, 
     [panels, hidden]
   );
 
-  // Scroll the flashed panel into view when a command fires. Without this
-  // you can type "AAPL EXPLAIN" and see nothing happen because the panel
-  // is below the fold in the dense grid.
+  // Scroll the flashed panel into view when a command/quick-action fires.
+  // `block: "center"` (vs "nearest") forces a real scroll even when the panel
+  // is partially visible — otherwise clicking a chip for an off-screen panel
+  // appears to do nothing on tall layouts.
   const tileRefs = useRef({});
   useEffect(() => {
     if (!flash) return;
     const el = tileRefs.current[flash];
     if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
     }
   }, [flash]);
 

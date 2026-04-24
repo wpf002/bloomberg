@@ -22,7 +22,9 @@ function daysFromNow(dateStr) {
 export default function CalendarPanel({ symbols }) {
   const { data, loading, error } = usePolling(
     () => api.earningsCalendar(symbols, 4),
-    30 * 60_000,
+    // 1h: matches the backend Finnhub cache TTL so polling doesn't burn
+    // requests on stale data. Earnings actuals appear within ~1h of release.
+    60 * 60_000,
     [symbols.join(",")]
   );
 
@@ -41,7 +43,14 @@ export default function CalendarPanel({ symbols }) {
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (data || []).length === 0 ? (
-        <div className="text-terminal-muted">No upcoming earnings events.</div>
+        <div className="space-y-1 text-xs leading-relaxed text-terminal-muted">
+          <p className="text-terminal-amber">No upcoming earnings dates in the next 120 days.</p>
+          <p>
+            Calendar comes from Finnhub (market-wide consensus) with Yahoo as
+            a fallback. Tickers with no upcoming events typically just reported
+            and won't have a next date until guidance is updated.
+          </p>
+        </div>
       ) : (
         <table className="w-full text-[11px] tabular">
           <thead>
