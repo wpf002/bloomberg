@@ -46,18 +46,56 @@ function mergeMissing(saved, defaults) {
   return out;
 }
 
-export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, flash }) {
-  const [layouts, setLayouts] = useState(
+export default function Launchpad({
+  panels,
+  defaultLayouts,
+  editMode,
+  resetKey,
+  flash,
+  // When provided, the parent owns layout persistence (e.g. syncing to a
+  // logged-in user's Postgres state). The component still falls back to
+  // localStorage for unauthenticated sessions.
+  controlledLayouts,
+  controlledHidden,
+  onLayoutsChange,
+  onHiddenChange,
+}) {
+  const controlled = controlledLayouts != null;
+
+  const [localLayouts, setLocalLayouts] = useState(
     () => mergeMissing(readJson(STORAGE_KEY), defaultLayouts)
   );
-  const [hidden, setHidden] = useState(() => new Set(readJson(HIDDEN_KEY) ?? []));
+  const [localHidden, setLocalHidden] = useState(
+    () => new Set(readJson(HIDDEN_KEY) ?? [])
+  );
+
+  // When the parent supplies a saved layout (after login), seed it through
+  // the same merge step so a release adding new panels doesn't strand them.
+  const layouts = useMemo(() => {
+    if (!controlled) return localLayouts;
+    const incoming =
+      controlledLayouts && Object.keys(controlledLayouts).length
+        ? controlledLayouts
+        : null;
+    return mergeMissing(incoming, defaultLayouts);
+  }, [controlled, controlledLayouts, localLayouts, defaultLayouts]);
+
+  const hidden = useMemo(() => {
+    if (controlled) return new Set(controlledHidden || []);
+    return localHidden;
+  }, [controlled, controlledHidden, localHidden]);
 
   useEffect(() => {
     // External reset (triggered by the RESET mnemonic) wipes overrides.
-    setLayouts(defaultLayouts);
-    setHidden(new Set());
-    writeJson(STORAGE_KEY, defaultLayouts);
-    writeJson(HIDDEN_KEY, []);
+    if (controlled) {
+      onLayoutsChange?.(defaultLayouts);
+      onHiddenChange?.([]);
+    } else {
+      setLocalLayouts(defaultLayouts);
+      setLocalHidden(new Set());
+      writeJson(STORAGE_KEY, defaultLayouts);
+      writeJson(HIDDEN_KEY, []);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
@@ -65,24 +103,41 @@ export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, 
   // don't re-merge on every refresh and so saved positions for the new
   // panels survive a future panel removal.
   useEffect(() => {
-    writeJson(STORAGE_KEY, layouts);
+    if (!controlled) writeJson(STORAGE_KEY, layouts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onLayoutChange = useCallback((_current, allLayouts) => {
-    setLayouts(allLayouts);
-    writeJson(STORAGE_KEY, allLayouts);
-  }, []);
+  const onLayoutChange = useCallback(
+    (_current, allLayouts) => {
+      if (controlled) {
+        onLayoutsChange?.(allLayouts);
+      } else {
+        setLocalLayouts(allLayouts);
+        writeJson(STORAGE_KEY, allLayouts);
+      }
+    },
+    [controlled, onLayoutsChange]
+  );
 
-  const toggleHidden = useCallback((id) => {
-    setHidden((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      writeJson(HIDDEN_KEY, Array.from(next));
-      return next;
-    });
-  }, []);
+  const toggleHidden = useCallback(
+    (id) => {
+      if (controlled) {
+        const next = new Set(controlledHidden || []);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        onHiddenChange?.(Array.from(next));
+        return;
+      }
+      setLocalHidden((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        writeJson(HIDDEN_KEY, Array.from(next));
+        return next;
+      });
+    },
+    [controlled, controlledHidden, onHiddenChange]
+  );
 
   const visiblePanels = useMemo(
     () => panels.filter((p) => !hidden.has(p.id)),

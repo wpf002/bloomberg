@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AlertsPanel from "../components/AlertsPanel.jsx";
 import CalendarPanel from "../components/CalendarPanel.jsx";
 import Chart from "../components/Chart.jsx";
@@ -7,6 +7,7 @@ import ComparePanel from "../components/ComparePanel.jsx";
 import CryptoPanel from "../components/CryptoPanel.jsx";
 import ExplainPanel from "../components/ExplainPanel.jsx";
 import FilingsPanel from "../components/FilingsPanel.jsx";
+import FilingsSearchPanel from "../components/FilingsSearchPanel.jsx";
 import FundamentalsPanel from "../components/FundamentalsPanel.jsx";
 import Launchpad from "../components/Launchpad.jsx";
 import MacroPanel from "../components/MacroPanel.jsx";
@@ -18,7 +19,10 @@ import Panel from "../components/Panel.jsx";
 import PayoffPanel from "../components/PayoffPanel.jsx";
 import Portfolio from "../components/Portfolio.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
+import SqlPanel from "../components/SqlPanel.jsx";
 import Watchlist from "../components/Watchlist.jsx";
+import useAuth from "../hooks/useAuth.js";
+import { api } from "../lib/api.js";
 
 const DEFAULT_WATCHLIST = [
   "AAPL",
@@ -52,9 +56,13 @@ const INTENT_TO_PANEL = {
   trade: "trade",
   alerts: "alerts",
   payoff: "payoff",
+  sql: "sql",
+  search: "search",
   help: "help",
   layout: "layout",
   reset: "reset",
+  login: "login",
+  logout: "logout",
   unknown: null,
 };
 
@@ -79,6 +87,8 @@ const DEFAULT_LAYOUTS = {
     { i: "trade",        x: 0,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "alerts",       x: 4,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "payoff",       x: 8,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
+    { i: "sql",          x: 0,  y: 40, w: 8, h: 12, minW: 4, minH: 6 },
+    { i: "search",       x: 8,  y: 40, w: 4, h: 12, minW: 3, minH: 6 },
   ],
   md: [
     { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
@@ -98,29 +108,35 @@ const DEFAULT_LAYOUTS = {
     { i: "trade",        x: 0,  y: 52, w: 6, h: 10 },
     { i: "alerts",       x: 6,  y: 52, w: 6, h: 10 },
     { i: "payoff",       x: 0,  y: 62, w: 12, h: 10 },
+    { i: "sql",          x: 0,  y: 72, w: 12, h: 12 },
+    { i: "search",       x: 0,  y: 84, w: 12, h: 10 },
   ],
   sm: [
-    { i: "watchlist",    x: 0, y: 0,  w: 6, h: 6 },
-    { i: "chart",        x: 0, y: 6,  w: 6, h: 7 },
-    { i: "news",         x: 0, y: 13, w: 6, h: 6 },
-    { i: "markets",      x: 0, y: 19, w: 6, h: 5 },
-    { i: "macro",        x: 0, y: 24, w: 6, h: 5 },
-    { i: "portfolio",    x: 0, y: 29, w: 6, h: 5 },
-    { i: "crypto",       x: 0, y: 34, w: 6, h: 5 },
-    { i: "fundamentals", x: 0, y: 39, w: 6, h: 8 },
-    { i: "options",      x: 0, y: 47, w: 6, h: 8 },
-    { i: "filings",      x: 0, y: 55, w: 6, h: 6 },
-    { i: "calendar",     x: 0, y: 61, w: 6, h: 4 },
-    { i: "sizing",       x: 0, y: 65, w: 6, h: 7 },
-    { i: "explain",      x: 0, y: 72, w: 6, h: 7 },
-    { i: "compare",      x: 0, y: 79, w: 6, h: 7 },
-    { i: "trade",        x: 0, y: 86, w: 6, h: 10 },
-    { i: "alerts",       x: 0, y: 96, w: 6, h: 10 },
+    { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
+    { i: "chart",        x: 0, y: 6,   w: 6, h: 7 },
+    { i: "news",         x: 0, y: 13,  w: 6, h: 6 },
+    { i: "markets",      x: 0, y: 19,  w: 6, h: 5 },
+    { i: "macro",        x: 0, y: 24,  w: 6, h: 5 },
+    { i: "portfolio",    x: 0, y: 29,  w: 6, h: 5 },
+    { i: "crypto",       x: 0, y: 34,  w: 6, h: 5 },
+    { i: "fundamentals", x: 0, y: 39,  w: 6, h: 8 },
+    { i: "options",      x: 0, y: 47,  w: 6, h: 8 },
+    { i: "filings",      x: 0, y: 55,  w: 6, h: 6 },
+    { i: "calendar",     x: 0, y: 61,  w: 6, h: 4 },
+    { i: "sizing",       x: 0, y: 65,  w: 6, h: 7 },
+    { i: "explain",      x: 0, y: 72,  w: 6, h: 7 },
+    { i: "compare",      x: 0, y: 79,  w: 6, h: 7 },
+    { i: "trade",        x: 0, y: 86,  w: 6, h: 10 },
+    { i: "alerts",       x: 0, y: 96,  w: 6, h: 10 },
     { i: "payoff",       x: 0, y: 106, w: 6, h: 10 },
+    { i: "sql",          x: 0, y: 116, w: 6, h: 12 },
+    { i: "search",       x: 0, y: 128, w: 6, h: 10 },
   ],
 };
 
 export default function Terminal() {
+  const { user, oauthConfigured, login, logout } = useAuth();
+
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [activeSymbol, setActiveSymbol] = useState(DEFAULT_WATCHLIST[0]);
   const [compareSymbols, setCompareSymbols] = useState([DEFAULT_WATCHLIST[0], DEFAULT_WATCHLIST[1]]);
@@ -130,6 +146,72 @@ export default function Terminal() {
   const [lastCommand, setLastCommand] = useState(null);
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
+
+  // Layout state mirrored on the server when authenticated. Keeping it
+  // here (vs only in Launchpad) lets us debounce PUT calls and avoids a
+  // round-trip on every drag pixel.
+  const [serverLayouts, setServerLayouts] = useState(null);
+  const [serverHidden, setServerHidden] = useState(null);
+  const layoutPutTimer = useRef(null);
+
+  // Load per-user state from the backend on login. On logout, fall back to
+  // the local default symbol set so the user isn't stuck on a now-private
+  // watchlist.
+  useEffect(() => {
+    if (!user) {
+      setServerLayouts(null);
+      setServerHidden(null);
+      setWatchlist(DEFAULT_WATCHLIST);
+      setActiveSymbol(DEFAULT_WATCHLIST[0]);
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const wl = await api.meWatchlist();
+        if (!active) return;
+        const symbols = wl?.symbols?.length ? wl.symbols : DEFAULT_WATCHLIST;
+        setWatchlist(symbols);
+        setActiveSymbol(symbols[0] ?? DEFAULT_WATCHLIST[0]);
+        // First-time sign-in: seed the server with the default list.
+        if (!wl?.symbols?.length) {
+          api.putWatchlist(DEFAULT_WATCHLIST).catch(() => {});
+        }
+      } catch {
+        // Server unreachable — keep defaults.
+      }
+      try {
+        const layout = await api.meLayout();
+        if (!active) return;
+        setServerLayouts(layout?.layouts ?? {});
+        setServerHidden(layout?.hidden ?? []);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  const persistWatchlist = useCallback(
+    (next) => {
+      if (!user) return;
+      api.putWatchlist(next).catch(() => {});
+    },
+    [user]
+  );
+
+  const persistLayout = useCallback(
+    (layouts, hidden) => {
+      if (!user) return;
+      if (layoutPutTimer.current) clearTimeout(layoutPutTimer.current);
+      layoutPutTimer.current = setTimeout(() => {
+        api.putLayout(layouts ?? {}, hidden ?? []).catch(() => {});
+      }, 600);
+    },
+    [user]
+  );
 
   const triggerFlash = useCallback((panel) => {
     // Force a re-render even when the same panel flashes twice in a row.
@@ -145,9 +227,12 @@ export default function Terminal() {
       setLastCommand(`${symbolsStr} ${parsed.mnemonic}`.trim());
       if (parsed.symbol) {
         setActiveSymbol(parsed.symbol);
-        setWatchlist((prev) =>
-          prev.includes(parsed.symbol) ? prev : [parsed.symbol, ...prev]
-        );
+        setWatchlist((prev) => {
+          if (prev.includes(parsed.symbol)) return prev;
+          const next = [parsed.symbol, ...prev];
+          persistWatchlist(next);
+          return next;
+        });
       }
       if (parsed.intent === "compare" && parsed.symbols?.length >= 2) {
         setCompareSymbols([parsed.symbols[0], parsed.symbols[1]]);
@@ -162,13 +247,19 @@ export default function Terminal() {
         case "reset":
           setResetKey((k) => k + 1);
           return;
+        case "login":
+          login();
+          return;
+        case "logout":
+          logout();
+          return;
         default: {
           const panel = INTENT_TO_PANEL[parsed.intent];
           if (panel) triggerFlash(panel);
         }
       }
     },
-    [triggerFlash]
+    [triggerFlash, persistWatchlist, login, logout]
   );
 
   const handleSelect = useCallback(
@@ -198,6 +289,8 @@ export default function Terminal() {
       { id: "trade",        render: () => <OrderTicket symbol={activeSymbol} /> },
       { id: "alerts",       render: () => <AlertsPanel symbol={activeSymbol} /> },
       { id: "payoff",       render: () => <PayoffPanel symbol={activeSymbol} /> },
+      { id: "sql",          render: () => <SqlPanel /> },
+      { id: "search",       render: () => <FilingsSearchPanel symbol={activeSymbol} /> },
     ],
     [watchlist, activeSymbol, compareSymbols, handleSelect]
   );
@@ -216,32 +309,61 @@ export default function Terminal() {
           editMode={editMode}
           resetKey={resetKey}
           flash={flash}
+          controlledLayouts={user ? serverLayouts ?? {} : undefined}
+          controlledHidden={user ? serverHidden ?? [] : undefined}
+          onLayoutsChange={(next) => {
+            setServerLayouts(next);
+            persistLayout(next, serverHidden ?? []);
+          }}
+          onHiddenChange={(next) => {
+            setServerHidden(next);
+            persistLayout(serverLayouts ?? {}, next);
+          }}
         />
       </main>
-      <footer className="flex items-center justify-between border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
         <span>
           Active: <span className="text-terminal-amber">{activeSymbol}</span>
+          {user ? (
+            <span className="pl-3">
+              · <span className="text-terminal-green">{user.login}</span>
+            </span>
+          ) : null}
         </span>
-        <span>
+        <span className="flex items-center gap-2">
           <button
             onClick={() => setEditMode((p) => !p)}
             className={editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
           >
             LAYOUT {editMode ? "ON" : "OFF"}
           </button>
-          {" · "}
+          <span>·</span>
           <button
             onClick={() => setResetKey((k) => k + 1)}
             className="text-terminal-muted hover:text-terminal-text"
           >
             RESET
           </button>
-          {" · "}
+          <span>·</span>
           <button onClick={() => setHelpOpen(true)} className="text-terminal-amber">
             HELP
           </button>
+          <span>·</span>
+          {user ? (
+            <button onClick={logout} className="text-terminal-muted hover:text-terminal-text">
+              LOGOUT
+            </button>
+          ) : oauthConfigured ? (
+            <button onClick={login} className="text-terminal-amber hover:underline">
+              LOGIN · GITHUB
+            </button>
+          ) : (
+            <span title="Set GITHUB_CLIENT_ID/SECRET in .env to enable login">
+              LOGIN N/A
+            </span>
+          )}
         </span>
-        <span>Phase 5 · WS streaming · EMS · Alerts · Payoff</span>
+        <span>Phase 6 · Auth · Per-user state · DuckDB SQL · Filings search</span>
       </footer>
       {helpOpen ? (
         <div
@@ -265,9 +387,9 @@ export default function Terminal() {
               <p className="mt-3 text-[11px] text-terminal-muted">
                 Enter <span className="text-terminal-amber">&lt;SYMBOL&gt; &lt;FN&gt;</span>{" "}
                 in the command bar. Layout is draggable when{" "}
-                <span className="text-terminal-amber">LAYOUT</span> is on and is
-                persisted per-browser. <span className="text-terminal-amber">RESET</span>{" "}
-                restores the factory layout.
+                <span className="text-terminal-amber">LAYOUT</span> is on. When
+                signed in, watchlist + layout sync to your account; otherwise
+                they persist in localStorage.
               </p>
             </Panel>
           </div>

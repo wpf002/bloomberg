@@ -37,6 +37,12 @@ export const MNEMONICS = {
   EVTS:    { intent: "calendar",  description: "Events / earnings calendar" },
   LAYOUT:  { intent: "layout",    description: "Toggle launchpad edit mode" },
   RESET:   { intent: "reset",     description: "Reset launchpad layout" },
+  SQL:     { intent: "sql",       description: "DuckDB SQL workbench (bars / macro / filings)" },
+  BQNT:    { intent: "sql",       description: "DuckDB SQL workbench (BQuant analogue)" },
+  SRCH:    { intent: "search",    description: "Full-text filings search (Meilisearch)" },
+  SEARCH:  { intent: "search",    description: "Full-text filings search (Meilisearch)" },
+  LOGIN:   { intent: "login",     description: "Sign in with GitHub" },
+  LOGOUT:  { intent: "logout",    description: "Sign out" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

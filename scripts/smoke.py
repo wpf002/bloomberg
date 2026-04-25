@@ -42,6 +42,9 @@ MODULES = [
     "backend.core.payoff",
     "backend.core.streaming",
     "backend.core.alerts",
+    "backend.core.auth",
+    "backend.core.schema",
+    "backend.core.sql_engine",
     "backend.models.schemas",
     "backend.api",
     "backend.api.routes.quotes",
@@ -61,9 +64,13 @@ MODULES = [
     "backend.api.routes.orders",
     "backend.api.routes.alerts",
     "backend.api.routes.streams",
+    "backend.api.routes.auth",
+    "backend.api.routes.me",
+    "backend.api.routes.sql",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
     "backend.data.sources.fred_source",
+    "backend.data.sources.meilisearch_source",
     "backend.data.sources.rss_source",
     "backend.data.sources.sec_edgar_source",
     "backend.data.sources.yfinance_source",
@@ -298,6 +305,8 @@ EXPECTED = [
     ("GET", "/api/calendar/earnings"),
     ("GET", "/api/news"),
     ("GET", "/api/filings/{symbol}"),
+    ("GET", "/api/filings/search"),
+    ("POST", "/api/filings/{symbol}/index"),
     ("GET", "/api/portfolio/account"),
     ("GET", "/api/portfolio/positions"),
     ("GET", "/api/sizing/{symbol}"),
@@ -310,6 +319,17 @@ EXPECTED = [
     ("POST", "/api/alerts/rules"),
     ("DELETE", "/api/alerts/rules/{rule_id}"),
     ("GET", "/api/alerts/events"),
+    ("GET", "/api/auth/github/login"),
+    ("GET", "/api/auth/github/callback"),
+    ("GET", "/api/auth/me"),
+    ("POST", "/api/auth/logout"),
+    ("GET", "/api/auth/status"),
+    ("GET", "/api/me/watchlist"),
+    ("PUT", "/api/me/watchlist"),
+    ("GET", "/api/me/layout"),
+    ("PUT", "/api/me/layout"),
+    ("POST", "/api/sql"),
+    ("GET", "/api/sql/tables"),
 ]
 # WebSocket routes don't expose `methods` like HTTP routes do; check by path.
 WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts"]
@@ -319,6 +339,50 @@ for method, path in EXPECTED:
 
 for path in WS_PATHS:
     check(f"WS {path}", path in ws_paths_registered)
+
+
+# ─── auth (JWT roundtrip) ───────────────────────────────────────────────────
+print("\n== auth ==")
+from backend.core.auth import decode_token, encode_token, issue_session  # noqa: E402
+
+token = issue_session(user_id=42)
+decoded = decode_token(token)
+check("token roundtrip", bool(decoded and decoded.get("sub") == "42"), f"sub={decoded and decoded.get('sub')}")
+check("token rejects tampering", decode_token(token + "x") is None)
+check("token rejects garbage", decode_token("not.a.token") is None)
+# Manually crafted expired token
+import time as _time  # noqa: E402
+expired = encode_token({"sub": "1", "iat": int(_time.time()) - 100, "exp": int(_time.time()) - 10})
+check("token rejects expired", decode_token(expired) is None)
+
+
+# ─── SQL engine validation ──────────────────────────────────────────────────
+print("\n== sql validation ==")
+from backend.core.sql_engine import SqlEngine  # noqa: E402
+
+# A read-only single SELECT should pass; everything else should be rejected
+# *before* it ever reaches DuckDB.
+try:
+    SqlEngine._validate("SELECT 1")
+    check("sql allows SELECT", True)
+except ValueError as exc:
+    check("sql allows SELECT", False, str(exc))
+
+for bad in [
+    "DROP TABLE bars",
+    "INSERT INTO bars VALUES (1)",
+    "UPDATE bars SET close=0",
+    "DELETE FROM bars",
+    "SELECT 1; SELECT 2",
+    "ATTACH 'evil'",
+    "CREATE TABLE x (a INT)",
+    "",
+]:
+    try:
+        SqlEngine._validate(bad)
+        check(f"sql rejects: {bad[:40]}", False, "validation passed when it should have raised")
+    except ValueError:
+        check(f"sql rejects: {bad[:40]}", True)
 
 
 # ─── summary ────────────────────────────────────────────────────────────────

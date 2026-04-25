@@ -21,30 +21,31 @@ programmability, and crypto-native coverage.**
 | **3.1** | `9d227ef` | ✅ shipped | Mock portfolio retired — `/api/portfolio/account` + `/api/portfolio/positions` hit live Alpaca paper (`@cached` 10s); new `Account` + `Position` schemas; Portfolio.jsx rewritten with real NAV/cash/BP/equity/day-trade header and unrealized P/L table; shared `get_alpaca_source()` singleton across news + portfolio; creds-missing empty state (no mock fallback). Docker preflight (`scripts/check_docker.sh` + `make up`) with README troubleshooting for the UI-open / VM-paused case. Smoke test lifted to `scripts/smoke.py` (46/46: 24 modules, 6 schemas, 6 Greeks, 16 routes). **Bonuses shipped same commit:** options route now returns empty chain instead of 502 when yfinance throttles; `/api/quotes` routes through Alpaca snapshots first, yfinance only as fallback for symbols Alpaca doesn't carry (indices, futures, FX, non-US). |
 | **4** | `1362eed` | ✅ shipped | **Command bar polish:** fuzzy mnemonic matching (`matchMnemonics` ranks exact > prefix > substring > subsequence); ghost-text suggestion + Tab completion; recent-command history in localStorage (↑/↓); live suggestion dropdown with matched-char highlighting. **Position sizing:** `SIZE` / `SIZING` mnemonics, `/api/sizing/{symbol}?stop_pct=N` computes shares at 0.5/1/2/5% account risk using live Alpaca equity; new `PositionSize` + `SizingRow` schemas; `SizingPanel` with stop% input. **LLM synthesis:** YAML prompt registry (`backend/prompts/{explain,compare}.yaml`); `backend/core/llm.py` AsyncAnthropic wrapper; `/api/explain/{symbol}` merges fundamentals + news + SEC filings into a Claude briefing (cached 30m); `/api/compare?symbols=A,B` does side-by-side; multi-symbol parser handles `AAPL MSFT COMPARE`; `EXPLAIN` / `COMPARE` mnemonics; new `Brief` / `ComparisonBrief` schemas; `ExplainPanel` + `ComparePanel` with explicit "Run briefing" button (no auto-fetch — LLM calls aren't free). `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` env vars plumbed through docker-compose. Smoke test now 55/55: 27 modules, 9 schemas, 6 Greeks, 19 routes. |
 | **5** | `9032795` | ✅ shipped | **WebSocket streaming:** `backend/core/streaming.py` runs an in-process `StreamHub` (per-topic asyncio queues with non-blocking publish) + `AlpacaStreamer` that maintains one upstream IEX market-data WS and one news WS, demand-driven symbol subscribe/unsubscribe, exponential-backoff reconnect, REST-poll fallback when `websockets` lib or creds are absent. New `/api/ws/quotes?symbols=`, `/api/ws/news`, `/api/ws/alerts` routes with 25s pings. Frontend `useStream` hook (auto-reconnect, exp backoff, drops the snapshot when disconnected because stale ticks lie); Watchlist now overlays live trade/quote ticks on the polled snapshot with green/red flash on price change. **Paper order entry:** `OrderRequest` + `Order` schemas; `AlpacaSource.list_orders/place_order/cancel_order` thin wrappers over `/v2/orders`; `GET/POST /api/orders` + `DELETE /api/orders/{id}`; `OrderTicket.jsx` (BUY/SELL toggle, market/limit/stop/stop_limit + TIF + extended-hours, working-order list with cancel-✕). Errors from Alpaca propagate verbatim — broker is the source of truth. **Rule-based alerts:** `AlertRule`/`AlertCondition`/`AlertEvent` schemas; `core/alerts.py` evaluates rules on every quotes-topic tick with per-rule cooldown to prevent storm-fire; rules persisted in a Redis hash (`bt:alerts:rules`), fired events appended to a Redis Stream (`bt:alerts:events`, `MAXLEN ~500`) with in-memory fallback when Redis is down; `AlertsPanel.jsx` rule builder + live fire feed via `/api/ws/alerts`; `ALRT`/`ALERT` mnemonics. **Options payoff builder:** `core/payoff.py` computes per-leg expiry intrinsic-value + linear-interp breakevens + bounded/unbounded extrema (detected via slope at the edges); `POST /api/options/payoff` accepts a multi-leg request and returns 121 payoff points resampled at every strike; `PayoffPanel.jsx` with strategy presets (long call/put, covered call, bull spread, iron condor, straddle), per-leg editor, Recharts visualization with breakeven + spot reference lines; `OVME`/`PAYOFF` mnemonics. **New CommandBar chips:** TRADE, ALRT, PAYOFF. **Launchpad:** three new panels (`trade`, `alerts`, `payoff`) added to lg/md/sm layouts; existing scroll-into-view-on-flash now also drives the new panels (Quick chips smooth-scroll into view). `requirements.txt` adds `websockets==12.0`. Smoke test 88/88: 31 modules, 14 schemas, 6 Greeks, 7 payoff math, 27 HTTP routes, 3 WS routes. |
+| **6** | _pending commit_ | ✅ shipped | **GitHub OAuth login.** Hand-rolled HS256 JWT in `backend/core/auth.py` (no extra dep) issued as an HttpOnly `bt_session` cookie; `/api/auth/github/login` 302s to GitHub with a CSRF state cookie, `/api/auth/github/callback` exchanges the code, fetches `/user` (+ `/user/emails` fallback when the public email is private), upserts a Postgres `users` row, and 302s back to `FRONTEND_URL`. `/api/auth/me`, `/api/auth/logout`, `/api/auth/status` (so the UI can hide the button when the env vars aren't set). **Postgres schema bootstrap.** `backend/core/schema.py` runs idempotent `CREATE TABLE IF NOT EXISTS` for `users`, `user_watchlists`, `user_layouts`, `user_alert_rules` on FastAPI startup — no migration framework, the surface area is too small to justify it. **Per-user persistence.** `GET/PUT /api/me/watchlist` + `GET/PUT /api/me/layout` round-trip JSONB columns; `Terminal.jsx` reads on login, debounces layout PUTs at 600ms, falls back to localStorage when signed out. `Launchpad.jsx` extended with optional `controlledLayouts` / `controlledHidden` props so the parent can own state without losing the "merge in newly-added panels at factory positions" logic. **DuckDB SQL workbench.** `backend/core/sql_engine.py` runs an in-memory DuckDB con with `bars` (Alpaca/yfinance daily for 10 default symbols × 1y), `macro` (6 FRED series), and `filings` (EDGAR metadata) — warmed in a background task on startup so the server accepts requests immediately. `POST /api/sql` is read-only by construction: a regex validator rejects multiple statements + every DDL/DML keyword _before_ it hits DuckDB, queries run in a worker thread with a hard 8s timeout and 5000-row cap, results JSON-serialize Python types into strings so `Decimal` / `datetime` cells survive. `GET /api/sql/tables` lists schemas + row counts. `SqlPanel.jsx` ships with four preset queries, Cmd/Ctrl+Enter to run, and a sticky-header result table. `SQL`/`BQNT` mnemonics. **Full-text filings search via Meilisearch.** New `meilisearch:v1.7` service in docker-compose with a `meili_data` volume; `backend/data/sources/meilisearch_source.py` indexes filings metadata (always cheap) and optionally fetches+strips the EDGAR primary document body up to 500KB so phrase search works. `GET /api/filings/search?q=&symbol=&form_type=&limit=` and `POST /api/filings/{symbol}/index?full_text=` (admin-ish, on-demand). `FilingsSearchPanel.jsx` parses Meili's `<mark>` highlights into React nodes (no `dangerouslySetInnerHTML`). `SRCH`/`SEARCH` mnemonics. **Frontend.** New `useAuth` hook polls `/api/auth/me` + `/api/auth/status`; footer shows GitHub login button (hidden when not configured) + signed-in `@login` + LOGOUT. All `fetch` calls now send `credentials: "include"` so the cookie reaches the API. `LOGIN`/`LOGOUT`/`SQL`/`BQNT`/`SRCH`/`SEARCH` mnemonics + matching CommandBar chips; two new panels (`sql`, `search`) added to lg/md/sm layouts. **Infra.** `docker-compose.yml` adds Meili + a healthcheck for it + new env vars (`GITHUB_CLIENT_ID/SECRET`, `JWT_SECRET`, `MEILISEARCH_*`, `FRONTEND_URL`); `.env.example` updated with the new keys + GitHub OAuth callback instructions; `requirements.txt` adds `duckdb==0.10.2`. Smoke test 127/127: 41 modules, 14 schemas, 6 Greeks, 7 payoff math, 41 HTTP routes (incl. 14 new auth/me/sql/filings-search routes), 3 WS routes, 4 JWT roundtrip checks, 9 SQL-validator deny-list checks. |
 
 Clone & run: `git clone https://github.com/wpf002/bloomberg.git && cd bloomberg/bloomberg-terminal && cp .env.example .env && docker compose up --build`.
 
 ---
 
-## 1. Next session — Phase 6 candidate punch list
+## 1. Next session — Phase 7 candidate punch list
 
-Phase 5 completed all four roadmap items (WebSocket streaming, paper orders,
-rule-based alerts, options payoff). Open candidates for the next session,
-ranked by retail/prosumer leverage:
+Phase 6 completed all four roadmap items (GitHub OAuth + JWT cookies,
+per-user watchlist + Launchpad in Postgres, read-only DuckDB `/api/sql`
+workbench, Meilisearch full-text filings search). Open candidates for the
+next session, ranked by retail/prosumer leverage:
 
-1. **Auth + persistence.** Magic-link or GitHub OAuth, per-user watchlist +
-   Launchpad layout in Postgres, per-user alert rules. Today everything is
-   single-tenant: rules live in Redis under one global hash, layout in
-   localStorage. Auth unblocks shareable layouts (Phase 7) and removes the
-   "everyone sees the same alerts" footgun.
-2. **DuckDB-backed `/api/sql`.** Our BQL equivalent. Cache the FRED + Alpaca
-   bars + filings metadata into DuckDB; expose a read-only SQL endpoint with
-   a query budget. Lets users build dashboards we'd never think of.
-3. **Bracket / OCO orders.** Phase 5 ships market/limit/stop/stop-limit;
-   Alpaca supports brackets natively, the panel just doesn't wire them yet.
-   Useful for retail "set-and-forget" workflows.
-4. **Full-text filings search.** Meilisearch or Typesense over EDGAR text.
-   Currently we only show the filings index. The text is the value.
+1. **Shareable Launchpad layouts.** With layouts in Postgres, exporting
+   one as JSON / a public URL (`/u/dave/layouts/scalper`) is a small step
+   and gives us the "Dave's Watchlist" angle the roadmap calls out.
+2. **Per-user alert rules.** Today rules still live in a global Redis hash;
+   we have a `user_alert_rules` table waiting. Tag events with `user_id`
+   and split the WS topic to `alerts:user:{id}` so signed-in users only
+   see their own.
+3. **Bracket / OCO orders.** Carried over from Phase 5 — Alpaca supports
+   them natively; the ticket panel just doesn't wire them yet.
+4. **Indexer cron for filings search.** Today indexing is on-demand
+   per-symbol from the panel. A daily background task that re-indexes the
+   default watchlist would make `SRCH` useful before users even click.
 
 Pick one or two; ship together rather than fragmenting into sub-phases.
 
@@ -65,13 +66,13 @@ Status updated for everything shipped through Phase 3.
 | **Crypto** | `XBTC` `DIG` | ✅ Phase 1 | Phase 5: CEX L2 + on-chain |
 | **Macroeconomics** | `ECO` `WECO` `GDP` `CPI` | ✅ Phase 1 (FRED) | Phase 5: econ calendar |
 | **News** | `TOP` `N` `NI` `MLIV` | ✅ Phase 2 (Alpaca + RSS merged) | Phase 4: LLM summarization |
-| **Research (BI)** | Bloomberg Intelligence | ✅ Phase 4 (EXPLAIN / COMPARE via Claude) | Phase 6: full-text 10-K ingestion |
-| **Filings** | `CF` `FIL` | ✅ Phase 2 | Phase 6: full-text search |
+| **Research (BI)** | Bloomberg Intelligence | ✅ Phase 4 (EXPLAIN / COMPARE via Claude) + Phase 6 (full-text 10-K body indexed in Meili) | Phase 7: shareable briefs |
+| **Filings** | `CF` `FIL` | ✅ Phase 2 + Phase 6 (full-text via Meilisearch — `SRCH`) | Phase 7: indexer cron, citation links |
 | **Portfolio analytics** | `PORT` `MARS` | ✅ Phase 3.1 (live Alpaca paper) + Phase 5 (order entry) | Phase 6: factor risk, attribution |
 | **Trading / OMS/EMS** | `BXT` `TSOX` `EMSX` | ✅ Phase 5 (Alpaca paper market/limit/stop, cancel) | Phase 6: bracket / OCO orders |
 | **Alerting** | `ALRT` | ✅ Phase 5 (rule DSL + Redis Stream + WS fan-out) | Phase 7: shareable rules |
 | **Messaging / IB** | `MSG` `IB` | ❌ | Phase 7: optional Matrix room |
-| **Scripting / BQuant** | `BQL` `BQNT` | ❌ | Phase 6: `/api/sql` over DuckDB |
+| **Scripting / BQuant** | `BQL` `BQNT` | ✅ Phase 6 (`/api/sql` over DuckDB — `SQL` / `BQNT`) | Phase 7: per-user macros, save queries |
 | **Workspace / Launchpad** | Draggable multi-monitor | ✅ Phase 3 | Phase 7: shareable layout JSON |
 | **Command bar + mnemonics** | `GO` `DES` `N` `GP` `OMON` `HELP` | ✅ Phase 4 (fuzzy + history + Tab) + Phase 5 (TRADE / ALRT / PAYOFF chips) | Phase 6: per-user macros |
 | **Indices / benchmarks** | `WEI` `MMAP` `TOP GOV` | ✅ Phase 1.1 | Phase 4: sector heatmap |
@@ -130,12 +131,12 @@ Honest moats. Not trying to close these.
 - Alpaca paper order entry (`/api/orders` POST) — a proper EMS panel. ✅
 - Options payoff builder. ✅
 
-### Phase 6 — Persistence + scripting
+### Phase 6 — Persistence + scripting ✅ shipped
 
-- Auth (magic-link email or GitHub OAuth).
-- Per-user watchlists and Launchpad layouts in Postgres.
-- `/api/sql` endpoint over DuckDB on cached time-series data — our `BQL`.
-- Full-text filings search (Meilisearch or Typesense on EDGAR text).
+- GitHub OAuth + HS256 JWT cookies. ✅
+- Per-user watchlists and Launchpad layouts in Postgres. ✅
+- `/api/sql` endpoint over DuckDB on cached time-series data — our `BQL`. ✅
+- Full-text filings search via Meilisearch (metadata + on-demand body). ✅
 
 ### Phase 7 — Community + sharing
 

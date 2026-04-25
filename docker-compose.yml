@@ -32,6 +32,23 @@ services:
       timeout: 5s
       retries: 5
 
+  meilisearch:
+    image: getmeili/meilisearch:v1.7
+    container_name: bt-meilisearch
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-bt-meili-dev-key}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: ${APP_ENV:-development}
+    ports:
+      - "${MEILISEARCH_PORT:-7700}:7700"
+    volumes:
+      - meili_data:/meili_data
+    # No healthcheck: the official image lacks wget/curl, and the backend
+    # already gates every Meili call on a runtime /health probe so the app
+    # works even if this service starts late or never. depends_on uses
+    # `service_started` instead of `service_healthy` for the same reason.
+
   backend:
     build:
       context: .
@@ -43,6 +60,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      meilisearch:
+        condition: service_started
     environment:
       APP_ENV: ${APP_ENV:-development}
       DEBUG: ${DEBUG:-true}
@@ -53,6 +72,8 @@ services:
       POSTGRES_PORT: 5432
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      MEILISEARCH_URL: http://meilisearch:7700
+      MEILISEARCH_MASTER_KEY: ${MEILISEARCH_MASTER_KEY:-bt-meili-dev-key}
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
       ALPACA_BASE_URL: ${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
@@ -62,6 +83,10 @@ services:
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
       FMP_API_KEY: ${FMP_API_KEY:-}
       SEC_USER_AGENT: ${SEC_USER_AGENT:-bloomberg-terminal research@example.com}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -86,3 +111,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  meili_data:

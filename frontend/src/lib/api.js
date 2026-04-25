@@ -16,6 +16,7 @@ async function request(path, options = {}) {
   const url = `${BASE}${path}`;
   const resp = await fetch(url, {
     headers: { "Content-Type": "application/json" },
+    credentials: "include",
     ...options,
   });
   if (!resp.ok) {
@@ -99,4 +100,51 @@ export const api = {
   // ── options payoff ────────────────────────────────────────────────────
   optionsPayoff: (body) =>
     request(`/api/options/payoff`, { method: "POST", body: JSON.stringify(body) }),
+
+  // ── auth ──────────────────────────────────────────────────────────────
+  authMe: () => request(`/api/auth/me`),
+  authStatus: () => request(`/api/auth/status`),
+  authLogout: () => request(`/api/auth/logout`, { method: "POST" }),
+  // GitHub OAuth login is a full-page redirect, not a fetch — we expose the
+  // URL so the caller can `window.location.assign` it.
+  authLoginUrl: () => `${BASE}/api/auth/github/login`,
+
+  // ── per-user state ────────────────────────────────────────────────────
+  meWatchlist: () => request(`/api/me/watchlist`),
+  putWatchlist: (symbols) =>
+    request(`/api/me/watchlist`, {
+      method: "PUT",
+      body: JSON.stringify({ symbols }),
+    }),
+  meLayout: () => request(`/api/me/layout`),
+  putLayout: (layouts, hidden) =>
+    request(`/api/me/layout`, {
+      method: "PUT",
+      body: JSON.stringify({ layouts, hidden }),
+    }),
+
+  // ── SQL (DuckDB) ──────────────────────────────────────────────────────
+  sqlTables: () => request(`/api/sql/tables`),
+  sqlQuery: (query, maxRows) =>
+    request(`/api/sql`, {
+      method: "POST",
+      body: JSON.stringify({ query, max_rows: maxRows ?? null }),
+    }),
+
+  // ── filings search ────────────────────────────────────────────────────
+  filingsSearch: (q, { symbol, formType, limit = 20 } = {}) => {
+    const params = new URLSearchParams({ q, limit: String(limit) });
+    if (symbol) params.set("symbol", symbol);
+    if (formType) params.set("form_type", formType);
+    return request(`/api/filings/search?${params.toString()}`);
+  },
+  indexFilings: (symbol, { fullText = false, limit = 10 } = {}) => {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      full_text: fullText ? "true" : "false",
+    });
+    return request(`/api/filings/${encodeURIComponent(symbol)}/index?${params.toString()}`, {
+      method: "POST",
+    });
+  },
 };

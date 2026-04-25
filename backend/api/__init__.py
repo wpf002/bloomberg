@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from .routes import (
     alerts,
+    auth,
     calendar,
     compare,
     crypto,
@@ -10,6 +11,7 @@ from .routes import (
     fundamentals,
     fx,
     macro,
+    me,
     news,
     options,
     orders,
@@ -17,6 +19,7 @@ from .routes import (
     portfolio,
     quotes,
     sizing,
+    sql,
     streams,
 )
 
@@ -38,5 +41,8 @@ api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
 api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(streams.router, prefix="/ws", tags=["streams"])
+api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
+api_router.include_router(me.router, prefix="/me", tags=["me"])
+api_router.include_router(sql.router, prefix="/sql", tags=["sql"])
 
 __all__ = ["api_router"]

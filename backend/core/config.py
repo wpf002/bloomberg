@@ -43,6 +43,30 @@ class Settings(BaseSettings):
     fmp_api_key: str | None = None
     sec_user_agent: str = "bloomberg-terminal research@example.com"
 
+    # Frontend URL the GitHub OAuth callback should redirect back to after
+    # setting the session cookie. Falls back to the Vite dev server.
+    frontend_url: str = "http://localhost:5173"
+
+    # GitHub OAuth — register an application at https://github.com/settings/developers
+    # with callback URL "<api>/api/auth/github/callback".
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
+
+    # Session JWT signing. Auto-generated on first boot if unset; persisted
+    # tokens become invalid across restarts in that case (acceptable for dev).
+    jwt_secret: str | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_ttl_hours: int = 24 * 30  # 30 days
+    session_cookie_name: str = "bt_session"
+
+    # Meilisearch (filings full-text index).
+    meilisearch_url: str = "http://meilisearch:7700"
+    meilisearch_master_key: str = "bt-meili-dev-key"
+
+    # /api/sql safety rails.
+    sql_query_max_rows: int = 5000
+    sql_query_timeout_seconds: float = 8.0
+
     risk_free_rate: float = 0.045
     default_cache_ttl: int = 60
     rss_timeout_seconds: float = 6.0
