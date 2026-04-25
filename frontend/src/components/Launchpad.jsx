@@ -148,17 +148,28 @@ export default function Launchpad({
     [panels, hidden]
   );
 
-  // Scroll the flashed panel into view when a command/quick-action fires.
-  // `block: "center"` (vs "nearest") forces a real scroll even when the panel
-  // is partially visible — otherwise clicking a chip for an off-screen panel
-  // appears to do nothing on tall layouts.
+  // Scroll the flashed panel into view ONLY if it isn't already visible.
+  // Clicking a chip for a panel that's already on screen used to jump the
+  // viewport (centering "the active panel") which felt like a glitch — the
+  // amber flash is enough visual feedback when the panel is in view. We
+  // still scroll when the panel is fully or mostly off-screen so chips for
+  // panels lower in the layout actually go somewhere.
   const tileRefs = useRef({});
   useEffect(() => {
     if (!flash) return;
     const el = tileRefs.current[flash];
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
-    }
+    if (!el || typeof el.getBoundingClientRect !== "function") return;
+    const rect = el.getBoundingClientRect();
+    const viewportH = window.innerHeight || document.documentElement.clientHeight;
+    // Treat "in view" as: at least 30% of the panel's height is on screen.
+    // This still fires the scroll when the panel is barely peeking from
+    // the top/bottom edge — those cases benefit from being centered.
+    const visibleTop = Math.max(0, rect.top);
+    const visibleBottom = Math.min(viewportH, rect.bottom);
+    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+    const inView = rect.height > 0 && visibleHeight / rect.height >= 0.3;
+    if (inView) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
   }, [flash]);
 
   return (
