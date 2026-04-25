@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Responsive, WidthProvider } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -148,28 +148,60 @@ export default function Launchpad({
     [panels, hidden]
   );
 
-  // Scroll the flashed panel into view ONLY if it isn't already visible.
-  // Clicking a chip for a panel that's already on screen used to jump the
-  // viewport (centering "the active panel") which felt like a glitch — the
-  // amber flash is enough visual feedback when the panel is in view. We
-  // still scroll when the panel is fully or mostly off-screen so chips for
-  // panels lower in the layout actually go somewhere.
-  const tileRefs = useRef({});
+  // Scroll the flashed panel into view when a chip/command fires.
+  //
+  // Two non-obvious choices here:
+  //
+  // 1. We query the panel by `data-panel-id` rather than holding a ref.
+  //    An inline ref callback gets recreated on every render, which means
+  //    on a flash transition React calls the OLD callback with `null` and
+  //    then the new one with the node — but the timing relative to our
+  //    effect is brittle and was leaving the ref empty when the effect
+  //    fired. A DOM query has no such timing dependency.
+  //
+  // 2. We try `<main>` first and fall back through `.launchpad` and the
+  //    document — `<main>` is the actual scroll container in our layout
+  //    and the loop short-circuits on the first one that moves. Walking
+  //    fallbacks costs nothing when the first attempt succeeds and saves
+  //    us if the markup ever shifts.
   useEffect(() => {
     if (!flash) return;
-    const el = tileRefs.current[flash];
-    if (!el || typeof el.getBoundingClientRect !== "function") return;
-    const rect = el.getBoundingClientRect();
-    const viewportH = window.innerHeight || document.documentElement.clientHeight;
-    // Treat "in view" as: at least 30% of the panel's height is on screen.
-    // This still fires the scroll when the panel is barely peeking from
-    // the top/bottom edge — those cases benefit from being centered.
-    const visibleTop = Math.max(0, rect.top);
-    const visibleBottom = Math.min(viewportH, rect.bottom);
-    const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-    const inView = rect.height > 0 && visibleHeight / rect.height >= 0.3;
-    if (inView) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    // Defer one frame so the freshly-applied panel-flash class has
+    // committed and the panel is laid out at its current position.
+    let cancelled = false;
+    const handle = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const el = document.querySelector(`[data-panel-id="${flash}"]`);
+      if (!el) return;
+      const elRect = el.getBoundingClientRect();
+      const candidates = [
+        document.querySelector("main"),
+        document.querySelector(".launchpad"),
+        document.scrollingElement,
+        document.documentElement,
+      ].filter(Boolean);
+      for (const container of candidates) {
+        const containerRect = container.getBoundingClientRect();
+        const containerHeight = container.clientHeight || containerRect.height || 0;
+        if (containerHeight <= 0) continue;
+        const elTopWithinContainer =
+          elRect.top - containerRect.top + container.scrollTop;
+        const target = Math.max(
+          0,
+          Math.min(
+            Math.max(0, container.scrollHeight - containerHeight),
+            elTopWithinContainer - (containerHeight - elRect.height) / 2
+          )
+        );
+        const before = container.scrollTop;
+        container.scrollTop = target;
+        if (Math.abs(container.scrollTop - before) > 1) break;
+      }
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(handle);
+    };
   }, [flash]);
 
   return (
@@ -221,10 +253,7 @@ export default function Launchpad({
         {visiblePanels.map((p) => (
           <div
             key={p.id}
-            ref={(node) => {
-              if (node) tileRefs.current[p.id] = node;
-              else delete tileRefs.current[p.id];
-            }}
+            data-panel-id={p.id}
             className={`flex min-h-0 ${flash === p.id ? "panel-flash" : ""}`}
           >
             {p.render()}
