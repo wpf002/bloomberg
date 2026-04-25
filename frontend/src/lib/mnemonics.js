@@ -37,6 +37,7 @@ export const MNEMONICS = {
   EVTS:    { intent: "calendar",  description: "Events / earnings calendar" },
   LAYOUT:  { intent: "layout",    description: "Toggle launchpad edit mode" },
   RESET:   { intent: "reset",     description: "Reset launchpad layout" },
+  SHARE:   { intent: "share",     description: "Publish current Launchpad as a public URL" },
   SQL:     { intent: "sql",       description: "DuckDB SQL workbench (bars / macro / filings)" },
   BQNT:    { intent: "sql",       description: "DuckDB SQL workbench (BQuant analogue)" },
   SRCH:    { intent: "search",    description: "Full-text filings search (Meilisearch)" },

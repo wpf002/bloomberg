@@ -123,6 +123,20 @@ export const api = {
       body: JSON.stringify({ layouts, hidden }),
     }),
 
+  // ── shared layouts (Phase 7) ──────────────────────────────────────────
+  shareLayout: (name) =>
+    request(`/api/me/layout/share`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  myShares: () => request(`/api/me/layout/shares`),
+  deleteShare: (slug) =>
+    request(`/api/me/layout/shares/${encodeURIComponent(slug)}`, {
+      method: "DELETE",
+    }),
+  fetchSharedLayout: (slug) =>
+    request(`/api/shared/layouts/${encodeURIComponent(slug)}`),
+
   // ── SQL (DuckDB) ──────────────────────────────────────────────────────
   sqlTables: () => request(`/api/sql/tables`),
   sqlQuery: (query, maxRows) =>

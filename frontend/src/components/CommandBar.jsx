@@ -145,7 +145,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
             BLOOMBERG TERMINAL
           </span>
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            v0.1 · Phase 6 · Public Edition
+            v0.1 · Phase 7 · Public Edition
           </span>
         </div>
         <form onSubmit={submit} className="relative flex-1">

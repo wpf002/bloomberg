@@ -250,7 +250,8 @@ class ComparisonBrief(BaseModel):
 
 class OrderRequest(BaseModel):
     """Inbound order ticket. Mirrors the subset of Alpaca's POST /v2/orders we
-    care about — equity orders only, no advanced legs / brackets / OTOs."""
+    care about — equity orders, including bracket / OCO / OTO order classes
+    for set-and-forget retail workflows."""
     symbol: str
     qty: float = Field(gt=0)
     side: str = Field(description="buy or sell")
@@ -260,6 +261,14 @@ class OrderRequest(BaseModel):
     stop_price: Optional[float] = None
     extended_hours: bool = False
     client_order_id: Optional[str] = None
+    # Order class. `simple` is the default single-leg order; `bracket`
+    # attaches matching take-profit + stop-loss legs that fill once the entry
+    # fills; `oco` is two paired exit legs (no entry leg); `oto` is the entry
+    # plus one of the two exit legs.
+    order_class: str = Field(default="simple", description="simple | bracket | oco | oto")
+    take_profit_limit_price: Optional[float] = None
+    stop_loss_stop_price: Optional[float] = None
+    stop_loss_limit_price: Optional[float] = None
 
 
 class Order(BaseModel):
@@ -280,6 +289,8 @@ class Order(BaseModel):
     filled_at: Optional[datetime] = None
     canceled_at: Optional[datetime] = None
     extended_hours: bool = False
+    order_class: Optional[str] = None  # simple | bracket | oco | oto
+    legs: List["Order"] = Field(default_factory=list)  # bracket/oco children
     source: str = "alpaca-paper"
 
 
@@ -307,12 +318,29 @@ class AlertRule(BaseModel):
 
 
 class AlertEvent(BaseModel):
-    """Fired event broadcast to WS subscribers + persisted to a Redis stream."""
+    """Fired event broadcast to WS subscribers + persisted to a Redis stream.
+
+    `user_id` is set when the rule belongs to a signed-in user; None for
+    legacy global rules. The streaming layer fans out per-user events on
+    `alerts:user:{id}` so users only see their own fires.
+    """
     rule_id: str
     symbol: str
     name: Optional[str] = None
     matched_at: datetime = Field(default_factory=datetime.utcnow)
     snapshot: dict = Field(default_factory=dict)
+    user_id: Optional[int] = None
+
+
+class SharedLayout(BaseModel):
+    """A Launchpad layout published as a public-read URL."""
+    slug: str
+    owner_login: str
+    name: str
+    layouts: dict
+    hidden: List[str] = Field(default_factory=list)
+    view_count: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class PayoffLeg(BaseModel):

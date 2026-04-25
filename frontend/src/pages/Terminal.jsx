@@ -18,6 +18,7 @@ import OrderTicket from "../components/OrderTicket.jsx";
 import Panel from "../components/Panel.jsx";
 import PayoffPanel from "../components/PayoffPanel.jsx";
 import Portfolio from "../components/Portfolio.jsx";
+import ShareLayoutDialog from "../components/ShareLayoutDialog.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
 import SqlPanel from "../components/SqlPanel.jsx";
 import Watchlist from "../components/Watchlist.jsx";
@@ -61,6 +62,7 @@ const INTENT_TO_PANEL = {
   help: "help",
   layout: "layout",
   reset: "reset",
+  share: "share",
   login: "login",
   logout: "logout",
   unknown: null,
@@ -143,6 +145,7 @@ export default function Terminal() {
   const [editMode, setEditMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [lastCommand, setLastCommand] = useState(null);
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
@@ -153,6 +156,47 @@ export default function Terminal() {
   const [serverLayouts, setServerLayouts] = useState(null);
   const [serverHidden, setServerHidden] = useState(null);
   const layoutPutTimer = useRef(null);
+
+  // Phase 7: when the URL contains ?layout=<slug>, fetch that public
+  // shared layout and render it instead of the user's own. Read-only —
+  // dragging is disabled and writes back to /api/me/layout are suppressed.
+  const [sharedView, setSharedView] = useState(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get("layout");
+    if (!slug) return;
+    let active = true;
+    api
+      .fetchSharedLayout(slug)
+      .then((data) => {
+        if (active) setSharedView(data);
+      })
+      .catch(() => {
+        if (active) setSharedView({ error: "shared layout not found", slug });
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const exitSharedView = () => {
+    setSharedView(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("layout");
+    window.history.replaceState({}, "", url.toString());
+  };
+
+  const adoptSharedView = async () => {
+    if (!user || !sharedView || sharedView.error) return;
+    try {
+      await api.putLayout(sharedView.layouts ?? {}, sharedView.hidden ?? []);
+      setServerLayouts(sharedView.layouts ?? {});
+      setServerHidden(sharedView.hidden ?? []);
+      exitSharedView();
+    } catch {
+      // Surface failure but don't crash; user can retry.
+    }
+  };
 
   // Load per-user state from the backend on login. On logout, fall back to
   // the local default symbol set so the user isn't stuck on a now-private
@@ -247,6 +291,9 @@ export default function Terminal() {
         case "reset":
           setResetKey((k) => k + 1);
           return;
+        case "share":
+          if (user) setShareOpen(true);
+          return;
         case "login":
           login();
           return;
@@ -259,7 +306,7 @@ export default function Terminal() {
         }
       }
     },
-    [triggerFlash, persistWatchlist, login, logout]
+    [triggerFlash, persistWatchlist, login, logout, user]
   );
 
   const handleSelect = useCallback(
@@ -302,23 +349,69 @@ export default function Terminal() {
         activeSymbol={activeSymbol}
         lastCommand={lastCommand}
       />
+      {sharedView ? (
+        <div className="flex flex-wrap items-center gap-3 border-b border-terminal-amber/60 bg-terminal-amber/10 px-4 py-1.5 text-[11px] uppercase tracking-widest text-terminal-amber">
+          {sharedView.error ? (
+            <>
+              <span>Shared layout <code>{sharedView.slug}</code> not found.</span>
+              <button onClick={exitSharedView} className="hover:underline">
+                Dismiss
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                Viewing <span className="font-bold">{sharedView.name}</span> by @
+                {sharedView.owner_login} · {sharedView.view_count} views
+              </span>
+              <span className="ml-auto flex items-center gap-3">
+                {user ? (
+                  <button onClick={adoptSharedView} className="hover:underline">
+                    Save to my account
+                  </button>
+                ) : (
+                  <span className="text-terminal-muted">Sign in to save</span>
+                )}
+                <button onClick={exitSharedView} className="hover:underline">
+                  Exit shared view
+                </button>
+              </span>
+            </>
+          )}
+        </div>
+      ) : null}
       <main className="flex-1 min-h-0 overflow-auto">
         <Launchpad
           panels={panels}
           defaultLayouts={DEFAULT_LAYOUTS}
-          editMode={editMode}
+          editMode={editMode && !sharedView}
           resetKey={resetKey}
           flash={flash}
-          controlledLayouts={user ? serverLayouts ?? {} : undefined}
-          controlledHidden={user ? serverHidden ?? [] : undefined}
+          controlledLayouts={
+            sharedView && !sharedView.error
+              ? sharedView.layouts ?? {}
+              : user
+                ? serverLayouts ?? {}
+                : undefined
+          }
+          controlledHidden={
+            sharedView && !sharedView.error
+              ? sharedView.hidden ?? []
+              : user
+                ? serverHidden ?? []
+                : undefined
+          }
           onLayoutsChange={(next) => {
+            if (sharedView) return; // read-only when viewing a shared layout
             setServerLayouts(next);
             persistLayout(next, serverHidden ?? []);
           }}
           onHiddenChange={(next) => {
+            if (sharedView) return;
             setServerHidden(next);
             persistLayout(serverLayouts ?? {}, next);
           }}
+          onShare={user && !sharedView ? () => setShareOpen(true) : undefined}
         />
       </main>
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
@@ -363,8 +456,9 @@ export default function Terminal() {
             </span>
           )}
         </span>
-        <span>Phase 6 · Auth · Per-user state · DuckDB SQL · Filings search</span>
+        <span>Phase 7 · Shareable layouts · Per-user alerts · Bracket/OCO orders</span>
       </footer>
+      <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       {helpOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"

@@ -4,15 +4,52 @@ from typing import List
 
 import httpx
 
+from ...core.bsm import bsm_greeks, year_fraction
 from ...core.cache_utils import cached
 from ...core.config import settings
-from ...models.schemas import Account, NewsItem, Order, OrderRequest, Position, Quote, QuoteHistoryPoint
+from ...models.schemas import (
+    Account,
+    NewsItem,
+    OptionChain,
+    OptionContract,
+    Order,
+    OrderRequest,
+    Position,
+    Quote,
+    QuoteHistoryPoint,
+)
 
 logger = logging.getLogger(__name__)
 
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2"
 ALPACA_NEWS_BASE = "https://data.alpaca.markets/v1beta1/news"
 ALPACA_CRYPTO_BASE = "https://data.alpaca.markets/v1beta3/crypto/us"
+ALPACA_OPTIONS_BASE = "https://data.alpaca.markets/v1beta1/options"
+
+
+def _parse_occ_symbol(symbol: str) -> tuple[str, str, float] | None:
+    """Decode an OCC-style option symbol like AAPL250117C00150000 into
+    (expiration ISO, type, strike). Returns None on malformed input.
+
+    OCC layout (right-aligned): 6 chars YYMMDD, 1 char C|P, 8 chars
+    (strike × 1000) zero-padded. Anything before that is the root.
+    """
+    if not symbol or len(symbol) < 16:
+        return None
+    body = symbol[-15:]
+    yymmdd = body[:6]
+    typ = body[6]
+    strike_raw = body[7:]
+    try:
+        year = 2000 + int(yymmdd[0:2])
+        month = int(yymmdd[2:4])
+        day = int(yymmdd[4:6])
+        strike = int(strike_raw) / 1000.0
+    except ValueError:
+        return None
+    if typ not in ("C", "P"):
+        return None
+    return (f"{year:04d}-{month:02d}-{day:02d}", "call" if typ == "C" else "put", strike)
 
 # yfinance-style → Alpaca bar timeframe enum
 _INTERVAL_TO_TIMEFRAME = {
@@ -324,6 +361,8 @@ class AlpacaSource:
             return None
 
     def _to_order(self, data: dict) -> Order:
+        legs_raw = data.get("legs") or []
+        legs = [self._to_order(leg) for leg in legs_raw if isinstance(leg, dict)]
         return Order(
             id=str(data.get("id") or ""),
             client_order_id=data.get("client_order_id"),
@@ -342,6 +381,8 @@ class AlpacaSource:
             filled_at=self._parse_dt(data.get("filled_at")),
             canceled_at=self._parse_dt(data.get("canceled_at")),
             extended_hours=bool(data.get("extended_hours", False)),
+            order_class=data.get("order_class") or None,
+            legs=legs,
         )
 
     async def list_orders(self, status: str = "all", limit: int = 50) -> List[Order]:
@@ -360,6 +401,11 @@ class AlpacaSource:
         """POST /v2/orders. Lets Alpaca enforce validation (insufficient
         buying power, halted symbol, etc.) and propagates its error message
         back to the route layer.
+
+        Supports `simple` (default) plus the bracket/OCO/OTO order classes:
+        - bracket: entry + take-profit + stop-loss in one submission
+        - oco:     two paired exit legs only (no entry)
+        - oto:     entry + one of {take-profit, stop-loss}
         """
         if not self._enabled():
             raise RuntimeError("alpaca credentials not configured")
@@ -378,6 +424,30 @@ class AlpacaSource:
             payload["stop_price"] = str(order.stop_price)
         if order.client_order_id:
             payload["client_order_id"] = order.client_order_id
+
+        order_class = (order.order_class or "simple").lower()
+        if order_class != "simple":
+            payload["order_class"] = order_class
+            tp: dict = {}
+            sl: dict = {}
+            if order.take_profit_limit_price is not None:
+                tp["limit_price"] = str(order.take_profit_limit_price)
+            if order.stop_loss_stop_price is not None:
+                sl["stop_price"] = str(order.stop_loss_stop_price)
+            if order.stop_loss_limit_price is not None:
+                sl["limit_price"] = str(order.stop_loss_limit_price)
+            if order_class == "bracket":
+                payload["take_profit"] = tp
+                payload["stop_loss"] = sl
+            elif order_class == "oco":
+                payload["take_profit"] = tp
+                payload["stop_loss"] = sl
+            elif order_class == "oto":
+                if tp:
+                    payload["take_profit"] = tp
+                if sl:
+                    payload["stop_loss"] = sl
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, headers=self._headers, json=payload)
         if resp.status_code not in (200, 201):
@@ -385,6 +455,186 @@ class AlpacaSource:
             logger.warning("Alpaca place_order -> %s: %s", resp.status_code, detail)
             raise RuntimeError(f"alpaca rejected order ({resp.status_code}): {detail}")
         return self._to_order(resp.json())
+
+    # ── options ──────────────────────────────────────────────────────────
+
+    @cached("alpaca:opt_exps", ttl=300, model=None)
+    async def list_option_expirations(self, symbol: str) -> list[str]:
+        """Active future expiration dates for `symbol`'s options. Returns an
+        empty list when Alpaca doesn't carry the underlying (most non-US,
+        and any symbol the account isn't entitled to)."""
+        if not self._enabled():
+            return []
+        # /v2/options/contracts lives on the trading host (paper-api.alpaca.markets
+        # in dev, api.alpaca.markets in live) — same host as orders/positions.
+        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/options/contracts"
+        today = datetime.now(timezone.utc).date().isoformat()
+        params: dict = {
+            "underlying_symbols": symbol.upper(),
+            "status": "active",
+            "expiration_date_gte": today,
+            "limit": 10000,
+        }
+        seen: set[str] = set()
+        page_token: str | None = None
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for _ in range(5):  # cap pagination — even AAPL fits in 1-2 pages
+                if page_token:
+                    params["page_token"] = page_token
+                resp = await client.get(url, headers=self._headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Alpaca options contracts %s -> %s: %s",
+                        symbol, resp.status_code, resp.text[:200],
+                    )
+                    return []
+                payload = resp.json() or {}
+                for item in payload.get("option_contracts") or []:
+                    exp = item.get("expiration_date")
+                    if isinstance(exp, str):
+                        seen.add(exp)
+                page_token = payload.get("next_page_token")
+                if not page_token:
+                    break
+        return sorted(seen)
+
+    @cached("alpaca:opt_chain", ttl=30, model=OptionChain)
+    async def get_option_chain(
+        self,
+        symbol: str,
+        expiration: str | None = None,
+    ) -> OptionChain:
+        """Snapshot the chain for one expiration. We default to the nearest
+        future expiration when none is specified. The free `feed=indicative`
+        is delayed but covers the same contracts as the paid OPRA feed.
+
+        Returns an empty chain (with `expirations=[]`) when Alpaca returns
+        no data — the route layer falls through to yfinance in that case.
+        """
+        if not self._enabled():
+            return OptionChain(symbol=symbol.upper())
+        sym = symbol.upper()
+        try:
+            expirations = await self.list_option_expirations(sym)
+        except Exception as exc:
+            logger.warning("alpaca expirations failed for %s: %s", sym, exc)
+            expirations = []
+        if not expirations:
+            return OptionChain(symbol=sym)
+        target = expiration if expiration in expirations else expirations[0]
+
+        # Pull the underlying spot for moneyness/Greeks (fast — already cached
+        # by get_stock_quote).
+        spot: float | None = None
+        try:
+            quote = await self.get_stock_quote(sym)
+            spot = quote.price if quote else None
+        except Exception:
+            spot = None
+
+        url = f"{ALPACA_OPTIONS_BASE}/snapshots/{sym}"
+        params: dict = {
+            "feed": "indicative",
+            "expiration_date": target,
+            "limit": 1000,
+        }
+        snapshots: dict = {}
+        page_token: str | None = None
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for _ in range(3):
+                if page_token:
+                    params["page_token"] = page_token
+                resp = await client.get(url, headers=self._headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Alpaca options snapshots %s -> %s: %s",
+                        sym, resp.status_code, resp.text[:200],
+                    )
+                    return OptionChain(symbol=sym, expirations=expirations)
+                payload = resp.json() or {}
+                snapshots.update(payload.get("snapshots") or {})
+                page_token = payload.get("next_page_token")
+                if not page_token:
+                    break
+
+        if not snapshots:
+            return OptionChain(symbol=sym, expirations=expirations, selected_expiration=target)
+
+        rate = settings.risk_free_rate
+        t_years = year_fraction(target)
+        calls: list[OptionContract] = []
+        puts: list[OptionContract] = []
+        for contract_symbol, snap in snapshots.items():
+            decoded = _parse_occ_symbol(contract_symbol)
+            if not decoded:
+                continue
+            _, option_type, strike = decoded
+            quote = (snap or {}).get("latestQuote") or {}
+            trade = (snap or {}).get("latestTrade") or {}
+            iv = _f((snap or {}).get("impliedVolatility")) or 0.0
+            greeks = (snap or {}).get("greeks") or {}
+            bid = _f(quote.get("bp"))
+            ask = _f(quote.get("ap"))
+            last = _f(trade.get("p"))
+            volume = int(_f(trade.get("s")) or 0)
+            # Alpaca's snapshot doesn't include open_interest reliably; some
+            # responses do, leave 0 when absent.
+            open_interest = int(_f((snap or {}).get("openInterest")) or 0)
+
+            # Greeks: prefer Alpaca's served Greeks; fall back to BSM when the
+            # snapshot omits them (common on illiquid contracts).
+            delta = _of(greeks.get("delta"))
+            gamma = _of(greeks.get("gamma"))
+            vega = _of(greeks.get("vega"))
+            theta = _of(greeks.get("theta"))
+            rho = _of(greeks.get("rho"))
+            if (delta is None or gamma is None) and spot and strike and iv > 0:
+                bsm = bsm_greeks(spot, strike, t_years, rate, iv, option_type == "call")
+                delta = delta if delta is not None else bsm.delta
+                gamma = gamma if gamma is not None else bsm.gamma
+                vega = vega if vega is not None else bsm.vega
+                theta = theta if theta is not None else bsm.theta
+                rho = rho if rho is not None else bsm.rho
+
+            moneyness = (spot / strike) if (spot and strike) else None
+            in_the_money = bool(
+                spot
+                and (
+                    (option_type == "call" and spot > strike)
+                    or (option_type == "put" and spot < strike)
+                )
+            )
+            contract = OptionContract(
+                contract_symbol=contract_symbol,
+                option_type=option_type,
+                strike=strike,
+                expiration=target,
+                bid=bid or 0.0,
+                ask=ask or 0.0,
+                last=last or 0.0,
+                volume=volume,
+                open_interest=open_interest,
+                implied_volatility=iv,
+                in_the_money=in_the_money,
+                delta=delta,
+                gamma=gamma,
+                vega=vega,
+                theta=theta,
+                rho=rho,
+                moneyness=moneyness,
+            )
+            (calls if option_type == "call" else puts).append(contract)
+
+        calls.sort(key=lambda c: c.strike)
+        puts.sort(key=lambda c: c.strike)
+        return OptionChain(
+            symbol=sym,
+            underlying_price=spot,
+            selected_expiration=target,
+            expirations=expirations,
+            calls=calls,
+            puts=puts,
+        )
 
     async def cancel_order(self, order_id: str) -> bool:
         if not self._enabled():

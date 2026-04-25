@@ -59,12 +59,22 @@ async def get_chain(
     symbol: str,
     expiration: str | None = Query(None, description="YYYY-MM-DD; defaults to the nearest expiration"),
 ) -> OptionChain:
+    """Option chain for `symbol`. Alpaca is the primary source (real
+    OPRA-derived snapshots, paginated, served Greeks); yfinance is the
+    fragile fallback for symbols Alpaca doesn't cover or when Alpaca
+    returns nothing for this expiration."""
     sym = symbol.upper()
+    # Alpaca first.
+    try:
+        chain = await _alpaca.get_option_chain(sym, expiration=expiration)
+        if chain.calls or chain.puts:
+            return chain
+    except Exception as exc:
+        logger.warning("alpaca options failed for %s: %s", sym, exc)
+    # yfinance fallback (indices like SPX, non-US tickers, anything Alpaca
+    # doesn't carry, or weeks where Alpaca returns no snapshot data).
     try:
         return await _yf.get_option_chain(sym, expiration=expiration)
     except Exception as exc:
-        # yfinance scrapes Yahoo; transient 429s and JSON-decode errors are
-        # expected. Return an empty chain so the UI can render a "no data"
-        # state instead of a scary 502.
-        logger.warning("options provider failed for %s: %s", sym, exc)
+        logger.warning("yfinance options fallback failed for %s: %s", sym, exc)
         return OptionChain(symbol=sym)

@@ -14,6 +14,14 @@ function fmt(value, digits = 2) {
 
 const TYPES = ["market", "limit", "stop", "stop_limit"];
 const TIFS = ["day", "gtc", "ioc", "fok", "opg", "cls"];
+// `simple` matches Alpaca's default; the others wrap the entry leg with
+// take-profit / stop-loss children in a single submission.
+const ORDER_CLASSES = [
+  { value: "simple",  label: "simple",  hint: "single-leg order" },
+  { value: "bracket", label: "bracket", hint: "entry + TP + SL" },
+  { value: "oco",     label: "oco",     hint: "two paired exits (no entry)" },
+  { value: "oto",     label: "oto",     hint: "entry + TP or SL" },
+];
 
 export default function OrderTicket({ symbol }) {
   const [side, setSide] = useState("buy");
@@ -23,6 +31,10 @@ export default function OrderTicket({ symbol }) {
   const [limitPrice, setLimitPrice] = useState("");
   const [stopPrice, setStopPrice] = useState("");
   const [extended, setExtended] = useState(false);
+  const [orderClass, setOrderClass] = useState("simple");
+  const [tpLimit, setTpLimit] = useState("");
+  const [slStop, setSlStop] = useState("");
+  const [slLimit, setSlLimit] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState(null);
   const [lastSubmitted, setLastSubmitted] = useState(null);
@@ -33,7 +45,17 @@ export default function OrderTicket({ symbol }) {
 
   useEffect(() => {
     setSubmitErr(null);
-  }, [symbol, type, side]);
+  }, [symbol, type, side, orderClass]);
+
+  // Bracket orders need a TIF the broker accepts; quietly nudge the user.
+  useEffect(() => {
+    if (orderClass === "bracket" && tif !== "day" && tif !== "gtc") {
+      setTif("day");
+    }
+  }, [orderClass]);
+
+  const wantTakeProfit = ["bracket", "oco", "oto"].includes(orderClass);
+  const wantStopLoss = ["bracket", "oco", "oto"].includes(orderClass);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -48,9 +70,13 @@ export default function OrderTicket({ symbol }) {
         type,
         time_in_force: tif,
         extended_hours: extended,
+        order_class: orderClass,
       };
       if (type === "limit" || type === "stop_limit") body.limit_price = Number(limitPrice);
       if (type === "stop" || type === "stop_limit") body.stop_price = Number(stopPrice);
+      if (wantTakeProfit && tpLimit !== "") body.take_profit_limit_price = Number(tpLimit);
+      if (wantStopLoss && slStop !== "") body.stop_loss_stop_price = Number(slStop);
+      if (wantStopLoss && slLimit !== "") body.stop_loss_limit_price = Number(slLimit);
       const placed = await api.placeOrder(body);
       setLastSubmitted(placed);
       setRefreshKey((k) => k + 1);
@@ -152,6 +178,20 @@ export default function OrderTicket({ symbol }) {
                 ))}
               </select>
             </Field>
+            <Field label="Class">
+              <select
+                value={orderClass}
+                onChange={(e) => setOrderClass(e.target.value)}
+                className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
+                title={ORDER_CLASSES.find((c) => c.value === orderClass)?.hint}
+              >
+                {ORDER_CLASSES.map((c) => (
+                  <option key={c.value} value={c.value} title={c.hint}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <label className="col-span-2 flex items-center gap-2 text-terminal-muted">
               <input
                 type="checkbox"
@@ -182,6 +222,49 @@ export default function OrderTicket({ symbol }) {
                 />
               </Field>
             )}
+            {wantTakeProfit && (
+              <Field label="Take-profit $">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={tpLimit}
+                  onChange={(e) => setTpLimit(e.target.value)}
+                  placeholder="limit"
+                  className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
+                />
+              </Field>
+            )}
+            {wantStopLoss && (
+              <Field label="Stop-loss $">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={slStop}
+                  onChange={(e) => setSlStop(e.target.value)}
+                  placeholder="stop"
+                  className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
+                />
+              </Field>
+            )}
+            {wantStopLoss && (
+              <Field label="SL limit $ (opt)">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={slLimit}
+                  onChange={(e) => setSlLimit(e.target.value)}
+                  placeholder="optional"
+                  className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
+                />
+              </Field>
+            )}
+            {orderClass !== "simple" && (
+              <p className="col-span-2 text-[10px] leading-relaxed text-terminal-muted">
+                {orderClass === "bracket" && "Bracket: entry fills, then take-profit and stop-loss go live as paired exits."}
+                {orderClass === "oco" && "OCO: two exit legs only — when one fills, the other cancels. Use on an existing position."}
+                {orderClass === "oto" && "OTO: entry plus a single attached exit (TP or SL)."}
+              </p>
+            )}
             <button
               type="submit"
               disabled={submitting || !symbol}
@@ -192,7 +275,7 @@ export default function OrderTicket({ symbol }) {
                   : "border-terminal-red text-terminal-red hover:bg-terminal-red/10"
               )}
             >
-              {submitting ? "Sending…" : `Submit ${side.toUpperCase()} ${qty} ${symbol ?? ""}`}
+              {submitting ? "Sending…" : `Submit ${side.toUpperCase()} ${qty} ${symbol ?? ""}${orderClass !== "simple" ? ` (${orderClass})` : ""}`}
             </button>
           </form>
           {submitErr && (
@@ -203,6 +286,7 @@ export default function OrderTicket({ symbol }) {
           {lastSubmitted && !submitErr && (
             <div className="mt-2 border border-terminal-green/50 bg-terminal-green/5 px-2 py-1 text-[11px] text-terminal-green">
               Submitted · {lastSubmitted.id?.slice(0, 8)} · {lastSubmitted.status}
+              {lastSubmitted.legs?.length ? ` · ${lastSubmitted.legs.length} legs` : ""}
             </div>
           )}
 
@@ -219,6 +303,7 @@ export default function OrderTicket({ symbol }) {
                   <th className="py-1 pr-2">SIDE</th>
                   <th className="py-1 pr-2 text-right">QTY</th>
                   <th className="py-1 pr-2 text-right">TYPE</th>
+                  <th className="py-1 pr-2 text-right">CLASS</th>
                   <th className="py-1 pr-2 text-right">FILL</th>
                   <th className="py-1 pr-2">STATUS</th>
                   <th className="py-1"></th>
@@ -241,6 +326,9 @@ export default function OrderTicket({ symbol }) {
                     <td className="py-1 pr-2 text-right">{fmt(o.qty, 0)}</td>
                     <td className="py-1 pr-2 text-right text-terminal-muted">
                       {o.type}
+                    </td>
+                    <td className="py-1 pr-2 text-right text-terminal-muted">
+                      {o.order_class && o.order_class !== "simple" ? o.order_class : "—"}
                     </td>
                     <td className="py-1 pr-2 text-right">
                       {o.filled_avg_price ? fmt(o.filled_avg_price) : "—"}

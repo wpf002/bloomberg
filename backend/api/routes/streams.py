@@ -19,6 +19,8 @@ from typing import Iterable
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
+from ...core.auth import user_from_token
+from ...core.config import settings
 from ...core.streaming import hub, streamer
 
 logger = logging.getLogger(__name__)
@@ -108,12 +110,22 @@ async def ws_news(ws: WebSocket) -> None:
 
 @router.websocket("/alerts")
 async def ws_alerts(ws: WebSocket) -> None:
+    """Per-user alert stream when authenticated, global when not.
+
+    The session cookie rides along with the WS upgrade handshake; we read it
+    via `ws.cookies` and decode the JWT in pure Python — no DB hit required
+    on the WS hot path. Logged-in users subscribe to `alerts:user:{id}` and
+    therefore only see fires for their own rules.
+    """
     await ws.accept()
-    queue = await hub.subscribe("alerts")
+    cookie = ws.cookies.get(settings.session_cookie_name)
+    user_id = user_from_token(cookie)
+    topic = f"alerts:user:{user_id}" if user_id else "alerts"
+    queue = await hub.subscribe(topic)
     try:
-        await ws.send_text(json.dumps({"type": "ready"}))
+        await ws.send_text(json.dumps({"type": "ready", "scope": "user" if user_id else "global"}))
         await _pump(ws, [queue])
     except WebSocketDisconnect:
         pass
     finally:
-        await hub.unsubscribe("alerts", queue)
+        await hub.unsubscribe(topic, queue)

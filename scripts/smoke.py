@@ -66,6 +66,7 @@ MODULES = [
     "backend.api.routes.streams",
     "backend.api.routes.auth",
     "backend.api.routes.me",
+    "backend.api.routes.shared",
     "backend.api.routes.sql",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
@@ -328,6 +329,10 @@ EXPECTED = [
     ("PUT", "/api/me/watchlist"),
     ("GET", "/api/me/layout"),
     ("PUT", "/api/me/layout"),
+    ("POST", "/api/me/layout/share"),
+    ("GET", "/api/me/layout/shares"),
+    ("DELETE", "/api/me/layout/shares/{slug}"),
+    ("GET", "/api/shared/layouts/{slug}"),
     ("POST", "/api/sql"),
     ("GET", "/api/sql/tables"),
 ]
@@ -383,6 +388,45 @@ for bad in [
         check(f"sql rejects: {bad[:40]}", False, "validation passed when it should have raised")
     except ValueError:
         check(f"sql rejects: {bad[:40]}", True)
+
+
+# ─── bracket / OCO order class wiring ───────────────────────────────────────
+print("\n== bracket / OCO ==")
+from backend.models.schemas import OrderRequest as _OR  # noqa: E402
+
+bracket = _OR(
+    symbol="AAPL", qty=10, side="buy", type="limit", limit_price=180.0,
+    time_in_force="gtc", order_class="bracket",
+    take_profit_limit_price=200.0, stop_loss_stop_price=170.0,
+)
+check("bracket OrderRequest accepted", bracket.order_class == "bracket")
+check("bracket carries TP", bracket.take_profit_limit_price == 200.0)
+check("bracket carries SL", bracket.stop_loss_stop_price == 170.0)
+
+oco = _OR(
+    symbol="AAPL", qty=10, side="sell", type="limit", limit_price=200.0,
+    order_class="oco",
+    take_profit_limit_price=210.0, stop_loss_stop_price=190.0,
+)
+check("oco OrderRequest accepted", oco.order_class == "oco")
+
+simple = _OR(symbol="AAPL", qty=10, side="buy", type="market")
+check("simple still works (default)", simple.order_class == "simple")
+check("simple has no TP", simple.take_profit_limit_price is None)
+
+
+# ─── alert engine signatures ────────────────────────────────────────────────
+print("\n== alert engine ==")
+from backend.core.alerts import AlertEngine  # noqa: E402
+import inspect as _inspect  # noqa: E402
+
+sig = _inspect.signature(AlertEngine.add_rule)
+check("alerts.add_rule accepts user_id", "user_id" in sig.parameters)
+sig = _inspect.signature(AlertEngine.list_rules)
+check("alerts.list_rules accepts user_id", "user_id" in sig.parameters)
+sig = _inspect.signature(AlertEngine.delete_rule)
+check("alerts.delete_rule accepts user_id", "user_id" in sig.parameters)
+check("AlertEngine.list_all_rules exists", hasattr(AlertEngine, "list_all_rules"))
 
 
 # ─── summary ────────────────────────────────────────────────────────────────

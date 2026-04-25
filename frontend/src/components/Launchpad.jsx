@@ -59,6 +59,10 @@ export default function Launchpad({
   controlledHidden,
   onLayoutsChange,
   onHiddenChange,
+  // Optional Share button slot — Terminal supplies a click handler that
+  // opens the share dialog for signed-in users. Hidden for everyone else.
+  onShare,
+  readOnly = false,
 }) {
   const controlled = controlledLayouts != null;
 
@@ -163,6 +167,14 @@ export default function Launchpad({
         <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-terminal-amber/60 bg-terminal-panelAlt px-2 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
           <span className="text-terminal-amber">LAYOUT EDIT</span>
           <span>Drag panel headers · resize from corners · toggle panels ↓</span>
+          {onShare ? (
+            <button
+              onClick={onShare}
+              className="border border-terminal-amber px-2 py-0.5 text-terminal-amber hover:bg-terminal-amber/10"
+            >
+              ↗ SHARE
+            </button>
+          ) : null}
           <div className="ml-auto flex flex-wrap gap-1">
             {panels.map((p) => (
               <button

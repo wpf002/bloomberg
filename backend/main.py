@@ -41,6 +41,9 @@ async def lifespan(app: FastAPI):
     # Meilisearch index bootstrap + DuckDB warm-up are best-effort and run
     # in the background so the server can accept requests immediately.
     asyncio.create_task(_bootstrap_search_and_sql())
+    # Phase 7: re-index default-watchlist filings metadata once a day so the
+    # SRCH panel stays current without anyone having to click "Index".
+    asyncio.create_task(_filings_indexer_cron())
     yield
     try:
         await alert_engine.stop()
@@ -49,6 +52,10 @@ async def lifespan(app: FastAPI):
         logger.warning("Stream/alert background tasks shutdown error: %s", exc)
     await database.disconnect()
     await cache.disconnect()
+
+
+FILINGS_SEED_SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "QQQ"]
+FILINGS_INDEX_INTERVAL_SECONDS = 24 * 60 * 60  # daily
 
 
 async def _bootstrap_search_and_sql() -> None:
@@ -61,21 +68,46 @@ async def _bootstrap_search_and_sql() -> None:
         await sql_engine.warm()
     except Exception as exc:
         logger.warning("duckdb warm failed (non-fatal): %s", exc)
-    # Seed filings metadata for the default symbol set so the SRCH panel
-    # has something to return on a fresh deployment. Body indexing stays
-    # opt-in (it fetches the full EDGAR document per filing, slow).
-    try:
-        edgar = SecEdgarSource()
-        seed_symbols = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "QQQ"]
-        for sym in seed_symbols:
-            try:
-                filings = await edgar.recent_filings(sym, limit=10)
-                if filings:
-                    await meili.index_filings_metadata(sym, filings)
-            except Exception as exc:
-                logger.debug("filings seed failed for %s: %s", sym, exc)
-    except Exception as exc:
-        logger.warning("filings seed bootstrap failed (non-fatal): %s", exc)
+    # First-run seed: same symbols the cron will refresh, but we want hits
+    # available immediately so SRCH isn't empty during the first 24h.
+    await _index_filings_metadata(meili)
+
+
+async def _index_filings_metadata(meili) -> int:
+    """Re-index filing metadata for the default symbol set. Returns the
+    total number of documents pushed to Meili. Called both at startup
+    (immediate seed) and from the daily cron."""
+    edgar = SecEdgarSource()
+    total = 0
+    for sym in FILINGS_SEED_SYMBOLS:
+        try:
+            filings = await edgar.recent_filings(sym, limit=10)
+            if filings:
+                indexed = await meili.index_filings_metadata(sym, filings)
+                total += int(indexed or 0)
+        except Exception as exc:
+            logger.debug("filings index failed for %s: %s", sym, exc)
+    return total
+
+
+async def _filings_indexer_cron() -> None:
+    """Daily background indexer for the default symbol set.
+
+    Sleeps first so the immediate-seed task in `_bootstrap_search_and_sql`
+    has finished — re-running the same indexing back-to-back is wasteful
+    and would race on the same documents.
+    """
+    meili = get_meilisearch()
+    while True:
+        try:
+            await asyncio.sleep(FILINGS_INDEX_INTERVAL_SECONDS)
+            count = await _index_filings_metadata(meili)
+            logger.info("filings indexer cron: refreshed %d documents", count)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Log + keep looping. A flaky 24h tick beats a dead task.
+            logger.warning("filings indexer cron tick failed: %s", exc)
 
 
 app = FastAPI(
