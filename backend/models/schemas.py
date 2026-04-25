@@ -246,3 +246,97 @@ class ComparisonBrief(BaseModel):
     body: str
     model: str
     as_of: datetime = Field(default_factory=datetime.utcnow)
+
+
+class OrderRequest(BaseModel):
+    """Inbound order ticket. Mirrors the subset of Alpaca's POST /v2/orders we
+    care about — equity orders only, no advanced legs / brackets / OTOs."""
+    symbol: str
+    qty: float = Field(gt=0)
+    side: str = Field(description="buy or sell")
+    type: str = Field(default="market", description="market | limit | stop | stop_limit")
+    time_in_force: str = Field(default="day", description="day | gtc | ioc | fok | opg | cls")
+    limit_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    extended_hours: bool = False
+    client_order_id: Optional[str] = None
+
+
+class Order(BaseModel):
+    id: str
+    client_order_id: Optional[str] = None
+    symbol: str
+    asset_class: Optional[str] = None
+    side: str
+    type: str
+    time_in_force: str
+    qty: float
+    filled_qty: float = 0.0
+    limit_price: Optional[float] = None
+    stop_price: Optional[float] = None
+    filled_avg_price: Optional[float] = None
+    status: str
+    submitted_at: Optional[datetime] = None
+    filled_at: Optional[datetime] = None
+    canceled_at: Optional[datetime] = None
+    extended_hours: bool = False
+    source: str = "alpaca-paper"
+
+
+class AlertCondition(BaseModel):
+    """One leaf of an alert rule. Evaluated against the latest quote for
+    `symbol`. Operators: `>`, `<`, `>=`, `<=`, `==`."""
+    field: str = Field(description="price | change_percent | volume | day_high | day_low")
+    op: str = Field(description="> | < | >= | <= | ==")
+    value: float
+
+
+class AlertRule(BaseModel):
+    """A user-defined alert. Fires when *all* conditions hold.
+
+    `cooldown_seconds` rate-limits re-firing while the condition stays true —
+    without it, a price oscillating around the threshold would spam the user.
+    """
+    id: str
+    symbol: str
+    name: Optional[str] = None
+    conditions: List[AlertCondition] = Field(default_factory=list)
+    cooldown_seconds: int = 300
+    active: bool = True
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AlertEvent(BaseModel):
+    """Fired event broadcast to WS subscribers + persisted to a Redis stream."""
+    rule_id: str
+    symbol: str
+    name: Optional[str] = None
+    matched_at: datetime = Field(default_factory=datetime.utcnow)
+    snapshot: dict = Field(default_factory=dict)
+
+
+class PayoffLeg(BaseModel):
+    """One leg of an options strategy. `type` accepts 'call', 'put', or
+    'stock' (stock legs ignore strike/expiration, premium is the cost basis)."""
+    type: str
+    side: str  # 'long' | 'short'
+    strike: float = 0.0
+    premium: float = 0.0
+    qty: int = 1
+    expiration: Optional[str] = None
+
+
+class PayoffPoint(BaseModel):
+    spot: float
+    pnl: float
+
+
+class PayoffCurve(BaseModel):
+    underlying_price: float
+    legs: List[PayoffLeg]
+    points: List[PayoffPoint]
+    breakevens: List[float] = Field(default_factory=list)
+    max_profit: Optional[float] = None  # None == unbounded
+    max_loss: Optional[float] = None  # None == unbounded
+    net_premium: float = 0.0  # negative = debit, positive = credit
+    contract_multiplier: int = 100

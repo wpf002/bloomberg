@@ -6,7 +6,7 @@ import httpx
 
 from ...core.cache_utils import cached
 from ...core.config import settings
-from ...models.schemas import Account, NewsItem, Position, Quote, QuoteHistoryPoint
+from ...models.schemas import Account, NewsItem, Order, OrderRequest, Position, Quote, QuoteHistoryPoint
 
 logger = logging.getLogger(__name__)
 
@@ -313,6 +313,90 @@ class AlpacaSource:
                 )
             )
         return out
+
+
+    def _parse_dt(self, raw: str | None) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+    def _to_order(self, data: dict) -> Order:
+        return Order(
+            id=str(data.get("id") or ""),
+            client_order_id=data.get("client_order_id"),
+            symbol=(data.get("symbol") or "").upper(),
+            asset_class=data.get("asset_class"),
+            side=data.get("side") or "buy",
+            type=data.get("type") or data.get("order_type") or "market",
+            time_in_force=data.get("time_in_force") or "day",
+            qty=_f(data.get("qty")),
+            filled_qty=_f(data.get("filled_qty")),
+            limit_price=_of(data.get("limit_price")),
+            stop_price=_of(data.get("stop_price")),
+            filled_avg_price=_of(data.get("filled_avg_price")),
+            status=data.get("status") or "unknown",
+            submitted_at=self._parse_dt(data.get("submitted_at")),
+            filled_at=self._parse_dt(data.get("filled_at")),
+            canceled_at=self._parse_dt(data.get("canceled_at")),
+            extended_hours=bool(data.get("extended_hours", False)),
+        )
+
+    async def list_orders(self, status: str = "all", limit: int = 50) -> List[Order]:
+        if not self._enabled():
+            return []
+        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders"
+        params = {"status": status, "limit": limit, "direction": "desc"}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=self._headers, params=params)
+        if resp.status_code != 200:
+            logger.warning("Alpaca list_orders -> %s: %s", resp.status_code, resp.text[:200])
+            return []
+        return [self._to_order(item) for item in (resp.json() or [])]
+
+    async def place_order(self, order: OrderRequest) -> Order:
+        """POST /v2/orders. Lets Alpaca enforce validation (insufficient
+        buying power, halted symbol, etc.) and propagates its error message
+        back to the route layer.
+        """
+        if not self._enabled():
+            raise RuntimeError("alpaca credentials not configured")
+        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders"
+        payload: dict = {
+            "symbol": order.symbol.upper(),
+            "qty": str(order.qty),
+            "side": order.side.lower(),
+            "type": order.type.lower(),
+            "time_in_force": order.time_in_force.lower(),
+            "extended_hours": bool(order.extended_hours),
+        }
+        if order.limit_price is not None:
+            payload["limit_price"] = str(order.limit_price)
+        if order.stop_price is not None:
+            payload["stop_price"] = str(order.stop_price)
+        if order.client_order_id:
+            payload["client_order_id"] = order.client_order_id
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=self._headers, json=payload)
+        if resp.status_code not in (200, 201):
+            detail = resp.text[:300]
+            logger.warning("Alpaca place_order -> %s: %s", resp.status_code, detail)
+            raise RuntimeError(f"alpaca rejected order ({resp.status_code}): {detail}")
+        return self._to_order(resp.json())
+
+    async def cancel_order(self, order_id: str) -> bool:
+        if not self._enabled():
+            return False
+        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders/{order_id}"
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.delete(url, headers=self._headers)
+        # 204 = canceled, 207 = multi-status (filled/canceled before delete).
+        if resp.status_code in (204, 207, 200):
+            return True
+        logger.warning("Alpaca cancel_order %s -> %s: %s", order_id, resp.status_code, resp.text[:200])
+        return False
 
 
 _alpaca_singleton: AlpacaSource | None = None

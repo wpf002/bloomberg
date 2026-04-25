@@ -1,9 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 
+// LLM responses occasionally arrive wrapped in ```json … ``` even when the
+// prompt forbids fences. Strip them defensively before parsing.
+function stripFences(s) {
+  if (!s) return s;
+  return s
+    .replace(/^\s*```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+}
+
+function tryParse(body) {
+  if (!body) return null;
+  const cleaned = stripFences(body);
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && Array.isArray(parsed.metrics)) return parsed;
+  } catch {
+    // not JSON — caller falls back to plain-text render
+  }
+  return null;
+}
+
 export default function ComparePanel({ symbols }) {
-  // symbols is an array; use first two, or render a prompt when fewer.
   const [a, b] = [symbols?.[0], symbols?.[1]];
   const [state, setState] = useState({ loading: false, data: null, error: null });
 
@@ -22,6 +43,12 @@ export default function ComparePanel({ symbols }) {
   useEffect(() => {
     setState({ loading: false, data: null, error: null });
   }, [a, b]);
+
+  const parsed = useMemo(() => tryParse(state.data?.body), [state.data]);
+  const fallbackText = useMemo(
+    () => (state.data?.body ? stripFences(state.data.body) : ""),
+    [state.data]
+  );
 
   const credsMissing = state.error?.status === 503;
   const ready = a && b;
@@ -62,18 +89,56 @@ export default function ComparePanel({ symbols }) {
       ) : state.loading ? (
         <div className="text-terminal-muted">Synthesizing comparison…</div>
       ) : state.data ? (
-        <div>
-          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-terminal-text">
-            {state.data.body}
-          </pre>
-          <div className="mt-3 border-t border-terminal-border/60 pt-2 text-[10px] uppercase tracking-widest text-terminal-muted">
+        <div className="space-y-3">
+          {parsed ? (
+            <>
+              <table className="w-full text-xs tabular">
+                <thead>
+                  <tr className="border-b border-terminal-border/60 text-left text-[10px] uppercase tracking-widest text-terminal-muted">
+                    <th className="py-1 pr-2">Metric</th>
+                    <th className="py-1 pr-2 text-right text-terminal-amber">{a}</th>
+                    <th className="py-1 text-right text-terminal-amber">{b}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsed.metrics.map((m, i) => (
+                    <tr key={i} className="border-b border-terminal-border/40">
+                      <td className="py-1 pr-2 text-terminal-muted">{m.label}</td>
+                      <td className="py-1 pr-2 text-right">{m.a ?? "n/a"}</td>
+                      <td className="py-1 text-right">{m.b ?? "n/a"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {parsed.verdict && (
+                <div className="border-l-2 border-terminal-amber pl-2 text-xs text-terminal-text">
+                  {parsed.verdict}
+                </div>
+              )}
+              {parsed.qualitative && (
+                <div className="text-xs leading-relaxed text-terminal-text">
+                  <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+                    Read
+                  </div>
+                  {parsed.qualitative}
+                </div>
+              )}
+            </>
+          ) : (
+            // Legacy / unparseable response: render the cleaned body. Old
+            // cached entries from before the JSON contract land here.
+            <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-terminal-text">
+              {fallbackText}
+            </pre>
+          )}
+          <div className="border-t border-terminal-border/60 pt-2 text-[10px] uppercase tracking-widest text-terminal-muted">
             Model: {state.data.model} · {new Date(state.data.as_of).toLocaleString()} · cached 30m
           </div>
         </div>
       ) : (
         <div className="text-xs leading-relaxed text-terminal-muted">
           Press <span className="text-terminal-amber">Run comparison</span> for
-          side-by-side numeric + qualitative breakdown of{" "}
+          a side-by-side numeric + qualitative breakdown of{" "}
           <span className="text-terminal-amber">{a}</span> vs{" "}
           <span className="text-terminal-amber">{b}</span>.
         </div>

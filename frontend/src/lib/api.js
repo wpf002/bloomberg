@@ -1,5 +1,17 @@
 const BASE = import.meta.env.VITE_API_URL || "";
 
+export function wsURL(path) {
+  // VITE_API_URL may be empty (same-origin in prod) or e.g. "http://localhost:8000".
+  // Browsers' WebSocket requires ws:// or wss://.
+  if (BASE) {
+    const u = new URL(path, BASE);
+    u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+    return u.toString();
+  }
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}${path}`;
+}
+
 async function request(path, options = {}) {
   const url = `${BASE}${path}`;
   const resp = await fetch(url, {
@@ -67,4 +79,24 @@ export const api = {
   explain: (symbol) => request(`/api/explain/${encodeURIComponent(symbol)}`),
   compare: (symbolA, symbolB) =>
     request(`/api/compare?symbols=${encodeURIComponent(`${symbolA},${symbolB}`)}`),
+
+  // ── orders ────────────────────────────────────────────────────────────
+  orders: (status = "all", limit = 50) =>
+    request(`/api/orders?status=${encodeURIComponent(status)}&limit=${limit}`),
+  placeOrder: (order) =>
+    request(`/api/orders`, { method: "POST", body: JSON.stringify(order) }),
+  cancelOrder: (orderId) =>
+    request(`/api/orders/${encodeURIComponent(orderId)}`, { method: "DELETE" }),
+
+  // ── alerts ────────────────────────────────────────────────────────────
+  alertRules: () => request(`/api/alerts/rules`),
+  createAlertRule: (rule) =>
+    request(`/api/alerts/rules`, { method: "POST", body: JSON.stringify(rule) }),
+  deleteAlertRule: (id) =>
+    request(`/api/alerts/rules/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  alertEvents: (limit = 50) => request(`/api/alerts/events?limit=${limit}`),
+
+  // ── options payoff ────────────────────────────────────────────────────
+  optionsPayoff: (body) =>
+    request(`/api/options/payoff`, { method: "POST", body: JSON.stringify(body) }),
 };

@@ -8,6 +8,7 @@ so we have one place to tune model, retry policy, and observability.
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,23 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+
+# Render a template by substituting only the named keys present in `vars`.
+# Unlike str.format, literal `{` and `}` (e.g. JSON examples in a system
+# prompt) pass through untouched. This matters because we want to embed
+# JSON output schemas in system prompts without escape-doubling every
+# brace, which is fragile and easy to forget.
+_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+
+
+def _safe_format(template: str, variables: dict[str, Any]) -> str:
+    def replace(m: re.Match[str]) -> str:
+        key = m.group(1)
+        if key not in variables:
+            raise KeyError(key)
+        return str(variables[key])
+
+    return _PLACEHOLDER.sub(replace, template)
 
 
 class LLMNotConfigured(RuntimeError):
@@ -62,8 +80,8 @@ async def synthesize(
     """
     prompt = _load_prompt(prompt_name)
     try:
-        system = prompt["system"].format(**variables)
-        user = prompt["user"].format(**variables)
+        system = _safe_format(prompt["system"], variables)
+        user = _safe_format(prompt["user"], variables)
     except KeyError as exc:
         raise ValueError(
             f"Prompt {prompt_name} references missing variable: {exc}"

@@ -28,9 +28,27 @@ function writeJson(key, value) {
   }
 }
 
+// Merge any panel ids in `defaults` that are missing from `saved`.
+// Preserves the user's hand-arranged positions for panels they already
+// have, and slots in factory positions for newly added panels (otherwise
+// react-grid-layout autoplaces them at 0,0 with minimum size — which is
+// what produces the "scrunched in the bottom-left corner" bug after a
+// release adds new panels).
+function mergeMissing(saved, defaults) {
+  if (!saved) return defaults;
+  const out = {};
+  for (const bp of Object.keys(defaults)) {
+    const savedRows = Array.isArray(saved[bp]) ? saved[bp] : [];
+    const havingIds = new Set(savedRows.map((r) => r.i));
+    const missing = (defaults[bp] || []).filter((r) => !havingIds.has(r.i));
+    out[bp] = [...savedRows, ...missing];
+  }
+  return out;
+}
+
 export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, flash }) {
   const [layouts, setLayouts] = useState(
-    () => readJson(STORAGE_KEY) ?? defaultLayouts
+    () => mergeMissing(readJson(STORAGE_KEY), defaultLayouts)
   );
   const [hidden, setHidden] = useState(() => new Set(readJson(HIDDEN_KEY) ?? []));
 
@@ -42,6 +60,14 @@ export default function Launchpad({ panels, defaultLayouts, editMode, resetKey, 
     writeJson(HIDDEN_KEY, []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
+
+  // After a release adds new panels, persist the merged layout once so we
+  // don't re-merge on every refresh and so saved positions for the new
+  // panels survive a future panel removal.
+  useEffect(() => {
+    writeJson(STORAGE_KEY, layouts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const onLayoutChange = useCallback((_current, allLayouts) => {
     setLayouts(allLayouts);

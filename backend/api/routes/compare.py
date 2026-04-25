@@ -18,15 +18,39 @@ from fastapi import APIRouter, HTTPException, Query
 from ...core.cache_utils import cached
 from ...core.config import settings
 from ...core.llm import LLMNotConfigured, synthesize
-from ...data.sources import RssSource, YFinanceSource, get_alpaca_source
-from ...models.schemas import ComparisonBrief
+from ...data.sources import FmpSource, RssSource, YFinanceSource, get_alpaca_source
+from ...models.schemas import ComparisonBrief, Fundamentals
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _yf = YFinanceSource()
+_fmp = FmpSource()
 _alpaca = get_alpaca_source()
 _rss = RssSource()
+
+
+def _is_empty_fund(f: Fundamentals | None) -> bool:
+    if f is None:
+        return True
+    return not f.name and f.market_cap is None and f.pe_ratio is None and f.revenue_ttm is None
+
+
+async def _best_fundamentals(symbol: str) -> Fundamentals | None:
+    """FMP first when configured (cleaner numbers, no scraper throttle), then
+    yfinance fallback. Same policy as `/api/fundamentals/{symbol}`."""
+    if _fmp.enabled():
+        try:
+            primary = await _fmp.get_fundamentals(symbol)
+            if not _is_empty_fund(primary):
+                return primary
+        except Exception as exc:
+            logger.warning("FMP fundamentals failed for %s: %s", symbol, exc)
+    try:
+        return await _yf.get_fundamentals(symbol)
+    except Exception as exc:
+        logger.warning("yfinance fundamentals failed for %s: %s", symbol, exc)
+        return None
 
 
 def _compact_fundamentals(f) -> str:
@@ -54,7 +78,7 @@ async def _gather_for(symbol: str) -> tuple[Any, list]:
             return default
 
     fundamentals, alpaca_news, rss_news = await asyncio.gather(
-        safe(_yf.get_fundamentals(symbol), None),
+        safe(_best_fundamentals(symbol), None),
         safe(_alpaca.news([symbol], limit=8), []),
         safe(_rss.fetch([symbol], limit=8), []),
     )
@@ -70,7 +94,7 @@ async def _gather_for(symbol: str) -> tuple[Any, list]:
     return fundamentals, news
 
 
-@cached("llm:compare", ttl=1800, model=ComparisonBrief)
+@cached("llm:compare:v2", ttl=1800, model=ComparisonBrief)
 async def _build_comparison(symbol_a: str, symbol_b: str) -> ComparisonBrief:
     (fa, news_a), (fb, news_b) = await asyncio.gather(
         _gather_for(symbol_a),

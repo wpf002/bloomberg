@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import AlertsPanel from "../components/AlertsPanel.jsx";
 import CalendarPanel from "../components/CalendarPanel.jsx";
 import Chart from "../components/Chart.jsx";
 import CommandBar, { MnemonicHelp } from "../components/CommandBar.jsx";
@@ -12,7 +13,9 @@ import MacroPanel from "../components/MacroPanel.jsx";
 import MarketOverview from "../components/MarketOverview.jsx";
 import NewsFeed from "../components/NewsFeed.jsx";
 import OptionsPanel from "../components/OptionsPanel.jsx";
+import OrderTicket from "../components/OrderTicket.jsx";
 import Panel from "../components/Panel.jsx";
+import PayoffPanel from "../components/PayoffPanel.jsx";
 import Portfolio from "../components/Portfolio.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
 import Watchlist from "../components/Watchlist.jsx";
@@ -46,6 +49,9 @@ const INTENT_TO_PANEL = {
   fx: "markets",
   crypto: "crypto",
   calendar: "calendar",
+  trade: "trade",
+  alerts: "alerts",
+  payoff: "payoff",
   help: "help",
   layout: "layout",
   reset: "reset",
@@ -70,6 +76,9 @@ const DEFAULT_LAYOUTS = {
     { i: "sizing",       x: 0,  y: 24, w: 5, h: 6, minW: 3, minH: 4 },
     { i: "explain",      x: 5,  y: 24, w: 4, h: 6, minW: 3, minH: 4 },
     { i: "compare",      x: 9,  y: 24, w: 3, h: 6, minW: 3, minH: 4 },
+    { i: "trade",        x: 0,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
+    { i: "alerts",       x: 4,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
+    { i: "payoff",       x: 8,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
   ],
   md: [
     { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
@@ -86,6 +95,9 @@ const DEFAULT_LAYOUTS = {
     { i: "sizing",       x: 0,  y: 38, w: 6, h: 7 },
     { i: "explain",      x: 6,  y: 38, w: 6, h: 7 },
     { i: "compare",      x: 0,  y: 45, w: 12, h: 7 },
+    { i: "trade",        x: 0,  y: 52, w: 6, h: 10 },
+    { i: "alerts",       x: 6,  y: 52, w: 6, h: 10 },
+    { i: "payoff",       x: 0,  y: 62, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,  w: 6, h: 6 },
@@ -102,6 +114,9 @@ const DEFAULT_LAYOUTS = {
     { i: "sizing",       x: 0, y: 65, w: 6, h: 7 },
     { i: "explain",      x: 0, y: 72, w: 6, h: 7 },
     { i: "compare",      x: 0, y: 79, w: 6, h: 7 },
+    { i: "trade",        x: 0, y: 86, w: 6, h: 10 },
+    { i: "alerts",       x: 0, y: 96, w: 6, h: 10 },
+    { i: "payoff",       x: 0, y: 106, w: 6, h: 10 },
   ],
 };
 
@@ -180,6 +195,9 @@ export default function Terminal() {
       { id: "sizing",       render: () => <SizingPanel symbol={activeSymbol} /> },
       { id: "explain",      render: () => <ExplainPanel symbol={activeSymbol} /> },
       { id: "compare",      render: () => <ComparePanel symbols={compareSymbols} /> },
+      { id: "trade",        render: () => <OrderTicket symbol={activeSymbol} /> },
+      { id: "alerts",       render: () => <AlertsPanel symbol={activeSymbol} /> },
+      { id: "payoff",       render: () => <PayoffPanel symbol={activeSymbol} /> },
     ],
     [watchlist, activeSymbol, compareSymbols, handleSelect]
   );
@@ -223,7 +241,7 @@ export default function Terminal() {
             HELP
           </button>
         </span>
-        <span>Phase 4 · Sizing · Explain · Compare</span>
+        <span>Phase 5 · WS streaming · EMS · Alerts · Payoff</span>
       </footer>
       {helpOpen ? (
         <div

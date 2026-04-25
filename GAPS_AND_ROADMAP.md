@@ -20,105 +20,33 @@ programmability, and crypto-native coverage.**
 | **3** | `b4e3664` | ✅ shipped | Fundamentals endpoint + panel (valuation / performance / margins / 52w); earnings-calendar endpoint + panel with EPS surprise; **draggable/resizable Launchpad** (`react-grid-layout`, localStorage-persisted, show/hide per panel, `LAYOUT` + `RESET` mnemonics); Python 3.11 smoke test (`uv` + `/tmp/bt_smoke.py`) that passes: 22/22 modules, 4/4 schemas, 6/6 Greek checks, 17/17 routes. |
 | **3.1** | `9d227ef` | ✅ shipped | Mock portfolio retired — `/api/portfolio/account` + `/api/portfolio/positions` hit live Alpaca paper (`@cached` 10s); new `Account` + `Position` schemas; Portfolio.jsx rewritten with real NAV/cash/BP/equity/day-trade header and unrealized P/L table; shared `get_alpaca_source()` singleton across news + portfolio; creds-missing empty state (no mock fallback). Docker preflight (`scripts/check_docker.sh` + `make up`) with README troubleshooting for the UI-open / VM-paused case. Smoke test lifted to `scripts/smoke.py` (46/46: 24 modules, 6 schemas, 6 Greeks, 16 routes). **Bonuses shipped same commit:** options route now returns empty chain instead of 502 when yfinance throttles; `/api/quotes` routes through Alpaca snapshots first, yfinance only as fallback for symbols Alpaca doesn't carry (indices, futures, FX, non-US). |
 | **4** | `1362eed` | ✅ shipped | **Command bar polish:** fuzzy mnemonic matching (`matchMnemonics` ranks exact > prefix > substring > subsequence); ghost-text suggestion + Tab completion; recent-command history in localStorage (↑/↓); live suggestion dropdown with matched-char highlighting. **Position sizing:** `SIZE` / `SIZING` mnemonics, `/api/sizing/{symbol}?stop_pct=N` computes shares at 0.5/1/2/5% account risk using live Alpaca equity; new `PositionSize` + `SizingRow` schemas; `SizingPanel` with stop% input. **LLM synthesis:** YAML prompt registry (`backend/prompts/{explain,compare}.yaml`); `backend/core/llm.py` AsyncAnthropic wrapper; `/api/explain/{symbol}` merges fundamentals + news + SEC filings into a Claude briefing (cached 30m); `/api/compare?symbols=A,B` does side-by-side; multi-symbol parser handles `AAPL MSFT COMPARE`; `EXPLAIN` / `COMPARE` mnemonics; new `Brief` / `ComparisonBrief` schemas; `ExplainPanel` + `ComparePanel` with explicit "Run briefing" button (no auto-fetch — LLM calls aren't free). `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` env vars plumbed through docker-compose. Smoke test now 55/55: 27 modules, 9 schemas, 6 Greeks, 19 routes. |
+| **5** | `pending` | ✅ shipped | **WebSocket streaming:** `backend/core/streaming.py` runs an in-process `StreamHub` (per-topic asyncio queues with non-blocking publish) + `AlpacaStreamer` that maintains one upstream IEX market-data WS and one news WS, demand-driven symbol subscribe/unsubscribe, exponential-backoff reconnect, REST-poll fallback when `websockets` lib or creds are absent. New `/api/ws/quotes?symbols=`, `/api/ws/news`, `/api/ws/alerts` routes with 25s pings. Frontend `useStream` hook (auto-reconnect, exp backoff, drops the snapshot when disconnected because stale ticks lie); Watchlist now overlays live trade/quote ticks on the polled snapshot with green/red flash on price change. **Paper order entry:** `OrderRequest` + `Order` schemas; `AlpacaSource.list_orders/place_order/cancel_order` thin wrappers over `/v2/orders`; `GET/POST /api/orders` + `DELETE /api/orders/{id}`; `OrderTicket.jsx` (BUY/SELL toggle, market/limit/stop/stop_limit + TIF + extended-hours, working-order list with cancel-✕). Errors from Alpaca propagate verbatim — broker is the source of truth. **Rule-based alerts:** `AlertRule`/`AlertCondition`/`AlertEvent` schemas; `core/alerts.py` evaluates rules on every quotes-topic tick with per-rule cooldown to prevent storm-fire; rules persisted in a Redis hash (`bt:alerts:rules`), fired events appended to a Redis Stream (`bt:alerts:events`, `MAXLEN ~500`) with in-memory fallback when Redis is down; `AlertsPanel.jsx` rule builder + live fire feed via `/api/ws/alerts`; `ALRT`/`ALERT` mnemonics. **Options payoff builder:** `core/payoff.py` computes per-leg expiry intrinsic-value + linear-interp breakevens + bounded/unbounded extrema (detected via slope at the edges); `POST /api/options/payoff` accepts a multi-leg request and returns 121 payoff points resampled at every strike; `PayoffPanel.jsx` with strategy presets (long call/put, covered call, bull spread, iron condor, straddle), per-leg editor, Recharts visualization with breakeven + spot reference lines; `OVME`/`PAYOFF` mnemonics. **New CommandBar chips:** TRADE, ALRT, PAYOFF. **Launchpad:** three new panels (`trade`, `alerts`, `payoff`) added to lg/md/sm layouts; existing scroll-into-view-on-flash now also drives the new panels (Quick chips smooth-scroll into view). `requirements.txt` adds `websockets==12.0`. Smoke test 88/88: 31 modules, 14 schemas, 6 Greeks, 7 payoff math, 27 HTTP routes, 3 WS routes. |
 
 Clone & run: `git clone https://github.com/wpf002/bloomberg.git && cd bloomberg/bloomberg-terminal && cp .env.example .env && docker compose up --build`.
 
 ---
 
-## 1. Next session — Phase 3.1 punch list
+## 1. Next session — Phase 6 candidate punch list
 
-Two items, both scoped. Estimated ≤ 1 session.
+Phase 5 completed all four roadmap items (WebSocket streaming, paper orders,
+rule-based alerts, options payoff). Open candidates for the next session,
+ranked by retail/prosumer leverage:
 
-### 1.1 Replace mock portfolio with Alpaca paper-trading (decided)
+1. **Auth + persistence.** Magic-link or GitHub OAuth, per-user watchlist +
+   Launchpad layout in Postgres, per-user alert rules. Today everything is
+   single-tenant: rules live in Redis under one global hash, layout in
+   localStorage. Auth unblocks shareable layouts (Phase 7) and removes the
+   "everyone sees the same alerts" footgun.
+2. **DuckDB-backed `/api/sql`.** Our BQL equivalent. Cache the FRED + Alpaca
+   bars + filings metadata into DuckDB; expose a read-only SQL endpoint with
+   a query budget. Lets users build dashboards we'd never think of.
+3. **Bracket / OCO orders.** Phase 5 ships market/limit/stop/stop-limit;
+   Alpaca supports brackets natively, the panel just doesn't wire them yet.
+   Useful for retail "set-and-forget" workflows.
+4. **Full-text filings search.** Meilisearch or Typesense over EDGAR text.
+   Currently we only show the filings index. The text is the value.
 
-**Only remaining mock in the app** is the hardcoded `HOLDINGS` array in
-`frontend/src/components/Portfolio.jsx`. Everything else (quotes, history,
-options + Greeks, FX, crypto, fundamentals, earnings, macro, filings, news,
-market overview) is already real.
-
-**Chosen approach:** Alpaca paper-trading over local JSON or Postgres seed,
-because it gives us a real broker API (positions, orders, account equity,
-day-trade count, buying power), lot-level detail, server-side P/L, and maps
-cleanly onto Bloomberg's EMSX/OMS paradigm. Zero cost on a paper account.
-
-Work items:
-
-- [ ] Extend `backend/data/sources/alpaca_source.py`:
-  - `get_account()` → `GET {trading_base}/v2/account`
-  - `get_positions()` → `GET {trading_base}/v2/positions`
-  - Re-use the existing `ALPACA_API_KEY` / `ALPACA_API_SECRET` / `ALPACA_BASE_URL` (which already defaults to `https://paper-api.alpaca.markets`).
-- [ ] Pydantic models in `backend/models/schemas.py`: `Account`, `Position` (fields in the scratchpad below).
-- [ ] Routes:
-  - `GET /api/portfolio/account` → `Account`
-  - `GET /api/portfolio/positions` → `List[Position]`
-  - Both with `@cached("alpaca:account", ttl=10)` and `("alpaca:positions", ttl=10)`.
-- [ ] Rewrite `frontend/src/components/Portfolio.jsx` to fetch live from those two endpoints; show account NAV / cash / buying power header, positions table with real unrealized P/L and today's change.
-- [ ] Empty-state CTA when no Alpaca creds: "Add `ALPACA_API_KEY` + `ALPACA_API_SECRET` to `.env` and restart to see live positions. Get a free paper account at alpaca.markets/signup." — **do not fall back to mock data**.
-- [ ] Update `/api/news` + `/api/portfolio` to share the single Alpaca client instance (minor refactor).
-- [ ] Update the smoke test to assert `/api/portfolio/account` and `/api/portfolio/positions` are registered.
-- [ ] Update README endpoint table + note the Alpaca paper signup flow.
-
-Scratchpad — planned schema shape (don't treat as final):
-
-```python
-class Account(BaseModel):
-    account_number: str | None
-    status: str | None
-    currency: str = "USD"
-    cash: float
-    buying_power: float
-    portfolio_value: float
-    equity: float
-    last_equity: float
-    long_market_value: float
-    short_market_value: float
-    daytrade_count: int
-    pattern_day_trader: bool
-    source: str = "alpaca-paper"
-
-class Position(BaseModel):
-    symbol: str
-    asset_class: str | None
-    exchange: str | None
-    qty: float
-    side: str = "long"
-    avg_entry_price: float
-    current_price: float | None
-    market_value: float | None
-    cost_basis: float | None
-    unrealized_pl: float | None
-    unrealized_pl_percent: float | None
-    unrealized_intraday_pl: float | None
-    unrealized_intraday_pl_percent: float | None
-    change_today_percent: float | None
-    source: str = "alpaca-paper"
-```
-
-### 1.2 Docker engine preflight + troubleshooting (dev experience)
-
-**Problem seen live:** Docker Desktop's UI is open, the socket exists, the
-symlink is correct — but `docker version` reports:
-
-> Cannot connect to the Docker daemon at `unix:///Users/willfoti/.docker/run/docker.sock`
-
-Cause: the Docker Desktop Electron app and the Linux VM that hosts `dockerd`
-are independent. The VM can be paused while the dashboard is up. Someone
-running `docker compose up` for the first time gets an opaque error.
-
-Work items:
-
-- [ ] `scripts/check_docker.sh`:
-  - Probes `docker version` (client vs. server)
-  - If server is missing, probes the socket directly with `curl --unix-socket ~/.docker/run/docker.sock /_ping`
-  - Prints a human message: _"Docker Desktop is running but the engine is paused. Click the whale icon in the menu bar → **Resume**, then re-run."_
-  - Exits non-zero so `make` / CI surfaces it.
-- [ ] Wrap `docker compose up` in a `make up` target that runs the preflight first.
-- [ ] README "Troubleshooting" section:
-  - The UI-open / engine-paused distinction
-  - Verify with `docker version` (client-only ≠ healthy)
-  - Resume from the whale menu → _Start_ / _Resume_
-  - Last resort: `osascript -e 'quit app "Docker"' && open -a Docker`
-- [ ] Not an action on the user's machine: we **never** auto-restart Docker from this repo's scripts — it kills any running containers.
+Pick one or two; ship together rather than fragmenting into sub-phases.
 
 ---
 
@@ -133,19 +61,19 @@ Status updated for everything shipped through Phase 3.
 | **Fixed income** | `TK` `YAS` `BVAL` `TRACE` | ⚠️ FRED treasuries only | Phase 8: add FINRA TRACE + Treasury auctions |
 | **FX** | `FXIP` `FRD` `WCV` | ✅ Phase 1.1 | Phase 8: cross-rates, forwards |
 | **Commodities / futures** | `CMCX` `CTM` `CRV` | ⚠️ via overview tiles | Phase 8: curve builder |
-| **Options / derivatives** | `OMON` `OVME` `OVDV` | ✅ Phase 2 (chain + IV smile + Greeks) | Phase 4: payoff builder, term structure |
+| **Options / derivatives** | `OMON` `OVME` `OVDV` | ✅ Phase 2 (chain + IV smile + Greeks) + Phase 5 (multi-leg payoff diagram) | Phase 6: term structure, vol surface |
 | **Crypto** | `XBTC` `DIG` | ✅ Phase 1 | Phase 5: CEX L2 + on-chain |
 | **Macroeconomics** | `ECO` `WECO` `GDP` `CPI` | ✅ Phase 1 (FRED) | Phase 5: econ calendar |
 | **News** | `TOP` `N` `NI` `MLIV` | ✅ Phase 2 (Alpaca + RSS merged) | Phase 4: LLM summarization |
 | **Research (BI)** | Bloomberg Intelligence | ✅ Phase 4 (EXPLAIN / COMPARE via Claude) | Phase 6: full-text 10-K ingestion |
 | **Filings** | `CF` `FIL` | ✅ Phase 2 | Phase 6: full-text search |
-| **Portfolio analytics** | `PORT` `MARS` | ✅ Phase 3.1 (live Alpaca paper) | Phase 5: order entry |
-| **Trading / OMS/EMS** | `BXT` `TSOX` `EMSX` | ❌ | Phase 5: Alpaca paper orders |
-| **Alerting** | `ALRT` | ❌ | Phase 5: Redis Streams + WS push |
+| **Portfolio analytics** | `PORT` `MARS` | ✅ Phase 3.1 (live Alpaca paper) + Phase 5 (order entry) | Phase 6: factor risk, attribution |
+| **Trading / OMS/EMS** | `BXT` `TSOX` `EMSX` | ✅ Phase 5 (Alpaca paper market/limit/stop, cancel) | Phase 6: bracket / OCO orders |
+| **Alerting** | `ALRT` | ✅ Phase 5 (rule DSL + Redis Stream + WS fan-out) | Phase 7: shareable rules |
 | **Messaging / IB** | `MSG` `IB` | ❌ | Phase 7: optional Matrix room |
 | **Scripting / BQuant** | `BQL` `BQNT` | ❌ | Phase 6: `/api/sql` over DuckDB |
 | **Workspace / Launchpad** | Draggable multi-monitor | ✅ Phase 3 | Phase 7: shareable layout JSON |
-| **Command bar + mnemonics** | `GO` `DES` `N` `GP` `OMON` `HELP` | ✅ Phase 4 (fuzzy + history + Tab) | Phase 5: WebSocket quote streaming |
+| **Command bar + mnemonics** | `GO` `DES` `N` `GP` `OMON` `HELP` | ✅ Phase 4 (fuzzy + history + Tab) + Phase 5 (TRADE / ALRT / PAYOFF chips) | Phase 6: per-user macros |
 | **Indices / benchmarks** | `WEI` `MMAP` `TOP GOV` | ✅ Phase 1.1 | Phase 4: sector heatmap |
 | **Mobile** | Bloomberg Anywhere / App | ⚠️ responsive breakpoints exist | Phase 9: PWA + tuned layouts |
 | **ESG / climate** | `ESG` `CARB` | ❌ | Phase 8 |
@@ -195,12 +123,12 @@ Honest moats. Not trying to close these.
 - `AAPL SIZING`: Kelly / fixed-fractional position-size suggestion.
 - Fuzzy mnemonic matching, recent-command history, tab completion.
 
-### Phase 5 — Real-time + alerts + trading
+### Phase 5 — Real-time + alerts + trading ✅ shipped
 
-- WebSocket quote/news streaming from Alpaca + IEX.
-- Rule-based alerts (Redis Streams + rule DSL) with WS fan-out.
-- Alpaca paper order entry (`/api/orders` POST) — a proper EMS panel.
-- Options payoff builder.
+- WebSocket quote/news streaming from Alpaca + IEX. ✅
+- Rule-based alerts (Redis Streams + rule DSL) with WS fan-out. ✅
+- Alpaca paper order entry (`/api/orders` POST) — a proper EMS panel. ✅
+- Options payoff builder. ✅
 
 ### Phase 6 — Persistence + scripting
 

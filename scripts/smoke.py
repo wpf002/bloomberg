@@ -39,6 +39,9 @@ MODULES = [
     "backend.core.cache_utils",
     "backend.core.bsm",
     "backend.core.llm",
+    "backend.core.payoff",
+    "backend.core.streaming",
+    "backend.core.alerts",
     "backend.models.schemas",
     "backend.api",
     "backend.api.routes.quotes",
@@ -55,6 +58,9 @@ MODULES = [
     "backend.api.routes.sizing",
     "backend.api.routes.explain",
     "backend.api.routes.compare",
+    "backend.api.routes.orders",
+    "backend.api.routes.alerts",
+    "backend.api.routes.streams",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
     "backend.data.sources.fred_source",
@@ -74,12 +80,20 @@ for name in MODULES:
 print("\n== schemas ==")
 from backend.models.schemas import (  # noqa: E402
     Account,
+    AlertCondition,
+    AlertEvent,
+    AlertRule,
     Brief,
     ComparisonBrief,
     EarningsEvent,
     Fundamentals,
     OptionChain,
     OptionContract,
+    Order,
+    OrderRequest,
+    PayoffCurve,
+    PayoffLeg,
+    PayoffPoint,
     Position,
     PositionSize,
     Quote,
@@ -154,6 +168,91 @@ check(
     "ComparisonBrief",
     bool(ComparisonBrief(symbols=["AAPL", "MSFT"], body="…", model="claude-sonnet-4-6")),
 )
+check(
+    "OrderRequest",
+    bool(OrderRequest(symbol="AAPL", qty=10, side="buy", type="market", time_in_force="day")),
+)
+check(
+    "Order",
+    bool(
+        Order(
+            id="abc123",
+            symbol="AAPL",
+            side="buy",
+            type="market",
+            time_in_force="day",
+            qty=10,
+            status="filled",
+        )
+    ),
+)
+check(
+    "AlertRule",
+    bool(
+        AlertRule(
+            id="r1",
+            symbol="AAPL",
+            conditions=[AlertCondition(field="price", op=">", value=200.0)],
+        )
+    ),
+)
+check(
+    "AlertEvent",
+    bool(AlertEvent(rule_id="r1", symbol="AAPL", snapshot={"price": 201.0})),
+)
+check(
+    "PayoffCurve",
+    bool(
+        PayoffCurve(
+            underlying_price=100.0,
+            legs=[PayoffLeg(type="call", side="long", strike=100.0, premium=2.5)],
+            points=[PayoffPoint(spot=100.0, pnl=-2.5), PayoffPoint(spot=110.0, pnl=7.5)],
+            breakevens=[102.5],
+            net_premium=-250.0,
+        )
+    ),
+)
+
+
+# ─── payoff math sanity ─────────────────────────────────────────────────────
+print("\n== payoff math ==")
+from backend.core.payoff import build_payoff  # noqa: E402
+
+# Long call, 100 strike, 2.5 premium, 1 contract (100 mult). At expiry:
+#   spot 100  -> -250 (loss = premium * 100)
+#   spot 102.5-> 0    (breakeven)
+#   spot 110  -> 750
+long_call = build_payoff(
+    underlying_price=100.0,
+    legs=[PayoffLeg(type="call", side="long", strike=100.0, premium=2.5, qty=1)],
+)
+check("long-call has points", len(long_call.points) > 50)
+be = long_call.breakevens
+check(
+    "long-call breakeven near 102.5",
+    bool(be) and any(abs(b - 102.5) < 0.5 for b in be),
+    f"breakevens={be}",
+)
+check(
+    "long-call max loss == -250",
+    long_call.max_loss is not None and abs(long_call.max_loss + 250) < 1.0,
+    f"max_loss={long_call.max_loss}",
+)
+check("long-call upside unbounded", long_call.max_profit is None)
+
+# Iron condor, 90/95/105/110, premiums summing to a 1.6 credit
+condor = build_payoff(
+    underlying_price=100.0,
+    legs=[
+        PayoffLeg(type="put",  side="long",  strike=90.0,  premium=0.8, qty=1),
+        PayoffLeg(type="put",  side="short", strike=95.0,  premium=1.6, qty=1),
+        PayoffLeg(type="call", side="short", strike=105.0, premium=1.6, qty=1),
+        PayoffLeg(type="call", side="long",  strike=110.0, premium=0.8, qty=1),
+    ],
+)
+check("iron-condor has bounded max profit", condor.max_profit is not None)
+check("iron-condor has bounded max loss", condor.max_loss is not None)
+check("iron-condor net premium > 0 (credit)", condor.net_premium > 0)
 
 
 # ─── BSM Greeks sanity ──────────────────────────────────────────────────────
@@ -193,6 +292,7 @@ EXPECTED = [
     ("GET", "/api/crypto"),
     ("GET", "/api/fx"),
     ("GET", "/api/options/{symbol}"),
+    ("POST", "/api/options/payoff"),
     ("GET", "/api/overview"),
     ("GET", "/api/fundamentals/{symbol}"),
     ("GET", "/api/calendar/earnings"),
@@ -203,9 +303,22 @@ EXPECTED = [
     ("GET", "/api/sizing/{symbol}"),
     ("GET", "/api/explain/{symbol}"),
     ("GET", "/api/compare"),
+    ("GET", "/api/orders"),
+    ("POST", "/api/orders"),
+    ("DELETE", "/api/orders/{order_id}"),
+    ("GET", "/api/alerts/rules"),
+    ("POST", "/api/alerts/rules"),
+    ("DELETE", "/api/alerts/rules/{rule_id}"),
+    ("GET", "/api/alerts/events"),
 ]
+# WebSocket routes don't expose `methods` like HTTP routes do; check by path.
+WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts"]
+ws_paths_registered = {route.path for route in app.routes if hasattr(route, "path")}
 for method, path in EXPECTED:
     check(f"{method} {path}", (method, path) in registered)
+
+for path in WS_PATHS:
+    check(f"WS {path}", path in ws_paths_registered)
 
 
 # ─── summary ────────────────────────────────────────────────────────────────

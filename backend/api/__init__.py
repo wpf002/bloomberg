@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from .routes import (
+    alerts,
     calendar,
     compare,
     crypto,
@@ -11,10 +12,12 @@ from .routes import (
     macro,
     news,
     options,
+    orders,
     overview,
     portfolio,
     quotes,
     sizing,
+    streams,
 )
 
 api_router = APIRouter()
@@ -32,5 +35,8 @@ api_router.include_router(portfolio.router, prefix="/portfolio", tags=["portfoli
 api_router.include_router(sizing.router, prefix="/sizing", tags=["sizing"])
 api_router.include_router(explain.router, prefix="/explain", tags=["explain"])
 api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
+api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
+api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(streams.router, prefix="/ws", tags=["streams"])
 
 __all__ = ["api_router"]

@@ -103,6 +103,17 @@ npm run dev
 | GET    | `/api/sizing/{symbol}?stop_pct=5` | Position-size grid at 0.5/1/2/5% risk      |
 | GET    | `/api/explain/{symbol}`           | LLM briefing (fundamentals + news + 10-Qs) |
 | GET    | `/api/compare?symbols=AAPL,MSFT`  | LLM side-by-side of two symbols            |
+| GET    | `/api/orders?status=all`          | Paper order list (Alpaca)                  |
+| POST   | `/api/orders`                     | Submit a paper order (market/limit/stop)   |
+| DELETE | `/api/orders/{id}`                | Cancel a working paper order               |
+| GET    | `/api/alerts/rules`               | List active alert rules                    |
+| POST   | `/api/alerts/rules`               | Create an alert rule (symbol + conditions) |
+| DELETE | `/api/alerts/rules/{id}`          | Remove an alert rule                       |
+| GET    | `/api/alerts/events`              | Recent fired alerts (Redis stream)         |
+| POST   | `/api/options/payoff`             | Multi-leg expiry payoff curve              |
+| WS     | `/api/ws/quotes?symbols=AAPL,…`   | Live trades + quotes (Alpaca IEX)          |
+| WS     | `/api/ws/news`                    | Live news firehose                         |
+| WS     | `/api/ws/alerts`                  | Live alert fires                           |
 
 Option contracts returned by `/api/options/{symbol}` now include analytical
 Black-Scholes Greeks (`delta`, `gamma`, `vega`, `theta`, `rho`) derived from
@@ -121,8 +132,12 @@ The command bar accepts Bloomberg-style mnemonics: `<SYMBOL> <FN>`.
 | `GP` / `GIP` / `HP` | Price chart |
 | `N` / `TOP` | News |
 | `OMON` / `OV` | Options chain |
+| `OVME` / `PAYOFF` | Options payoff diagram (multi-leg) |
 | `FIL` / `CF` | SEC filings |
 | `PORT` | Portfolio |
+| `TRADE` / `EMSX` / `BUY` / `SELL` | Paper order ticket |
+| `ALRT` / `ALERT` | Rule-based alerts |
+| `SIZE` / `SIZING` | Position-size calculator |
 | `WEI` / `MMAP` | Markets overview |
 | `ECO` | Macro / FRED |
 | `FXIP` | FX |
@@ -136,12 +151,15 @@ Try `AAPL DES`, `SPY GP`, `NVDA OMON`, `EURUSD FXIP`, or just `HELP`.
 The front-end renders a dense multi-panel dashboard (dark theme, JetBrains
 Mono, amber accents). Panels:
 
-- **Watchlist** — click to set the active symbol
+- **Watchlist** — click to set the active symbol; rows tick live via the `/api/ws/quotes` WebSocket
 - **Chart** — Recharts area chart, period picker (1D → 5Y)
 - **News Feed** — per-symbol headlines from Alpaca
 - **Macro** — FRED series switcher (DGS10, FEDFUNDS, CPI, VIX, …)
 - **Portfolio** — live Alpaca paper account + positions (unrealized P/L)
 - **Crypto** — top pairs with 24h change
+- **EMS / Order Ticket** — submit paper orders (market / limit / stop / stop-limit) and cancel working orders
+- **Alerts** — rule builder (`price > 200`, `change_percent < -3`, …) with a live fire feed over `/api/ws/alerts`
+- **Payoff** — multi-leg options strategy diagrams (long call, covered call, bull spread, iron condor, straddle, custom)
 
 A command bar at the top accepts a ticker and sets it as the active symbol
 (Bloomberg-style `<GO>` pattern).
@@ -189,12 +207,18 @@ How to tell which state you're in, and what to do:
 `make up` runs `scripts/check_docker.sh` first and prints a human-readable
 diagnosis instead of the cryptic socket error. Use `make up` by default.
 
-## Phase 1 → Next
+## Phases shipped
 
-Phase 1 wires the scaffold and Phase-1 data sources. Future phases:
+- **Phase 1** — scaffold + Phase-1 data sources
+- **Phase 1.1** — Markets overview, FX, options chain, mnemonic dispatcher
+- **Phase 2** — Greeks, options panel, multi-source RSS, filings panel
+- **Phase 3** — fundamentals, earnings, draggable Launchpad
+- **Phase 3.1** — live Alpaca portfolio, Docker preflight
+- **Phase 4** — command-bar polish, sizing, LLM EXPLAIN/COMPARE
+- **Phase 5** — WebSocket streaming, paper order entry, rule-based alerts, options payoff
 
-- Options chains + Greeks
-- Futures curves
-- WebSocket streaming for quotes/news
-- Persistence to Postgres (historical warehouse) with Redis-cached reads
-- Auth, watchlist persistence, alerting
+## Next
+
+- Auth + per-user watchlists / Launchpad layouts in Postgres
+- DuckDB-backed `/api/sql` endpoint (BQL-style scripting)
+- Full-text filings search

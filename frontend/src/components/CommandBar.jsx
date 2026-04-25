@@ -145,7 +145,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
             BLOOMBERG TERMINAL
           </span>
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            v0.1 · Phase 4 · Public Edition
+            v0.1 · Phase 5 · Public Edition
           </span>
         </div>
         <form onSubmit={submit} className="relative flex-1">
@@ -271,6 +271,9 @@ const QUICK_ACTIONS = [
   { mnemonic: "EXPLAIN", label: "EXPLAIN · AI briefing",   title: "LLM briefing (news + filings + fundamentals)" },
   { mnemonic: "COMPARE", label: "COMPARE · vs SPY",        title: "LLM side-by-side (active vs SPY by default)" },
   { mnemonic: "PORT",    label: "PORT · portfolio",        title: "Paper portfolio" },
+  { mnemonic: "TRADE",   label: "TRADE · order ticket",    title: "Submit a paper order via Alpaca" },
+  { mnemonic: "ALRT",    label: "ALRT · alerts",           title: "Create / monitor rule-based alerts" },
+  { mnemonic: "PAYOFF",  label: "PAYOFF · option strategy", title: "Multi-leg options payoff diagram" },
   { mnemonic: "HELP",    label: "HELP · all mnemonics",    title: "Full mnemonic reference" },
 ];
 

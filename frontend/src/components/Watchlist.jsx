@@ -1,6 +1,8 @@
+import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
+import useStream from "../hooks/useStream.js";
 import { api } from "../lib/api.js";
 
 function formatNumber(value, digits = 2) {
@@ -11,6 +13,8 @@ function formatNumber(value, digits = 2) {
   });
 }
 
+const FLASH_MS = 600;
+
 export default function Watchlist({ symbols, activeSymbol, onSelect }) {
   const { data, error, loading } = usePolling(
     () => api.quotes(symbols),
@@ -18,11 +22,55 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
     [symbols.join(",")]
   );
 
+  // Local overlay map: streaming ticks layer on top of the polled snapshot.
+  const [stream, setStream] = useState({}); // { SYM: { price, ts } }
+  const flashRef = useRef({}); // SYM -> "up" | "down" | undefined
+
+  const wsPath = useMemo(
+    () => `/api/ws/quotes?symbols=${encodeURIComponent(symbols.join(","))}`,
+    [symbols.join(",")]
+  );
+
+  const { status: wsStatus } = useStream(wsPath, {
+    onMessage: (msg) => {
+      if (!msg?.symbol || msg.type === "ready") return;
+      const sym = msg.symbol;
+      const next = msg.price;
+      if (next == null) return;
+      setStream((prev) => {
+        const previous = prev[sym]?.price;
+        if (previous != null && next !== previous) {
+          flashRef.current[sym] = next > previous ? "up" : "down";
+          setTimeout(() => {
+            delete flashRef.current[sym];
+            setStream((p) => ({ ...p })); // force re-render
+          }, FLASH_MS);
+        }
+        return { ...prev, [sym]: { price: next, ts: msg.timestamp } };
+      });
+    },
+  });
+
   return (
     <Panel
       title="Watchlist"
       accent="amber"
-      actions={<span className="text-terminal-muted">{symbols.length} syms</span>}
+      actions={
+        <span className="text-terminal-muted">
+          {symbols.length} syms ·{" "}
+          <span
+            className={
+              wsStatus === "open"
+                ? "text-terminal-green"
+                : wsStatus === "error"
+                ? "text-terminal-red"
+                : "text-terminal-muted"
+            }
+          >
+            ws {wsStatus}
+          </span>
+        </span>
+      }
     >
       {loading && !data ? (
         <div className="text-terminal-muted">Loading quotes…</div>
@@ -41,19 +89,30 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
           </thead>
           <tbody>
             {(data || []).map((q) => {
-              const positive = q.change >= 0;
+              const live = stream[q.symbol]?.price;
+              const price = live ?? q.price;
+              const baseClose = q.previous_close ?? q.price - q.change;
+              const change = live != null ? live - baseClose : q.change;
+              const pct =
+                baseClose && live != null
+                  ? (change / baseClose) * 100
+                  : q.change_percent;
+              const positive = change >= 0;
               const active = q.symbol === activeSymbol;
+              const flash = flashRef.current[q.symbol];
               return (
                 <tr
                   key={q.symbol}
                   onClick={() => onSelect?.(q.symbol)}
                   className={clsx(
-                    "cursor-pointer border-t border-terminal-border/60 hover:bg-terminal-panelAlt",
-                    active && "bg-terminal-panelAlt"
+                    "cursor-pointer border-t border-terminal-border/60 hover:bg-terminal-panelAlt transition-colors",
+                    active && "bg-terminal-panelAlt",
+                    flash === "up" && "bg-terminal-green/10",
+                    flash === "down" && "bg-terminal-red/10"
                   )}
                 >
                   <td className="py-1 pr-2 font-bold text-terminal-amber">{q.symbol}</td>
-                  <td className="py-1 pr-2 text-right">{formatNumber(q.price)}</td>
+                  <td className="py-1 pr-2 text-right">{formatNumber(price)}</td>
                   <td
                     className={clsx(
                       "py-1 pr-2 text-right",
@@ -61,7 +120,7 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
                     )}
                   >
                     {positive ? "+" : ""}
-                    {formatNumber(q.change)}
+                    {formatNumber(change)}
                   </td>
                   <td
                     className={clsx(
@@ -70,7 +129,7 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
                     )}
                   >
                     {positive ? "+" : ""}
-                    {formatNumber(q.change_percent)}%
+                    {formatNumber(pct)}%
                   </td>
                   <td className="py-1 text-right text-terminal-muted">
                     {q.volume ? q.volume.toLocaleString() : "--"}

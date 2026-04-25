@@ -5,8 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api import api_router
+from .core.alerts import engine as alert_engine
 from .core.config import settings
 from .core.database import cache, database
+from .core.streaming import streamer
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -26,7 +28,17 @@ async def lifespan(app: FastAPI):
         await cache.connect()
     except Exception as exc:
         logger.warning("Redis unavailable at startup: %s", exc)
+    try:
+        await streamer.start()
+        await alert_engine.start()
+    except Exception as exc:
+        logger.warning("Stream/alert background tasks failed to start: %s", exc)
     yield
+    try:
+        await alert_engine.stop()
+        await streamer.stop()
+    except Exception as exc:
+        logger.warning("Stream/alert background tasks shutdown error: %s", exc)
     await database.disconnect()
     await cache.disconnect()
 
