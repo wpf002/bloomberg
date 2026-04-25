@@ -67,6 +67,13 @@ class Settings(BaseSettings):
     sql_query_max_rows: int = 5000
     sql_query_timeout_seconds: float = 8.0
 
+    # FINRA TRACE corporate bond data — OAuth2 client credentials grant.
+    # Free dev account at https://developer.finra.org/. Without these, the
+    # /api/fixed_income/trace endpoint returns 503 instead of failing later
+    # in the auth handshake.
+    finra_api_key: str | None = None
+    finra_api_secret: str | None = None
+
     risk_free_rate: float = 0.045
     default_cache_ttl: int = 60
     rss_timeout_seconds: float = 6.0

@@ -145,7 +145,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
             BLOOMBERG TERMINAL
           </span>
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            v0.1 · Phase 7 · Public Edition
+            v0.1 · Phase 8 · Public Edition
           </span>
         </div>
         <form onSubmit={submit} className="relative flex-1">
@@ -276,6 +276,9 @@ const QUICK_ACTIONS = [
   { mnemonic: "PAYOFF",  label: "PAYOFF · option strategy", title: "Multi-leg options payoff diagram" },
   { mnemonic: "SQL",     label: "SQL · workbench",         title: "DuckDB SQL workbench (bars / macro / filings)" },
   { mnemonic: "SRCH",    label: "SRCH · filings search",   title: "Full-text filings search via Meilisearch" },
+  { mnemonic: "MARS",    label: "MARS · factor analysis",  title: "Fama-French 5 + momentum on your portfolio" },
+  { mnemonic: "TK",      label: "TK · fixed income",       title: "Treasury auctions + FINRA TRACE corp bonds" },
+  { mnemonic: "CTM",     label: "CTM · futures",           title: "Front-month strip + term-structure curve" },
   { mnemonic: "HELP",    label: "HELP · all mnemonics",    title: "Full mnemonic reference" },
 ];
 

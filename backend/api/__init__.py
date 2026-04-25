@@ -7,8 +7,11 @@ from .routes import (
     compare,
     crypto,
     explain,
+    factors,
     filings,
+    fixed_income,
     fundamentals,
+    futures,
     fx,
     macro,
     me,
@@ -46,5 +49,8 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(me.router, prefix="/me", tags=["me"])
 api_router.include_router(shared.router, prefix="/shared", tags=["shared"])
 api_router.include_router(sql.router, prefix="/sql", tags=["sql"])
+api_router.include_router(factors.router, prefix="/portfolio", tags=["portfolio"])
+api_router.include_router(fixed_income.router, prefix="/fixed_income", tags=["fixed_income"])
+api_router.include_router(futures.router, prefix="/futures", tags=["futures"])
 
 __all__ = ["api_router"]

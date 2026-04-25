@@ -343,6 +343,75 @@ class SharedLayout(BaseModel):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class FactorReport(BaseModel):
+    """Fama-French 5 + Carhart momentum regression of the user's current
+    Alpaca paper portfolio against Ken French daily factors. `alpha_annual`
+    is the daily intercept × 252; positive means the portfolio outperforms
+    its factor exposures."""
+    alpha_annual: float
+    alpha_daily: float
+    factors: dict  # mkt_rf / smb / hml / rmw / cma / mom betas
+    r_squared: float
+    observations: int
+    first_date: str
+    last_date: str
+    weights: dict  # symbol → portfolio weight as a check
+    insufficient_data: bool = False
+    message: Optional[str] = None
+
+
+class TreasuryAuction(BaseModel):
+    """One upcoming or recently announced US Treasury auction."""
+    cusip: Optional[str] = None
+    security_type: Optional[str] = None  # Bill | Note | Bond | TIPS | FRN
+    security_term: Optional[str] = None  # "13-Week" / "10-Year" etc.
+    auction_date: Optional[str] = None
+    issue_date: Optional[str] = None
+    maturity_date: Optional[str] = None
+    offering_amount: Optional[float] = None
+    high_yield: Optional[float] = None
+    interest_rate: Optional[float] = None
+
+
+class TraceAggregate(BaseModel):
+    """One row from FINRA's monthly Treasury trade aggregates dataset.
+
+    The free FINRA developer tier doesn't entitle accounts to corporate-
+    bond TRACE prints (those need a paid subscription); the public free
+    dataset for retail dev accounts is `treasuryMonthlyAggregates`. We
+    keep the schema intentionally generic so future entitlements (corp
+    bonds, agency, etc.) can flow through the same pydantic shape.
+    """
+    period: Optional[str] = None  # month / week label
+    security_type: Optional[str] = None  # On-the-Run, Off-the-Run, etc.
+    benchmark_term: Optional[str] = None  # 10-Year, 30-Year, etc.
+    trade_date: Optional[str] = None
+    total_par_volume: Optional[float] = None
+    total_trade_count: Optional[int] = None
+    avg_trade_size: Optional[float] = None
+    pct_dealer_to_customer: Optional[float] = None
+    pct_dealer_to_dealer: Optional[float] = None
+    raw: Optional[dict] = None  # full source row for the UI to surface unmapped fields
+
+
+class FuturesContract(BaseModel):
+    """Single point on a futures term-structure curve."""
+    contract_symbol: str
+    expiration: Optional[str] = None
+    price: float
+    change: float = 0.0
+    change_percent: float = 0.0
+    volume: int = 0
+
+
+class FuturesCurve(BaseModel):
+    root: str  # CL / GC / NG / ZC / ZS
+    label: str
+    front_month_price: Optional[float] = None
+    contracts: List[FuturesContract] = Field(default_factory=list)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
 class PayoffLeg(BaseModel):
     """One leg of an options strategy. `type` accepts 'call', 'put', or
     'stock' (stock legs ignore strike/expiration, premium is the cost basis)."""

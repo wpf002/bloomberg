@@ -137,6 +137,32 @@ export const api = {
   fetchSharedLayout: (slug) =>
     request(`/api/shared/layouts/${encodeURIComponent(slug)}`),
 
+  // ── Phase 8: portfolio factor analysis (Fama-French 5 + Carhart) ─────
+  portfolioFactors: (lookbackDays = 252) =>
+    request(`/api/portfolio/factors?lookback_days=${lookbackDays}`),
+
+  // ── Phase 8: fixed income (Treasury auctions + FINRA TRACE) ──────────
+  fixedIncomeStatus: () => request(`/api/fixed_income/status`),
+  treasuryAuctions: (kind = "announced", limit = 20) =>
+    request(`/api/fixed_income/treasury/auctions?kind=${kind}&limit=${limit}`),
+  traceAggregates: (cusip, limit = 50) => {
+    const q = new URLSearchParams();
+    q.set("limit", String(limit));
+    if (cusip) q.set("cusip", cusip);
+    return request(`/api/fixed_income/trace?${q.toString()}`);
+  },
+
+  // ── Phase 8: futures dashboard + per-root term structure ─────────────
+  futuresDashboard: () => request(`/api/futures/dashboard`),
+  futuresCurve: (root) => request(`/api/futures/curve/${encodeURIComponent(root)}`),
+
+  // Phase 8: ESG-only filings search (preset over the existing endpoint)
+  filingsSearchEsg: (q, { symbol, limit = 20 } = {}) => {
+    const params = new URLSearchParams({ q, limit: String(limit), category: "esg" });
+    if (symbol) params.set("symbol", symbol);
+    return request(`/api/filings/search?${params.toString()}`);
+  },
+
   // ── SQL (DuckDB) ──────────────────────────────────────────────────────
   sqlTables: () => request(`/api/sql/tables`),
   sqlQuery: (query, maxRows) =>

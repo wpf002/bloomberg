@@ -28,6 +28,7 @@ function HighlightedText({ html, className }) {
 export default function FilingsSearchPanel({ symbol }) {
   const [query, setQuery] = useState("");
   const [filterToActive, setFilterToActive] = useState(false);
+  const [esgOnly, setEsgOnly] = useState(false);
   const [hits, setHits] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -40,9 +41,13 @@ export default function FilingsSearchPanel({ symbol }) {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.filingsSearch(query, {
-        symbol: filterToActive ? symbol : undefined,
-      });
+      const data = esgOnly
+        ? await api.filingsSearchEsg(query, {
+            symbol: filterToActive ? symbol : undefined,
+          })
+        : await api.filingsSearch(query, {
+            symbol: filterToActive ? symbol : undefined,
+          });
       setHits(data?.hits || []);
     } catch (err) {
       setError(err.detail || err.message || String(err));
@@ -91,6 +96,17 @@ export default function FilingsSearchPanel({ symbol }) {
               onChange={(e) => setFilterToActive(e.target.checked)}
             />
             Limit to {symbol}
+          </label>
+          <label
+            className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-terminal-muted"
+            title="Restrict to filings that typically carry ESG/climate disclosures (10-K, 8-K, DEF 14A, S-K)"
+          >
+            <input
+              type="checkbox"
+              checked={esgOnly}
+              onChange={(e) => setEsgOnly(e.target.checked)}
+            />
+            ESG only
           </label>
           <button
             type="submit"

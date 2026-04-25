@@ -87,6 +87,8 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       JWT_SECRET: ${JWT_SECRET:-}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      FINRA_API_KEY: ${FINRA_API_KEY:-}
+      FINRA_API_SECRET: ${FINRA_API_SECRET:-}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

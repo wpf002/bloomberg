@@ -44,6 +44,13 @@ export const MNEMONICS = {
   SEARCH:  { intent: "search",    description: "Full-text filings search (Meilisearch)" },
   LOGIN:   { intent: "login",     description: "Sign in with GitHub" },
   LOGOUT:  { intent: "logout",    description: "Sign out" },
+  MARS:    { intent: "factors",   description: "Portfolio factor analysis (Fama-French 5 + momentum)" },
+  FACTORS: { intent: "factors",   description: "Portfolio factor analysis" },
+  TK:      { intent: "fixed",     description: "Fixed income — Treasuries + corporate bonds" },
+  TRACE:   { intent: "fixed",     description: "FINRA TRACE corporate bond prints" },
+  BAUC:    { intent: "fixed",     description: "Treasury auction calendar" },
+  CRV:     { intent: "futures",   description: "Futures dashboard + term-structure curve" },
+  CTM:     { intent: "futures",   description: "Commodities / futures monitor" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

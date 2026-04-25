@@ -43,6 +43,7 @@ MODULES = [
     "backend.core.streaming",
     "backend.core.alerts",
     "backend.core.auth",
+    "backend.core.factor_analysis",
     "backend.core.schema",
     "backend.core.sql_engine",
     "backend.models.schemas",
@@ -65,15 +66,22 @@ MODULES = [
     "backend.api.routes.alerts",
     "backend.api.routes.streams",
     "backend.api.routes.auth",
+    "backend.api.routes.factors",
+    "backend.api.routes.fixed_income",
+    "backend.api.routes.futures",
     "backend.api.routes.me",
     "backend.api.routes.shared",
     "backend.api.routes.sql",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
+    "backend.data.sources.finra_source",
     "backend.data.sources.fred_source",
+    "backend.data.sources.french_source",
+    "backend.data.sources.futures_source",
     "backend.data.sources.meilisearch_source",
     "backend.data.sources.rss_source",
     "backend.data.sources.sec_edgar_source",
+    "backend.data.sources.treasury_source",
     "backend.data.sources.yfinance_source",
 ]
 for name in MODULES:
@@ -335,6 +343,12 @@ EXPECTED = [
     ("GET", "/api/shared/layouts/{slug}"),
     ("POST", "/api/sql"),
     ("GET", "/api/sql/tables"),
+    ("GET", "/api/portfolio/factors"),
+    ("GET", "/api/fixed_income/status"),
+    ("GET", "/api/fixed_income/treasury/auctions"),
+    ("GET", "/api/fixed_income/trace"),
+    ("GET", "/api/futures/dashboard"),
+    ("GET", "/api/futures/curve/{root}"),
 ]
 # WebSocket routes don't expose `methods` like HTTP routes do; check by path.
 WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts"]
@@ -427,6 +441,44 @@ check("alerts.list_rules accepts user_id", "user_id" in sig.parameters)
 sig = _inspect.signature(AlertEngine.delete_rule)
 check("alerts.delete_rule accepts user_id", "user_id" in sig.parameters)
 check("AlertEngine.list_all_rules exists", hasattr(AlertEngine, "list_all_rules"))
+
+
+# ─── Phase 8 schemas + factor analysis ──────────────────────────────────────
+print("\n== Phase 8 schemas ==")
+from backend.models.schemas import (  # noqa: E402
+    FactorReport, FuturesContract, FuturesCurve, TraceAggregate, TreasuryAuction,
+)
+
+check("FactorReport", bool(FactorReport(
+    alpha_annual=0.05, alpha_daily=0.0002, factors={"mkt_rf": 0.9, "smb": 0.1},
+    r_squared=0.85, observations=252, first_date="2025-04-25", last_date="2026-04-25",
+    weights={"AAPL": 0.5, "MSFT": 0.5},
+)))
+check("TreasuryAuction", bool(TreasuryAuction(security_type="Bill", security_term="13-Week")))
+check("TraceAggregate", bool(TraceAggregate(cusip="037833DL1", issuer="Apple")))
+check("FuturesCurve", bool(FuturesCurve(
+    root="CL", label="WTI", front_month_price=80.0,
+    contracts=[FuturesContract(contract_symbol="CLM26.NYM", expiration="2026-06-01", price=81.0)],
+)))
+
+
+print("\n== Phase 8 factor regression OLS ==")
+import numpy as _np  # noqa: E402
+from backend.core.factor_analysis import _ols  # noqa: E402
+
+# Synthetic regression: y = 0.5 + 1.2*x1 - 0.3*x2 + tiny noise. Recover the
+# coefficients via lstsq; betas + R² should be tight.
+rng = _np.random.default_rng(42)
+n = 200
+x1 = rng.normal(0, 1, n)
+x2 = rng.normal(0, 1, n)
+y = 0.5 + 1.2 * x1 - 0.3 * x2 + rng.normal(0, 0.05, n)
+X = _np.column_stack([_np.ones(n), x1, x2])
+beta, r2 = _ols(y, X)
+check("OLS recovers intercept ≈0.5", abs(beta[0] - 0.5) < 0.05, f"got {beta[0]:.4f}")
+check("OLS recovers β1 ≈1.2",        abs(beta[1] - 1.2) < 0.05, f"got {beta[1]:.4f}")
+check("OLS recovers β2 ≈-0.3",       abs(beta[2] + 0.3) < 0.05, f"got {beta[2]:.4f}")
+check("OLS R² > 0.99 on synthetic",  r2 > 0.99,                  f"got {r2:.4f}")
 
 
 # ─── summary ────────────────────────────────────────────────────────────────

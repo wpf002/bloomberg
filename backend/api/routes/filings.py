@@ -9,20 +9,58 @@ router = APIRouter()
 _edgar = SecEdgarSource()
 
 
+# SEC climate-rule + ESG form type families. Items 1.05 (cybersecurity)
+# and 1.10 (climate) on 8-Ks bleed into the same searches; we lean
+# permissive here because the indexer also surfaces text matches.
+ESG_FORM_TYPES = [
+    "S-K",        # the climate disclosure rule itself, plus subsections
+    "10-K",       # contains Item 1C cybersecurity + climate risk discussion
+    "8-K",        # current-event filings often cite climate / ESG
+    "DEF 14A",    # proxy statements with ESG disclosures
+]
+
+
 @router.get("/search")
 async def search_filings(
     q: str = Query(..., min_length=1, description="Full-text search query"),
     symbol: str | None = Query(None, description="Optional symbol filter"),
     form_type: str | None = Query(None, description="Optional form filter (e.g. 10-K)"),
+    category: str | None = Query(
+        None,
+        description="Optional category preset: 'esg' restricts to ESG/climate-relevant form families",
+    ),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
     """Full-text filings search via Meilisearch.
 
-    Indexing happens on demand via POST /api/filings/{symbol}/index — a
-    fresh deployment with no indexed filings will return zero hits until
-    the user requests indexing for the symbols they care about.
+    Indexing happens automatically on startup (and daily via the cron) for
+    the default watchlist; per-symbol on-demand for everything else via
+    POST /api/filings/{symbol}/index.
+
+    `category=esg` is a preset that restricts hits to filing types that
+    typically carry ESG/climate disclosures (10-K, 8-K, DEF 14A, S-K).
+    Combine with a free-text query like "climate risk" or "GHG emissions"
+    for tighter results.
     """
     meili = get_meilisearch()
+    if category and category.lower() == "esg" and not form_type:
+        # Meilisearch doesn't accept an OR over filterable attributes from
+        # a single search call cleanly without a filter expression — issue
+        # one call per form type and merge.
+        seen: set[str] = set()
+        merged: list[dict[str, Any]] = []
+        for ft in ESG_FORM_TYPES:
+            for hit in await meili.search(q, limit=limit, symbol=symbol, form_type=ft):
+                key = hit.get("id") or hit.get("accession_number")
+                if key and key not in seen:
+                    seen.add(key)
+                    merged.append(hit)
+                if len(merged) >= limit:
+                    break
+            if len(merged) >= limit:
+                break
+        return {"query": q, "hits": merged, "count": len(merged), "category": "esg"}
+
     hits = await meili.search(q, limit=limit, symbol=symbol, form_type=form_type)
     return {"query": q, "hits": hits, "count": len(hits)}
 

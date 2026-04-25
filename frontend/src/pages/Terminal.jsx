@@ -6,9 +6,12 @@ import CommandBar, { MnemonicHelp } from "../components/CommandBar.jsx";
 import ComparePanel from "../components/ComparePanel.jsx";
 import CryptoPanel from "../components/CryptoPanel.jsx";
 import ExplainPanel from "../components/ExplainPanel.jsx";
+import FactorAnalyticsPanel from "../components/FactorAnalyticsPanel.jsx";
 import FilingsPanel from "../components/FilingsPanel.jsx";
 import FilingsSearchPanel from "../components/FilingsSearchPanel.jsx";
+import FixedIncomePanel from "../components/FixedIncomePanel.jsx";
 import FundamentalsPanel from "../components/FundamentalsPanel.jsx";
+import FuturesPanel from "../components/FuturesPanel.jsx";
 import Launchpad from "../components/Launchpad.jsx";
 import MacroPanel from "../components/MacroPanel.jsx";
 import MarketOverview from "../components/MarketOverview.jsx";
@@ -65,6 +68,9 @@ const INTENT_TO_PANEL = {
   share: "share",
   login: "login",
   logout: "logout",
+  factors: "factors",
+  fixed: "fixed",
+  futures: "futures",
   unknown: null,
 };
 
@@ -91,6 +97,9 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 8,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "sql",          x: 0,  y: 40, w: 8, h: 12, minW: 4, minH: 6 },
     { i: "search",       x: 8,  y: 40, w: 4, h: 12, minW: 3, minH: 6 },
+    { i: "factors",      x: 0,  y: 52, w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "fixed",        x: 6,  y: 52, w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "futures",      x: 0,  y: 62, w: 12, h: 10, minW: 4, minH: 6 },
   ],
   md: [
     { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
@@ -112,6 +121,9 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0,  y: 62, w: 12, h: 10 },
     { i: "sql",          x: 0,  y: 72, w: 12, h: 12 },
     { i: "search",       x: 0,  y: 84, w: 12, h: 10 },
+    { i: "factors",      x: 0,  y: 94, w: 12, h: 10 },
+    { i: "fixed",        x: 0,  y: 104, w: 12, h: 10 },
+    { i: "futures",      x: 0,  y: 114, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -133,6 +145,9 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0, y: 106, w: 6, h: 10 },
     { i: "sql",          x: 0, y: 116, w: 6, h: 12 },
     { i: "search",       x: 0, y: 128, w: 6, h: 10 },
+    { i: "factors",      x: 0, y: 138, w: 6, h: 10 },
+    { i: "fixed",        x: 0, y: 148, w: 6, h: 10 },
+    { i: "futures",      x: 0, y: 158, w: 6, h: 10 },
   ],
 };
 
@@ -338,6 +353,9 @@ export default function Terminal() {
       { id: "payoff",       render: () => <PayoffPanel symbol={activeSymbol} /> },
       { id: "sql",          render: () => <SqlPanel /> },
       { id: "search",       render: () => <FilingsSearchPanel symbol={activeSymbol} /> },
+      { id: "factors",      render: () => <FactorAnalyticsPanel /> },
+      { id: "fixed",        render: () => <FixedIncomePanel /> },
+      { id: "futures",      render: () => <FuturesPanel /> },
     ],
     [watchlist, activeSymbol, compareSymbols, handleSelect]
   );
@@ -456,7 +474,7 @@ export default function Terminal() {
             </span>
           )}
         </span>
-        <span>Phase 7 · Shareable layouts · Per-user alerts · Bracket/OCO orders</span>
+        <span>Phase 8 · Factor analysis · Fixed income · Futures · ESG filings</span>
       </footer>
       <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       {helpOpen ? (
