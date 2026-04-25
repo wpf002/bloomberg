@@ -17,19 +17,19 @@ import math
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...data.sources import YFinanceSource, get_alpaca_source
+from ...data.sources import FinnhubSource, get_alpaca_source
 from ...models.schemas import PositionSize, SizingRow
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_yf = YFinanceSource()
 _alpaca = get_alpaca_source()
+_finnhub = FinnhubSource()
 
 RISK_GRID = (0.5, 1.0, 2.0, 5.0)
 
 
 async def _price(symbol: str) -> float | None:
-    """Alpaca snapshot first, yfinance fallback — same policy as /api/quotes."""
+    """Alpaca snapshot first, Finnhub fallback for indices Alpaca doesn't carry."""
     try:
         q = await _alpaca.get_stock_quote(symbol)
         if q and q.price > 0:
@@ -37,11 +37,11 @@ async def _price(symbol: str) -> float | None:
     except Exception as exc:
         logger.warning("alpaca snapshot failed for %s: %s", symbol, exc)
     try:
-        q = await _yf.get_quote(symbol)
+        q = await _finnhub.get_quote(symbol)
         if q and q.price > 0:
             return q.price
     except Exception as exc:
-        logger.warning("yfinance quote failed for %s: %s", symbol, exc)
+        logger.warning("finnhub quote failed for %s: %s", symbol, exc)
     return None
 
 

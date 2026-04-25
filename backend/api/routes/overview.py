@@ -4,18 +4,18 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException
 
-from ...data.sources import YFinanceSource, get_alpaca_source
+from ...data.sources import FinnhubSource, get_alpaca_source
 from ...models.schemas import MarketOverview, OverviewTile
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_yf = YFinanceSource()
 _alpaca = get_alpaca_source()
+_finnhub = FinnhubSource()
 
-# (symbol, label, asset_class). We use Alpaca-covered ETF proxies for indices
-# and commodities so tiles populate in real time without depending on
-# yfinance (which hits Yahoo and gets rate-limited under load). Crypto falls
-# back to yfinance for now; the tile tolerates a 0 if yfinance is throttled.
+# (symbol, label, asset_class). All tickers are Alpaca-tradable ETFs
+# (real-time IEX bars) plus two crypto pairs that go through Alpaca's
+# crypto snapshot endpoint. yfinance retired; if any single tile fails
+# we drop it from the grid rather than leaving a stale value.
 TILES: List[tuple[str, str, str]] = [
     ("SPY",     "S&P 500 (SPY)",    "equity_etf"),
     ("QQQ",     "Nasdaq 100 (QQQ)", "equity_etf"),
@@ -32,10 +32,9 @@ TILES: List[tuple[str, str, str]] = [
 
 
 async def _tile_quote(symbol: str, asset_class: str):
-    """Route by asset class: crypto goes to Alpaca's crypto endpoint
-    (separate URL from equities); everything else tries Alpaca stock
-    snapshot then yfinance. Swallow failures per tile so one bad symbol
-    doesn't kill the whole grid."""
+    """Crypto goes to Alpaca's crypto endpoint; equities/ETFs hit Alpaca
+    stock snapshot first and Finnhub second (covers any non-Alpaca
+    edge cases). Failures are logged + tiles drop out of the grid."""
     if asset_class == "crypto":
         try:
             q = await _alpaca.get_crypto_quote(symbol)
@@ -43,17 +42,17 @@ async def _tile_quote(symbol: str, asset_class: str):
                 return q
         except Exception as exc:
             logger.debug("alpaca crypto %s failed: %s", symbol, exc)
-    else:
-        try:
-            q = await _alpaca.get_stock_quote(symbol)
-            if q is not None and q.price > 0:
-                return q
-        except Exception as exc:
-            logger.debug("alpaca overview %s failed: %s", symbol, exc)
+        return None
     try:
-        return await _yf.get_quote(symbol)
+        q = await _alpaca.get_stock_quote(symbol)
+        if q is not None and q.price > 0:
+            return q
     except Exception as exc:
-        logger.debug("yfinance overview %s failed: %s", symbol, exc)
+        logger.debug("alpaca overview %s failed: %s", symbol, exc)
+    try:
+        return await _finnhub.get_quote(symbol)
+    except Exception as exc:
+        logger.debug("finnhub overview %s failed: %s", symbol, exc)
     return None
 
 

@@ -19,41 +19,28 @@ from fastapi import APIRouter, HTTPException
 from ...core.cache_utils import cached
 from ...core.config import settings
 from ...core.llm import LLMNotConfigured, synthesize
-from ...data.sources import FmpSource, RssSource, SecEdgarSource, YFinanceSource, get_alpaca_source
+from ...data.sources import FmpSource, RssSource, SecEdgarSource, get_alpaca_source
 from ...models.schemas import Brief, Fundamentals
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_yf = YFinanceSource()
 _fmp = FmpSource()
 _alpaca = get_alpaca_source()
 _rss = RssSource()
 _edgar = SecEdgarSource()
 
 
-def _is_empty_fund(f: Fundamentals | None) -> bool:
-    if f is None:
-        return True
-    return not f.name and f.market_cap is None and f.pe_ratio is None and f.revenue_ttm is None
-
-
 async def _best_fundamentals(symbol: str) -> Fundamentals | None:
-    """FMP first when configured, yfinance fallback — same policy as
-    `/api/fundamentals/{symbol}`. yfinance scrapes Yahoo and gets
-    throttled hard during market hours, so paying providers are worth it
-    when the API key is present."""
-    if _fmp.enabled():
-        try:
-            primary = await _fmp.get_fundamentals(symbol)
-            if not _is_empty_fund(primary):
-                return primary
-        except Exception as exc:
-            logger.warning("FMP fundamentals failed for %s: %s", symbol, exc)
+    """FMP only — yfinance fallback retired with the rest of the Yahoo
+    deps. When FMP isn't configured the prompt gets a sparse fundamentals
+    block, which the LLM handles gracefully."""
+    if not _fmp.enabled():
+        return None
     try:
-        return await _yf.get_fundamentals(symbol)
+        return await _fmp.get_fundamentals(symbol)
     except Exception as exc:
-        logger.warning("yfinance fundamentals failed for %s: %s", symbol, exc)
+        logger.warning("FMP fundamentals failed for %s: %s", symbol, exc)
         return None
 
 

@@ -3,7 +3,7 @@
 Tables registered in-memory at startup:
 
   bars(symbol, timestamp, open, high, low, close, volume)
-      Daily Alpaca/yfinance bars for a curated symbol set.
+      Daily Alpaca bars for a curated symbol set.
 
   macro(series_id, observation_date, value)
       FRED macro series points.
@@ -28,7 +28,6 @@ from typing import Any
 import duckdb
 
 from ..data.sources import FredSource, SecEdgarSource, get_alpaca_source
-from ..data.sources.yfinance_source import YFinanceSource
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -98,19 +97,12 @@ class SqlEngine:
 
     async def _warm_bars(self, symbols: list[str]) -> None:
         alpaca = get_alpaca_source()
-        yf = YFinanceSource()
         rows: list[tuple] = []
         for sym in symbols:
-            bars = []
             try:
                 bars = await alpaca.get_stock_bars(sym, period="1y", interval="1d")
             except Exception:
                 bars = []
-            if not bars:
-                try:
-                    bars = await yf.get_history(sym, period="1y", interval="1d")
-                except Exception:
-                    bars = []
             for b in bars:
                 rows.append(
                     (sym, b.timestamp.replace(tzinfo=None), b.open, b.high, b.low, b.close, b.volume)

@@ -4,21 +4,20 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...data.sources import YFinanceSource, get_alpaca_source
+from ...data.sources import get_alpaca_source
 from ...models.schemas import CryptoQuote
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_yf = YFinanceSource()
 _alpaca = get_alpaca_source()
 
 DEFAULT_SYMBOLS = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"]
 
 
 async def _best_crypto_quote(symbol: str) -> CryptoQuote | None:
-    """Alpaca's crypto snapshot endpoint first, yfinance fallback.
-    yfinance is scraping Yahoo and gets rate-limited under load —
-    Alpaca is the stable path."""
+    """Alpaca crypto snapshot. yfinance fallback retired — Alpaca covers
+    all the major pairs reliably and is the same data path we use for
+    equities so coverage and rate limits are predictable."""
     sym = symbol.upper()
     try:
         q = await _alpaca.get_crypto_quote(sym)
@@ -33,11 +32,7 @@ async def _best_crypto_quote(symbol: str) -> CryptoQuote | None:
             )
     except Exception as exc:
         logger.debug("alpaca crypto %s failed: %s", sym, exc)
-    try:
-        return await _yf.get_crypto_quote(sym)
-    except Exception as exc:
-        logger.warning("crypto fallback failed for %s: %s", sym, exc)
-        return None
+    return None
 
 
 @router.get("", response_model=List[CryptoQuote])
@@ -58,5 +53,5 @@ async def list_crypto(
 async def get_crypto(symbol: str) -> CryptoQuote:
     q = await _best_crypto_quote(symbol)
     if q is None:
-        raise HTTPException(status_code=502, detail=f"crypto provider error for {symbol}")
+        raise HTTPException(status_code=404, detail=f"alpaca doesn't carry {symbol}")
     return q

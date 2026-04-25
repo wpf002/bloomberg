@@ -5,13 +5,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ...core.payoff import build_payoff
-from ...data.sources import YFinanceSource, get_alpaca_source
+from ...data.sources import FinnhubSource, get_alpaca_source
 from ...models.schemas import OptionChain, PayoffCurve, PayoffLeg
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-_yf = YFinanceSource()
 _alpaca = get_alpaca_source()
+_finnhub = FinnhubSource()
 
 
 class PayoffRequest(BaseModel):
@@ -27,9 +27,7 @@ class PayoffRequest(BaseModel):
 async def options_payoff(req: PayoffRequest) -> PayoffCurve:
     """Compute a multi-leg expiration payoff curve.
 
-    `underlying_price` is optional — if omitted, we fetch a snapshot. The
-    grid is centred on that price and resampled at every strike so kinks
-    land exactly on plotted points.
+    `underlying_price` is optional — if omitted, we fetch a snapshot.
     """
     if not req.legs:
         raise HTTPException(status_code=400, detail="at least one leg is required")
@@ -38,7 +36,8 @@ async def options_payoff(req: PayoffRequest) -> PayoffCurve:
         try:
             quote = await _alpaca.get_stock_quote(req.symbol)
             if quote is None:
-                quote = await _yf.get_quote(req.symbol)
+                fh = await _finnhub.get_quote(req.symbol)
+                quote = fh
             spot = quote.price if quote else None
         except Exception as exc:
             logger.warning("payoff price fetch failed for %s: %s", req.symbol, exc)
@@ -59,22 +58,14 @@ async def get_chain(
     symbol: str,
     expiration: str | None = Query(None, description="YYYY-MM-DD; defaults to the nearest expiration"),
 ) -> OptionChain:
-    """Option chain for `symbol`. Alpaca is the primary source (real
-    OPRA-derived snapshots, paginated, served Greeks); yfinance is the
-    fragile fallback for symbols Alpaca doesn't cover or when Alpaca
-    returns nothing for this expiration."""
+    """Option chain for `symbol`. Alpaca is the only source — they cover
+    every US-listed equity + ETF with options. Index options like ^SPX
+    require an OPRA-licensed feed we don't carry, and we return an empty
+    chain rather than scraping an unreliable fallback."""
     sym = symbol.upper()
-    # Alpaca first.
     try:
         chain = await _alpaca.get_option_chain(sym, expiration=expiration)
-        if chain.calls or chain.puts:
-            return chain
+        return chain
     except Exception as exc:
         logger.warning("alpaca options failed for %s: %s", sym, exc)
-    # yfinance fallback (indices like SPX, non-US tickers, anything Alpaca
-    # doesn't carry, or weeks where Alpaca returns no snapshot data).
-    try:
-        return await _yf.get_option_chain(sym, expiration=expiration)
-    except Exception as exc:
-        logger.warning("yfinance options fallback failed for %s: %s", sym, exc)
         return OptionChain(symbol=sym)

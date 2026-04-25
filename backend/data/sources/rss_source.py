@@ -34,7 +34,6 @@ ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 def _symbol_feeds(symbol: str) -> list[tuple[str, str]]:
     sym = symbol.upper()
     return [
-        (f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={sym}&region=US&lang=en-US", "Yahoo Finance"),
         (f"https://www.nasdaq.com/feed/rssoutbound?symbol={sym}", "Nasdaq"),
     ]
 
@@ -42,7 +41,6 @@ def _symbol_feeds(symbol: str) -> list[tuple[str, str]]:
 GENERAL_FEEDS: list[tuple[str, str]] = [
     ("https://feeds.marketwatch.com/marketwatch/topstories/", "MarketWatch"),
     ("https://www.sec.gov/news/pressreleases.rss", "SEC"),
-    ("https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC&region=US&lang=en-US", "Yahoo Finance"),
 ]
 
 

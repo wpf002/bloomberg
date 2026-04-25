@@ -18,38 +18,27 @@ from fastapi import APIRouter, HTTPException, Query
 from ...core.cache_utils import cached
 from ...core.config import settings
 from ...core.llm import LLMNotConfigured, synthesize
-from ...data.sources import FmpSource, RssSource, YFinanceSource, get_alpaca_source
+from ...data.sources import FmpSource, RssSource, get_alpaca_source
 from ...models.schemas import ComparisonBrief, Fundamentals
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_yf = YFinanceSource()
 _fmp = FmpSource()
 _alpaca = get_alpaca_source()
 _rss = RssSource()
 
 
-def _is_empty_fund(f: Fundamentals | None) -> bool:
-    if f is None:
-        return True
-    return not f.name and f.market_cap is None and f.pe_ratio is None and f.revenue_ttm is None
-
-
 async def _best_fundamentals(symbol: str) -> Fundamentals | None:
-    """FMP first when configured (cleaner numbers, no scraper throttle), then
-    yfinance fallback. Same policy as `/api/fundamentals/{symbol}`."""
-    if _fmp.enabled():
-        try:
-            primary = await _fmp.get_fundamentals(symbol)
-            if not _is_empty_fund(primary):
-                return primary
-        except Exception as exc:
-            logger.warning("FMP fundamentals failed for %s: %s", symbol, exc)
+    """FMP only — yfinance fallback retired. The compare prompt handles a
+    sparse fundamentals block; we'd rather miss a couple of fields than
+    block the whole comparison on a Yahoo throttle."""
+    if not _fmp.enabled():
+        return None
     try:
-        return await _yf.get_fundamentals(symbol)
+        return await _fmp.get_fundamentals(symbol)
     except Exception as exc:
-        logger.warning("yfinance fundamentals failed for %s: %s", symbol, exc)
+        logger.warning("FMP fundamentals failed for %s: %s", symbol, exc)
         return None
 
 

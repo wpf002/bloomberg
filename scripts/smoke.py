@@ -74,7 +74,10 @@ MODULES = [
     "backend.api.routes.sql",
     "backend.data.sources",
     "backend.data.sources.alpaca_source",
+    "backend.data.sources.finnhub_source",
     "backend.data.sources.finra_source",
+    "backend.data.sources.fmp_source",
+    "backend.data.sources.frankfurter_source",
     "backend.data.sources.fred_source",
     "backend.data.sources.french_source",
     "backend.data.sources.futures_source",
@@ -82,7 +85,6 @@ MODULES = [
     "backend.data.sources.rss_source",
     "backend.data.sources.sec_edgar_source",
     "backend.data.sources.treasury_source",
-    "backend.data.sources.yfinance_source",
 ]
 for name in MODULES:
     try:

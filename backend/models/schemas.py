@@ -171,7 +171,7 @@ class EarningsEvent(BaseModel):
     eps_surprise_percent: Optional[float] = None
     revenue_estimate: Optional[float] = None
     revenue_actual: Optional[float] = None
-    source: str = "yfinance"
+    source: str = "finnhub"
 
 
 class MarketOverview(BaseModel):
