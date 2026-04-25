@@ -51,8 +51,6 @@ export const MNEMONICS = {
   BAUC:    { intent: "fixed",     description: "Treasury auction calendar" },
   CRV:     { intent: "futures",   description: "Futures dashboard + term-structure curve" },
   CTM:     { intent: "futures",   description: "Commodities / futures monitor" },
-  THEME:   { intent: "theme",     description: "Cycle dark / light / high-contrast theme" },
-  LANG:    { intent: "language",  description: "Cycle interface language (EN / ES / PT / ZH)" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

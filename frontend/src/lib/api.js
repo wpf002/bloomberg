@@ -156,6 +156,10 @@ export const api = {
   futuresDashboard: () => request(`/api/futures/dashboard`),
   futuresCurve: (root) => request(`/api/futures/curve/${encodeURIComponent(root)}`),
 
+  // Phase 9.1: command-bar symbol autocomplete
+  searchSymbols: (q, limit = 8) =>
+    request(`/api/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
   // Phase 8: ESG-only filings search (preset over the existing endpoint)
   filingsSearchEsg: (q, { symbol, limit = 20 } = {}) => {
     const params = new URLSearchParams({ q, limit: String(limit), category: "esg" });

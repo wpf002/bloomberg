@@ -84,8 +84,6 @@ const INTENT_TO_PANEL = {
   factors: "factors",
   fixed: "fixed",
   futures: "futures",
-  theme: "theme",
-  language: "language",
   unknown: null,
 };
 
@@ -98,7 +96,7 @@ const DEFAULT_LAYOUTS = {
     { i: "news",         x: 9,  y: 0,  w: 3, h: 8, minW: 2, minH: 4 },
     { i: "markets",      x: 0,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
     { i: "macro",        x: 3,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
-    { i: "portfolio",    x: 6,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
+    { i: "portfolio",    x: 6,  y: 8,  w: 3, h: 4, minW: 2, minH: 2 },
     { i: "crypto",       x: 9,  y: 8,  w: 3, h: 4, minW: 2, minH: 3 },
     { i: "fundamentals", x: 0,  y: 12, w: 4, h: 8, minW: 3, minH: 4 },
     { i: "options",      x: 4,  y: 12, w: 5, h: 8, minW: 3, minH: 4 },
@@ -112,8 +110,8 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 8,  y: 30, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "sql",          x: 0,  y: 40, w: 8, h: 12, minW: 4, minH: 6 },
     { i: "search",       x: 8,  y: 40, w: 4, h: 12, minW: 3, minH: 6 },
-    { i: "factors",      x: 0,  y: 52, w: 6, h: 10, minW: 4, minH: 6 },
-    { i: "fixed",        x: 6,  y: 52, w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "factors",      x: 0,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
+    { i: "fixed",        x: 6,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "futures",      x: 0,  y: 62, w: 12, h: 10, minW: 4, minH: 6 },
   ],
   md: [
@@ -136,9 +134,9 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0,  y: 62, w: 12, h: 10 },
     { i: "sql",          x: 0,  y: 72, w: 12, h: 12 },
     { i: "search",       x: 0,  y: 84, w: 12, h: 10 },
-    { i: "factors",      x: 0,  y: 94, w: 12, h: 10 },
-    { i: "fixed",        x: 0,  y: 104, w: 12, h: 10 },
-    { i: "futures",      x: 0,  y: 114, w: 12, h: 10 },
+    { i: "factors",      x: 0,  y: 94, w: 12, h: 7 },
+    { i: "fixed",        x: 0,  y: 101, w: 12, h: 7 },
+    { i: "futures",      x: 0,  y: 108, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -146,7 +144,7 @@ const DEFAULT_LAYOUTS = {
     { i: "news",         x: 0, y: 13,  w: 6, h: 6 },
     { i: "markets",      x: 0, y: 19,  w: 6, h: 5 },
     { i: "macro",        x: 0, y: 24,  w: 6, h: 5 },
-    { i: "portfolio",    x: 0, y: 29,  w: 6, h: 5 },
+    { i: "portfolio",    x: 0, y: 29,  w: 6, h: 4 },
     { i: "crypto",       x: 0, y: 34,  w: 6, h: 5 },
     { i: "fundamentals", x: 0, y: 39,  w: 6, h: 8 },
     { i: "options",      x: 0, y: 47,  w: 6, h: 8 },
@@ -160,9 +158,9 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0, y: 106, w: 6, h: 10 },
     { i: "sql",          x: 0, y: 116, w: 6, h: 12 },
     { i: "search",       x: 0, y: 128, w: 6, h: 10 },
-    { i: "factors",      x: 0, y: 138, w: 6, h: 10 },
-    { i: "fixed",        x: 0, y: 148, w: 6, h: 10 },
-    { i: "futures",      x: 0, y: 158, w: 6, h: 10 },
+    { i: "factors",      x: 0, y: 138, w: 6, h: 7 },
+    { i: "fixed",        x: 0, y: 145, w: 6, h: 7 },
+    { i: "futures",      x: 0, y: 152, w: 6, h: 10 },
   ],
 };
 
@@ -195,7 +193,18 @@ export default function Terminal() {
 
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [activeSymbol, setActiveSymbol] = useState(DEFAULT_WATCHLIST[0]);
-  const [compareSymbols, setCompareSymbols] = useState([DEFAULT_WATCHLIST[0], DEFAULT_WATCHLIST[1]]);
+  const [compareSymbols, setCompareSymbols] = useState([DEFAULT_WATCHLIST[0], ""]);
+
+  // Keep Compare's "A" in sync with the active symbol so changing the
+  // focused stock from anywhere (watchlist click, command bar, chip,
+  // etc.) automatically retargets the comparison. The user no longer
+  // has to type `<NEW> <B> COMPARE` just to switch sides — A follows
+  // the rest of the panels, B stays whatever it was last set to.
+  useEffect(() => {
+    setCompareSymbols(([_prev, b]) =>
+      activeSymbol && activeSymbol !== _prev ? [activeSymbol, b] : [_prev, b]
+    );
+  }, [activeSymbol]);
   const [editMode, setEditMode] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -354,12 +363,6 @@ export default function Terminal() {
         case "logout":
           logout();
           return;
-        case "theme":
-          cycleTheme();
-          return;
-        case "language":
-          cycleLocale();
-          return;
         default: {
           const panel = INTENT_TO_PANEL[parsed.intent];
           if (panel) triggerFlash(panel);
@@ -377,9 +380,24 @@ export default function Terminal() {
     [triggerFlash]
   );
 
+  const handleRemove = useCallback(
+    (symbol) => {
+      setWatchlist((prev) => {
+        const next = prev.filter((s) => s !== symbol);
+        if (next.length === prev.length) return prev;
+        persistWatchlist(next);
+        // If the removed row was the active symbol, fall back to the
+        // first remaining ticker so panels keep rendering something.
+        if (symbol === activeSymbol && next.length) setActiveSymbol(next[0]);
+        return next;
+      });
+    },
+    [activeSymbol, persistWatchlist]
+  );
+
   const panels = useMemo(
     () => [
-      { id: "watchlist",    render: () => <Watchlist symbols={watchlist} activeSymbol={activeSymbol} onSelect={handleSelect} /> },
+      { id: "watchlist",    render: () => <Watchlist symbols={watchlist} activeSymbol={activeSymbol} onSelect={handleSelect} onRemove={handleRemove} /> },
       { id: "chart",        render: () => <Chart symbol={activeSymbol} /> },
       { id: "news",         render: () => <NewsFeed symbols={[activeSymbol]} /> },
       { id: "markets",      render: () => <MarketOverview onSelect={handleSelect} /> },
@@ -402,7 +420,7 @@ export default function Terminal() {
       { id: "fixed",        render: () => <FixedIncomePanel /> },
       { id: "futures",      render: () => <FuturesPanel /> },
     ],
-    [watchlist, activeSymbol, compareSymbols, handleSelect]
+    [watchlist, activeSymbol, compareSymbols, handleSelect, handleRemove]
   );
 
   // On mobile, narrow to the priority set unless the user explicitly
@@ -487,8 +505,8 @@ export default function Terminal() {
           onShare={user && !sharedView ? () => setShareOpen(true) : undefined}
         />
       </main>
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
-        <span>
+      <footer className="relative border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 hidden md:inline">
           {t("footer.active")} <span className="text-terminal-amber">{activeSymbol}</span>
           {user ? (
             <span className="pl-3">
@@ -496,7 +514,7 @@ export default function Terminal() {
             </span>
           ) : null}
         </span>
-        <span className="flex items-center gap-2 flex-wrap">
+        <span className="mx-auto flex max-w-3xl items-center justify-between gap-2">
           <button
             onClick={() => setEditMode((p) => !p)}
             className={editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
@@ -531,13 +549,6 @@ export default function Terminal() {
             {t("language.label")} {(locales.find((l) => l.code === locale) || locales[0]).label}
           </button>
           <span>·</span>
-          <button
-            onClick={() => setMobilePriorityOnly((p) => !p)}
-            className="text-terminal-muted hover:text-terminal-text"
-          >
-            {mobilePriorityOnly ? t("footer.morePanels") : t("footer.fewerPanels")}
-          </button>
-          <span>·</span>
           {user ? (
             <button onClick={logout} className="text-terminal-muted hover:text-terminal-text">
               {t("footer.logout")}
@@ -552,7 +563,7 @@ export default function Terminal() {
             </span>
           )}
         </span>
-        <span>{t("app.phase")}</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 hidden md:inline">{t("app.phase")}</span>
       </footer>
       <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       {helpOpen ? (

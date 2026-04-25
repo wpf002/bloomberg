@@ -68,7 +68,7 @@ export default function Portfolio() {
 
   return (
     <Panel
-      title="Portfolio (Alpaca paper)"
+      title="Portfolio"
       accent="amber"
       actions={
         account ? (
@@ -96,7 +96,7 @@ export default function Portfolio() {
       ) : (
         <div className="space-y-3">
           {account && (
-            <div className="grid grid-cols-4 gap-2 text-xs tabular">
+            <div className="grid grid-cols-2 gap-2 text-xs tabular">
               <Stat label="CASH" value={fmt(account.cash)} />
               <Stat label="BUY PWR" value={fmt(account.buying_power)} title="Buying power" />
               <Stat label="EQUITY" value={fmt(account.equity)} />
@@ -114,61 +114,63 @@ export default function Portfolio() {
               No open positions.
             </div>
           ) : (
-            <table className="w-full text-xs tabular">
-              <thead>
-                <tr className="text-left text-terminal-muted">
-                  <th className="py-1 pr-2">SYM</th>
-                  <th className="py-1 pr-2 text-right">QTY</th>
-                  <th className="py-1 pr-2 text-right">AVG</th>
-                  <th className="py-1 pr-2 text-right">LAST</th>
-                  <th className="py-1 pr-2 text-right">MKT VAL</th>
-                  <th className="py-1 pr-2 text-right">DAY</th>
-                  <th className="py-1 text-right">UNR P/L</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((p) => (
-                  <tr
-                    key={p.symbol}
-                    className="border-t border-terminal-border/60"
-                  >
-                    <td className="py-1 pr-2 font-bold text-terminal-amber">
-                      {p.symbol}
-                    </td>
-                    <td className="py-1 pr-2 text-right">{fmt(p.qty, 0)}</td>
-                    <td className="py-1 pr-2 text-right">
-                      {fmt(p.avg_entry_price)}
-                    </td>
-                    <td className="py-1 pr-2 text-right">
-                      {fmt(p.current_price)}
-                    </td>
-                    <td className="py-1 pr-2 text-right">
-                      {fmt(p.market_value)}
-                    </td>
-                    <td
-                      className={clsx(
-                        "py-1 pr-2 text-right",
-                        (p.change_today_percent ?? 0) >= 0
-                          ? "text-terminal-green"
-                          : "text-terminal-red"
-                      )}
-                    >
-                      {signed(p.change_today_percent)}%
-                    </td>
-                    <td
-                      className={clsx(
-                        "py-1 text-right",
-                        (p.unrealized_pl ?? 0) >= 0
-                          ? "text-terminal-green"
-                          : "text-terminal-red"
-                      )}
-                    >
-                      {signed(p.unrealized_pl)} ({signed(p.unrealized_pl_percent)}%)
-                    </td>
+            <div className="-mx-3 overflow-x-auto px-3">
+              <table className="w-full min-w-[480px] text-xs tabular">
+                <thead>
+                  <tr className="text-left text-terminal-muted">
+                    <th className="py-1 pr-2 whitespace-nowrap">SYM</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">QTY</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">AVG</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">LAST</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">MKT VAL</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">DAY</th>
+                    <th className="py-1 text-right whitespace-nowrap">UNR P/L</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {positions.map((p) => (
+                    <tr
+                      key={p.symbol}
+                      className="border-t border-terminal-border/60"
+                    >
+                      <td className="py-1 pr-2 font-bold text-terminal-amber whitespace-nowrap">
+                        {p.symbol}
+                      </td>
+                      <td className="py-1 pr-2 text-right whitespace-nowrap">{fmt(p.qty, 0)}</td>
+                      <td className="py-1 pr-2 text-right whitespace-nowrap">
+                        {fmt(p.avg_entry_price)}
+                      </td>
+                      <td className="py-1 pr-2 text-right whitespace-nowrap">
+                        {fmt(p.current_price)}
+                      </td>
+                      <td className="py-1 pr-2 text-right whitespace-nowrap">
+                        {fmt(p.market_value)}
+                      </td>
+                      <td
+                        className={clsx(
+                          "py-1 pr-2 text-right whitespace-nowrap",
+                          (p.change_today_percent ?? 0) >= 0
+                            ? "text-terminal-green"
+                            : "text-terminal-red"
+                        )}
+                      >
+                        {signed(p.change_today_percent)}%
+                      </td>
+                      <td
+                        className={clsx(
+                          "py-1 text-right whitespace-nowrap",
+                          (p.unrealized_pl ?? 0) >= 0
+                            ? "text-terminal-green"
+                            : "text-terminal-red"
+                        )}
+                      >
+                        {signed(p.unrealized_pl)} ({signed(p.unrealized_pl_percent)}%)
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

@@ -71,7 +71,13 @@ export default function Chart({ symbol }) {
       {loading && !data ? (
         <div className="text-terminal-muted">Loading history…</div>
       ) : error ? (
-        <div className="text-terminal-red">{String(error.message || error)}</div>
+        <div className="text-xs leading-relaxed text-terminal-muted">
+          No chart data available for{" "}
+          <span className="text-terminal-amber">{symbol}</span>.
+          {error.status === 404 ? (
+            <> Pick a different symbol from the watchlist.</>
+          ) : null}
+        </div>
       ) : (
         <div className="flex h-full flex-col">
           <div className="mb-2 flex items-baseline gap-3 tabular">

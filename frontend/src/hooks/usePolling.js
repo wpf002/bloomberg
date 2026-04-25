@@ -9,6 +9,8 @@ export default function usePolling(fetcher, intervalMs = 15000, deps = []) {
   useEffect(() => {
     mounted.current = true;
     let timer;
+    setLoading(true);
+    setData(null);
 
     const run = async () => {
       try {

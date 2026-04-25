@@ -60,15 +60,29 @@ async def _best_quote(symbol: str) -> Quote:
 
 @router.get("", response_model=List[Quote])
 async def get_quotes(symbols: str = Query(..., description="Comma-separated ticker list")) -> List[Quote]:
+    """Batched quote fetch.
+
+    A 404 on any single symbol used to fail the whole gather and the
+    watchlist would render zero rows with a "no quote available for X"
+    error. Now we gather with `return_exceptions=True` and silently
+    drop failures — the frontend already knows which symbols it asked
+    for and can flag the missing ones with a per-row "no data" message
+    + remove button. One typo'd ticker shouldn't blank the panel.
+    """
     parsed = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not parsed:
         raise HTTPException(status_code=400, detail="At least one symbol is required")
-    try:
-        return await asyncio.gather(*(_best_quote(s) for s in parsed))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"quote provider error: {exc}") from exc
+    results = await asyncio.gather(
+        *(_best_quote(s) for s in parsed),
+        return_exceptions=True,
+    )
+    out: List[Quote] = []
+    for sym, r in zip(parsed, results):
+        if isinstance(r, Quote):
+            out.append(r)
+        elif isinstance(r, Exception):
+            logger.debug("quote %s skipped: %s", sym, r)
+    return out
 
 
 @router.get("/{symbol}", response_model=Quote)

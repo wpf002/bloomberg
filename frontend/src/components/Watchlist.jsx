@@ -16,7 +16,7 @@ function formatNumber(value, digits = 2) {
 
 const FLASH_MS = 600;
 
-export default function Watchlist({ symbols, activeSymbol, onSelect }) {
+export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove }) {
   const { t } = useTranslation();
   const { data, error, loading } = usePolling(
     () => api.quotes(symbols),
@@ -86,7 +86,8 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
               <th className="py-1 pr-2 text-right">{t("watchlist.columns.last")}</th>
               <th className="py-1 pr-2 text-right">{t("watchlist.columns.chg")}</th>
               <th className="py-1 pr-2 text-right">{t("watchlist.columns.pct")}</th>
-              <th className="py-1 text-right">{t("watchlist.columns.vol")}</th>
+              <th className="py-1 pr-2 text-right">{t("watchlist.columns.vol")}</th>
+              <th className="py-1 w-6"></th>
             </tr>
           </thead>
           <tbody>
@@ -107,7 +108,7 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
                   key={q.symbol}
                   onClick={() => onSelect?.(q.symbol)}
                   className={clsx(
-                    "cursor-pointer border-t border-terminal-border/60 hover:bg-terminal-panelAlt transition-colors",
+                    "group cursor-pointer border-t border-terminal-border/60 hover:bg-terminal-panelAlt transition-colors",
                     active && "bg-terminal-panelAlt",
                     flash === "up" && "bg-terminal-green/10",
                     flash === "down" && "bg-terminal-red/10"
@@ -133,12 +134,52 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
                     {positive ? "+" : ""}
                     {formatNumber(pct)}%
                   </td>
-                  <td className="py-1 text-right text-terminal-muted">
+                  <td className="py-1 pr-2 text-right text-terminal-muted">
                     {q.volume ? q.volume.toLocaleString() : "--"}
+                  </td>
+                  <td className="py-1 text-right">
+                    {onRemove ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemove(q.symbol);
+                        }}
+                        className="text-terminal-muted opacity-0 group-hover:opacity-100 hover:text-terminal-red"
+                        title={`Remove ${q.symbol}`}
+                      >
+                        ✕
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               );
             })}
+            {(() => {
+              // Symbols the user has but the backend couldn't quote (e.g.
+              // they typo'd a chip name on a stale build). Render them
+              // dimmed with a remove button so cleanup is one click away.
+              const returned = new Set((data || []).map((q) => q.symbol));
+              const missing = symbols.filter((s) => !returned.has(s));
+              return missing.map((sym) => (
+                <tr key={`missing-${sym}`} className="border-t border-terminal-border/60">
+                  <td className="py-1 pr-2 font-bold text-terminal-muted line-through">{sym}</td>
+                  <td colSpan={4} className="py-1 pr-2 text-right text-[11px] text-terminal-muted/80">
+                    no data
+                  </td>
+                  <td className="py-1 text-right">
+                    {onRemove ? (
+                      <button
+                        onClick={() => onRemove(sym)}
+                        className="text-terminal-red hover:underline"
+                        title={`Remove ${sym}`}
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              ));
+            })()}
           </tbody>
         </table>
       )}

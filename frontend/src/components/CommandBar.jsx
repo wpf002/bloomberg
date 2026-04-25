@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { useTranslation } from "../i18n/index.jsx";
+import { api } from "../lib/api.js";
 import { MNEMONICS, matchMnemonics, parseCommand } from "../lib/mnemonics.js";
 
 const HISTORY_KEY = "bt:cmd-history";
@@ -50,8 +51,71 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
 
   const preview = useMemo(() => parseCommand(value), [value]);
   const { tail } = splitTail(value);
-  const suggestions = useMemo(() => (tail ? matchMnemonics(tail, 6) : []), [tail]);
-  const showSuggestions = suggestions.length > 0 && tail !== suggestions[0]?.key;
+  const mnemonicMatches = useMemo(() => (tail ? matchMnemonics(tail, 6) : []), [tail]);
+
+  // Symbol autocomplete — debounced fetch from /api/symbols/search whenever
+  // the user is typing a token. Symbol matches show alongside mnemonic
+  // matches in the suggestion dropdown.
+  const [symbolMatches, setSymbolMatches] = useState([]);
+  useEffect(() => {
+    if (!tail || tail.length < 1) {
+      setSymbolMatches([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api
+        .searchSymbols(tail, 6)
+        .then((rows) => {
+          if (cancelled) return;
+          setSymbolMatches(Array.isArray(rows) ? rows : []);
+        })
+        .catch(() => {
+          if (!cancelled) setSymbolMatches([]);
+        });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [tail]);
+
+  // Merge mnemonic + symbol matches into a unified suggestion list.
+  // Each item has `kind: "mnemonic" | "symbol"`, a `key` we'd insert
+  // into the input, and display data. Symbols come first because that's
+  // what the user is typically reaching for when they enter a partial
+  // ticker; mnemonics fall through after.
+  const suggestions = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    for (const s of symbolMatches) {
+      const key = (s.symbol || "").toUpperCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      list.push({ kind: "symbol", key, name: s.name || "", exchange: s.exchange || "" });
+    }
+    for (const m of mnemonicMatches) {
+      if (seen.has(m.key)) continue;
+      seen.add(m.key);
+      list.push({
+        kind: "mnemonic",
+        key: m.key,
+        description: m.description,
+        matchedIndex: m.matchedIndex,
+      });
+    }
+    return list.slice(0, 8);
+  }, [symbolMatches, mnemonicMatches]);
+
+  // Show the dropdown whenever we have suggestions, except when there's
+  // exactly one and the user has already typed it verbatim (no value in
+  // suggesting what they're already typing). Earlier this check fired
+  // greedily and hid the dropdown when the user typed the exact symbol
+  // of the first match — which broke the symbol-search autocomplete
+  // for any ticker that happened to be a real ticker (e.g. "AAP").
+  const showSuggestions =
+    suggestions.length > 0 &&
+    !(suggestions.length === 1 && tail === suggestions[0]?.key);
   const ghost =
     showSuggestions && suggestions[suggestIdx]
       ? suggestions[suggestIdx].key.slice(tail.length)
@@ -185,7 +249,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
             <ul className="absolute left-0 right-0 top-full z-20 mt-1 border border-terminal-border bg-terminal-panel shadow-panel">
               {suggestions.map((s, i) => (
                 <li
-                  key={s.key}
+                  key={`${s.kind}-${s.key}`}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     applySuggestion(s);
@@ -198,21 +262,39 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
                       : "text-terminal-text hover:bg-terminal-panelAlt"
                   )}
                 >
-                  <span className="font-bold tracking-wider">
-                    {s.key.split("").map((c, ci) => (
-                      <span
-                        key={ci}
-                        className={
-                          s.matchedIndex.includes(ci)
-                            ? "text-terminal-amber"
-                            : "text-terminal-muted"
-                        }
-                      >
-                        {c}
-                      </span>
-                    ))}
+                  <span className="flex items-baseline gap-2">
+                    <span
+                      className={clsx(
+                        "rounded border px-1 text-[9px] uppercase tracking-widest",
+                        s.kind === "symbol"
+                          ? "border-terminal-blue/60 text-terminal-blue"
+                          : "border-terminal-amber/60 text-terminal-amber"
+                      )}
+                    >
+                      {s.kind === "symbol" ? "SYM" : "FN"}
+                    </span>
+                    <span className="font-bold tracking-wider">
+                      {s.kind === "mnemonic"
+                        ? s.key.split("").map((c, ci) => (
+                            <span
+                              key={ci}
+                              className={
+                                s.matchedIndex?.includes(ci)
+                                  ? "text-terminal-amber"
+                                  : "text-terminal-muted"
+                              }
+                            >
+                              {c}
+                            </span>
+                          ))
+                        : s.key}
+                    </span>
                   </span>
-                  <span className="truncate text-terminal-muted">{s.description}</span>
+                  <span className="truncate text-terminal-muted">
+                    {s.kind === "symbol"
+                      ? s.name + (s.exchange ? ` · ${s.exchange}` : "")
+                      : s.description}
+                  </span>
                 </li>
               ))}
             </ul>

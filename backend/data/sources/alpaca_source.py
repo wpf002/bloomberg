@@ -284,6 +284,34 @@ class AlpacaSource:
             timestamp=datetime.now(timezone.utc),
         )
 
+    @cached("alpaca:assets_active", ttl=86400, model=None)
+    async def list_active_assets(self) -> list[dict]:
+        """Snapshot of every active US-equity / ETF asset Alpaca carries.
+        ~12k rows; cache for a day. Used by /api/symbols/search to
+        autocomplete tickers in the command bar.
+        """
+        if not self._enabled():
+            return []
+        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/assets"
+        params = {"status": "active", "asset_class": "us_equity"}
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(url, headers=self._headers, params=params)
+        if resp.status_code != 200:
+            logger.warning("Alpaca assets -> %s: %s", resp.status_code, resp.text[:200])
+            return []
+        items = resp.json() or []
+        # Trim to fields the frontend cares about so the cache stays small.
+        return [
+            {
+                "symbol": (it.get("symbol") or "").upper(),
+                "name": it.get("name") or "",
+                "exchange": it.get("exchange") or "",
+                "tradable": bool(it.get("tradable", False)),
+            }
+            for it in items
+            if it.get("symbol")
+        ]
+
     @cached("alpaca:account", ttl=10, model=Account)
     async def get_account(self) -> Account | None:
         if not self._enabled():

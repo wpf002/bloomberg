@@ -25,6 +25,7 @@ from .routes import (
     sizing,
     sql,
     streams,
+    symbols,
 )
 
 api_router = APIRouter()
@@ -52,5 +53,6 @@ api_router.include_router(sql.router, prefix="/sql", tags=["sql"])
 api_router.include_router(factors.router, prefix="/portfolio", tags=["portfolio"])
 api_router.include_router(fixed_income.router, prefix="/fixed_income", tags=["fixed_income"])
 api_router.include_router(futures.router, prefix="/futures", tags=["futures"])
+api_router.include_router(symbols.router, prefix="/symbols", tags=["symbols"])
 
 __all__ = ["api_router"]

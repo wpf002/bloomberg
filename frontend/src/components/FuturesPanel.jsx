@@ -13,12 +13,13 @@ import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
 
+// Only the roots the backend can actually populate from a free public
+// source (FRED daily-spot series). Gold / corn / soybeans need a paid
+// futures feed and were dropped when yfinance was retired in Phase 8.1
+// — leaving their buttons here would just produce 404s on click.
 const ROOTS = [
   { id: "CL", label: "WTI Crude" },
-  { id: "GC", label: "Gold" },
   { id: "NG", label: "Nat Gas" },
-  { id: "ZC", label: "Corn" },
-  { id: "ZS", label: "Soybeans" },
 ];
 
 function fmt(v, digits = 2) {

@@ -25,24 +25,53 @@ function tryParse(body) {
 }
 
 export default function ComparePanel({ symbols }) {
-  const [a, b] = [symbols?.[0], symbols?.[1]];
+  const a = symbols?.[0];
+  // B is owned locally so the user can change the comparison target
+  // inside the panel without going through the command bar. Initialised
+  // from the parent prop and re-synced when the parent changes it (so
+  // `AAPL NVDA COMPARE` from the command bar still works).
+  const [b, setB] = useState(symbols?.[1] || "");
+  const [bDraft, setBDraft] = useState(b);
+  useEffect(() => {
+    if (symbols?.[1] && symbols[1] !== b) {
+      setB(symbols[1]);
+      setBDraft(symbols[1]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbols?.[1]]);
+
   const [state, setState] = useState({ loading: false, data: null, error: null });
 
   const fetchCompare = useCallback(async () => {
-    if (!a || !b) return;
+    // Pull the live input draft so users don't have to press Enter to "set"
+    // before clicking Run. The draft is committed to b before fetching so
+    // the title + cache key match what was actually compared.
+    const target = (bDraft || b || "").trim().toUpperCase();
+    if (!a || !target) return;
+    if (target !== b) {
+      setB(target);
+      setBDraft(target);
+    }
     setState({ loading: true, data: null, error: null });
     try {
-      const data = await api.compare(a, b);
+      const data = await api.compare(a, target);
       setState({ loading: false, data, error: null });
     } catch (err) {
       setState({ loading: false, data: null, error: err });
     }
-  }, [a, b]);
+  }, [a, b, bDraft]);
 
   // Reset when the symbol pair changes; do not auto-fetch (LLM cost).
   useEffect(() => {
     setState({ loading: false, data: null, error: null });
   }, [a, b]);
+
+  const applyB = (raw) => {
+    const next = (raw || "").trim().toUpperCase();
+    if (!next) return;
+    setB(next);
+    setBDraft(next);
+  };
 
   const parsed = useMemo(() => tryParse(state.data?.body), [state.data]);
   const fallbackText = useMemo(
@@ -55,7 +84,7 @@ export default function ComparePanel({ symbols }) {
 
   return (
     <Panel
-      title={`Compare — ${a ?? "?"} vs ${b ?? "?"}`}
+      title={`Compare — ${a ?? "?"} vs ${b || "?"}`}
       accent="amber"
       actions={
         ready ? (
@@ -69,12 +98,38 @@ export default function ComparePanel({ symbols }) {
         ) : null
       }
     >
-      {!ready ? (
+      {!a ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          Enter two symbols in the command bar:{" "}
-          <span className="text-terminal-amber">AAPL MSFT COMPARE</span>.
+          Active symbol unset. Pick a stock from the watchlist or type{" "}
+          <span className="text-terminal-amber">{`<SYMBOL>`}</span> in the
+          command bar.
         </div>
-      ) : credsMissing ? (
+      ) : (
+        <>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              applyB(bDraft);
+            }}
+            className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-widest text-terminal-muted"
+          >
+            <span>vs</span>
+            <input
+              value={bDraft}
+              onChange={(e) => setBDraft(e.target.value.toUpperCase())}
+              onBlur={() => applyB(bDraft)}
+              spellCheck={false}
+              autoComplete="off"
+              className="w-24 border border-terminal-border bg-terminal-bg px-2 py-0.5 text-xs uppercase tracking-wider text-terminal-text focus:outline-none focus:border-terminal-amber"
+              placeholder="SPY"
+            />
+            <span className="text-terminal-muted/70 normal-case tracking-normal text-[10px]">
+              press Enter to set, then Run comparison
+            </span>
+          </form>
+        </>
+      )}
+      {ready && credsMissing ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
           <p className="mb-2 text-terminal-amber">LLM comparison needs Anthropic.</p>
           <p>
@@ -82,13 +137,13 @@ export default function ComparePanel({ symbols }) {
             <code className="text-terminal-green">.env</code> and restart.
           </p>
         </div>
-      ) : state.error ? (
+      ) : ready && state.error ? (
         <div className="text-terminal-red">
           {String(state.error.detail || state.error.message || state.error)}
         </div>
-      ) : state.loading ? (
+      ) : ready && state.loading ? (
         <div className="text-terminal-muted">Synthesizing comparison…</div>
-      ) : state.data ? (
+      ) : ready && state.data ? (
         <div className="space-y-3">
           {parsed ? (
             <>
@@ -135,14 +190,14 @@ export default function ComparePanel({ symbols }) {
             Model: {state.data.model} · {new Date(state.data.as_of).toLocaleString()} · cached 30m
           </div>
         </div>
-      ) : (
+      ) : ready ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
           Press <span className="text-terminal-amber">Run comparison</span> for
           a side-by-side numeric + qualitative breakdown of{" "}
           <span className="text-terminal-amber">{a}</span> vs{" "}
           <span className="text-terminal-amber">{b}</span>.
         </div>
-      )}
+      ) : null}
     </Panel>
   );
 }
