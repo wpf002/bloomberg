@@ -26,7 +26,20 @@ import SizingPanel from "../components/SizingPanel.jsx";
 import SqlPanel from "../components/SqlPanel.jsx";
 import Watchlist from "../components/Watchlist.jsx";
 import useAuth from "../hooks/useAuth.js";
+import useTheme from "../hooks/useTheme.js";
+import { useTranslation } from "../i18n/index.jsx";
 import { api } from "../lib/api.js";
+
+// Panels considered "essential" on mobile/xs viewports. Others stay
+// hidden behind a "+ MORE PANELS" toggle so a phone user isn't dropped
+// into a 19-tile vertical wall on first open.
+const MOBILE_PRIORITY_PANELS = new Set([
+  "watchlist",
+  "chart",
+  "news",
+  "markets",
+  "portfolio",
+]);
 
 const DEFAULT_WATCHLIST = [
   "AAPL",
@@ -71,6 +84,8 @@ const INTENT_TO_PANEL = {
   factors: "factors",
   fixed: "fixed",
   futures: "futures",
+  theme: "theme",
+  language: "language",
   unknown: null,
 };
 
@@ -153,6 +168,30 @@ const DEFAULT_LAYOUTS = {
 
 export default function Terminal() {
   const { user, oauthConfigured, login, logout } = useAuth();
+  const { theme, cycle: cycleTheme, themes } = useTheme();
+  const { t, locale, setLocale, locales } = useTranslation();
+
+  // Mobile breakpoint: collapse to a priority-only panel set on screens
+  // narrower than ~720px. The user can flip it off via the "+ MORE PANELS"
+  // button to see the full layout if they really want.
+  const [mobilePriorityOnly, setMobilePriorityOnly] = useState(() => {
+    try {
+      return window.matchMedia("(max-width: 720px)").matches;
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(max-width: 720px)");
+    const handler = (e) => setMobilePriorityOnly(e.matches);
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, []);
+  const cycleLocale = useCallback(() => {
+    const idx = locales.findIndex((l) => l.code === locale);
+    setLocale(locales[(idx + 1) % locales.length].code);
+  }, [locale, locales, setLocale]);
 
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [activeSymbol, setActiveSymbol] = useState(DEFAULT_WATCHLIST[0]);
@@ -315,13 +354,19 @@ export default function Terminal() {
         case "logout":
           logout();
           return;
+        case "theme":
+          cycleTheme();
+          return;
+        case "language":
+          cycleLocale();
+          return;
         default: {
           const panel = INTENT_TO_PANEL[parsed.intent];
           if (panel) triggerFlash(panel);
         }
       }
     },
-    [triggerFlash, persistWatchlist, login, logout, user]
+    [triggerFlash, persistWatchlist, login, logout, user, cycleTheme, cycleLocale]
   );
 
   const handleSelect = useCallback(
@@ -360,6 +405,15 @@ export default function Terminal() {
     [watchlist, activeSymbol, compareSymbols, handleSelect]
   );
 
+  // On mobile, narrow to the priority set unless the user explicitly
+  // toggled "+ MORE PANELS". Layout sharing still includes every panel
+  // — this is a pure render-time filter so a mobile viewer of a
+  // desktop layout doesn't get a 19-tile wall of charts.
+  const renderedPanels = useMemo(
+    () => (mobilePriorityOnly ? panels.filter((p) => MOBILE_PRIORITY_PANELS.has(p.id)) : panels),
+    [panels, mobilePriorityOnly]
+  );
+
   return (
     <div className="flex h-screen flex-col bg-terminal-bg text-terminal-text">
       <CommandBar
@@ -371,27 +425,28 @@ export default function Terminal() {
         <div className="flex flex-wrap items-center gap-3 border-b border-terminal-amber/60 bg-terminal-amber/10 px-4 py-1.5 text-[11px] uppercase tracking-widest text-terminal-amber">
           {sharedView.error ? (
             <>
-              <span>Shared layout <code>{sharedView.slug}</code> not found.</span>
+              <span>{t("shared.notFound", { slug: sharedView.slug })}</span>
               <button onClick={exitSharedView} className="hover:underline">
-                Dismiss
+                {t("shared.dismiss")}
               </button>
             </>
           ) : (
             <>
               <span>
-                Viewing <span className="font-bold">{sharedView.name}</span> by @
-                {sharedView.owner_login} · {sharedView.view_count} views
+                {t("shared.viewing", { name: sharedView.name, owner: sharedView.owner_login })}
+                {" · "}
+                {t("shared.views", { count: sharedView.view_count })}
               </span>
               <span className="ml-auto flex items-center gap-3">
                 {user ? (
                   <button onClick={adoptSharedView} className="hover:underline">
-                    Save to my account
+                    {t("shared.saveToAccount")}
                   </button>
                 ) : (
-                  <span className="text-terminal-muted">Sign in to save</span>
+                  <span className="text-terminal-muted">{t("shared.signInToSave")}</span>
                 )}
                 <button onClick={exitSharedView} className="hover:underline">
-                  Exit shared view
+                  {t("shared.exit")}
                 </button>
               </span>
             </>
@@ -400,7 +455,7 @@ export default function Terminal() {
       ) : null}
       <main className="flex-1 min-h-0 overflow-auto">
         <Launchpad
-          panels={panels}
+          panels={renderedPanels}
           defaultLayouts={DEFAULT_LAYOUTS}
           editMode={editMode && !sharedView}
           resetKey={resetKey}
@@ -434,47 +489,70 @@ export default function Terminal() {
       </main>
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
         <span>
-          Active: <span className="text-terminal-amber">{activeSymbol}</span>
+          {t("footer.active")} <span className="text-terminal-amber">{activeSymbol}</span>
           {user ? (
             <span className="pl-3">
               · <span className="text-terminal-green">{user.login}</span>
             </span>
           ) : null}
         </span>
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 flex-wrap">
           <button
             onClick={() => setEditMode((p) => !p)}
             className={editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
           >
-            LAYOUT {editMode ? "ON" : "OFF"}
+            {editMode ? t("footer.layoutOn") : t("footer.layoutOff")}
           </button>
           <span>·</span>
           <button
             onClick={() => setResetKey((k) => k + 1)}
             className="text-terminal-muted hover:text-terminal-text"
           >
-            RESET
+            {t("footer.reset")}
           </button>
           <span>·</span>
           <button onClick={() => setHelpOpen(true)} className="text-terminal-amber">
-            HELP
+            {t("footer.help")}
+          </button>
+          <span>·</span>
+          <button
+            onClick={cycleTheme}
+            className="text-terminal-muted hover:text-terminal-text"
+            title={themes.map((tt) => tt.label).join(" / ")}
+          >
+            {t("theme.label")} {(themes.find((tt) => tt.slug === theme) || themes[0]).label}
+          </button>
+          <span>·</span>
+          <button
+            onClick={cycleLocale}
+            className="text-terminal-muted hover:text-terminal-text"
+            title={locales.map((l) => l.label).join(" / ")}
+          >
+            {t("language.label")} {(locales.find((l) => l.code === locale) || locales[0]).label}
+          </button>
+          <span>·</span>
+          <button
+            onClick={() => setMobilePriorityOnly((p) => !p)}
+            className="text-terminal-muted hover:text-terminal-text"
+          >
+            {mobilePriorityOnly ? t("footer.morePanels") : t("footer.fewerPanels")}
           </button>
           <span>·</span>
           {user ? (
             <button onClick={logout} className="text-terminal-muted hover:text-terminal-text">
-              LOGOUT
+              {t("footer.logout")}
             </button>
           ) : oauthConfigured ? (
             <button onClick={login} className="text-terminal-amber hover:underline">
-              LOGIN · GITHUB
+              {t("footer.login")}
             </button>
           ) : (
-            <span title="Set GITHUB_CLIENT_ID/SECRET in .env to enable login">
-              LOGIN N/A
+            <span title={t("footer.loginNaTitle")}>
+              {t("footer.loginNa")}
             </span>
           )}
         </span>
-        <span>Phase 8 · Factor analysis · Fixed income · Futures · ESG filings</span>
+        <span>{t("app.phase")}</span>
       </footer>
       <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       {helpOpen ? (
@@ -484,7 +562,7 @@ export default function Terminal() {
         >
           <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
             <Panel
-              title="Mnemonic Reference"
+              title={t("panels.help")}
               accent="amber"
               actions={
                 <button
@@ -497,11 +575,7 @@ export default function Terminal() {
             >
               <MnemonicHelp />
               <p className="mt-3 text-[11px] text-terminal-muted">
-                Enter <span className="text-terminal-amber">&lt;SYMBOL&gt; &lt;FN&gt;</span>{" "}
-                in the command bar. Layout is draggable when{" "}
-                <span className="text-terminal-amber">LAYOUT</span> is on. When
-                signed in, watchlist + layout sync to your account; otherwise
-                they persist in localStorage.
+                {t("command.helpFooter")}
               </p>
             </Panel>
           </div>

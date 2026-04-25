@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
+import { useTranslation } from "../i18n/index.jsx";
 import { MNEMONICS, matchMnemonics, parseCommand } from "../lib/mnemonics.js";
 
 const HISTORY_KEY = "bt:cmd-history";
@@ -34,6 +35,7 @@ function splitTail(input) {
 }
 
 export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [clock, setClock] = useState(() => new Date());
   const [history, setHistory] = useState(() => loadHistory());
@@ -142,10 +144,10 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-terminal-amber shadow-[0_0_8px_#ff9f1c]" />
           <span className="text-sm font-bold tracking-widest text-terminal-amber">
-            BLOOMBERG TERMINAL
+            {t("app.title").toUpperCase()}
           </span>
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            v0.1 · Phase 8 · Public Edition
+            v0.1 · {t("app.edition")}
           </span>
         </div>
         <form onSubmit={submit} className="relative flex-1">
@@ -160,7 +162,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
                   setHistoryIdx(-1);
                 }}
                 onKeyDown={onKeyDown}
-                placeholder={`Active: ${activeSymbol ?? "—"}   Enter: <SYMBOL> <FN>   (HELP for mnemonics)`}
+                placeholder={t("command.placeholder", { symbol: activeSymbol ?? t("command.placeholderEmpty") })}
                 className="relative z-10 w-full bg-transparent text-sm uppercase tracking-wider text-terminal-text placeholder:text-terminal-muted/60 focus:outline-none"
                 spellCheck={false}
                 autoComplete="off"
@@ -176,7 +178,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
               )}
             </div>
             <span className="text-[10px] uppercase tracking-widest text-terminal-muted">
-              {showSuggestions ? "TAB" : "ENTER"}
+              {showSuggestions ? t("command.tab") : t("command.enter")}
             </span>
           </div>
           {showSuggestions && (
@@ -221,7 +223,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
         </div>
       </div>
       <div className="flex items-center gap-2 overflow-x-auto border-t border-terminal-border/60 px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
-        <span className="shrink-0">Quick:</span>
+        <span className="shrink-0">{t("command.quick")}</span>
         {QUICK_ACTIONS.map(({ mnemonic, label, title }) => (
           <button
             key={mnemonic}
@@ -242,15 +244,15 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
         <span className="ml-auto shrink-0 truncate">
           {lastCommand ? (
             <>
-              Last: <span className="text-terminal-amber">{lastCommand}</span>
+              {t("command.last")} <span className="text-terminal-amber">{lastCommand}</span>
               {history.length > 0 && (
                 <span className="pl-2 text-terminal-muted/70">
-                  · ↑/↓ history ({history.length})
+                  · {t("command.history", { count: history.length })}
                 </span>
               )}
             </>
           ) : (
-            <>Click a chip · or type <span className="text-terminal-amber">HELP</span></>
+            <>{t("command.clickHint")} <span className="text-terminal-amber">HELP</span></>
           )}
         </span>
       </div>

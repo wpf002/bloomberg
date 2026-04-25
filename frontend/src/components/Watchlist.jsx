@@ -3,6 +3,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import useStream from "../hooks/useStream.js";
+import { useTranslation } from "../i18n/index.jsx";
 import { api } from "../lib/api.js";
 
 function formatNumber(value, digits = 2) {
@@ -16,6 +17,7 @@ function formatNumber(value, digits = 2) {
 const FLASH_MS = 600;
 
 export default function Watchlist({ symbols, activeSymbol, onSelect }) {
+  const { t } = useTranslation();
   const { data, error, loading } = usePolling(
     () => api.quotes(symbols),
     15000,
@@ -53,11 +55,11 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
 
   return (
     <Panel
-      title="Watchlist"
+      title={t("panels.watchlist")}
       accent="amber"
       actions={
         <span className="text-terminal-muted">
-          {symbols.length} syms ·{" "}
+          {t("watchlist.syms", { count: symbols.length })} ·{" "}
           <span
             className={
               wsStatus === "open"
@@ -67,24 +69,24 @@ export default function Watchlist({ symbols, activeSymbol, onSelect }) {
                 : "text-terminal-muted"
             }
           >
-            ws {wsStatus}
+            ws {wsStatus === "open" ? t("watchlist.wsOpen") : wsStatus === "error" ? t("watchlist.wsError") : t("watchlist.wsClosed")}
           </span>
         </span>
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading quotes…</div>
+        <div className="text-terminal-muted">{t("watchlist.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (
         <table className="w-full text-xs tabular">
           <thead>
             <tr className="text-left text-terminal-muted">
-              <th className="py-1 pr-2">SYM</th>
-              <th className="py-1 pr-2 text-right">LAST</th>
-              <th className="py-1 pr-2 text-right">CHG</th>
-              <th className="py-1 pr-2 text-right">%</th>
-              <th className="py-1 text-right">VOL</th>
+              <th className="py-1 pr-2">{t("watchlist.columns.sym")}</th>
+              <th className="py-1 pr-2 text-right">{t("watchlist.columns.last")}</th>
+              <th className="py-1 pr-2 text-right">{t("watchlist.columns.chg")}</th>
+              <th className="py-1 pr-2 text-right">{t("watchlist.columns.pct")}</th>
+              <th className="py-1 text-right">{t("watchlist.columns.vol")}</th>
             </tr>
           </thead>
           <tbody>

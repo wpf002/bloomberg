@@ -2,8 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/*
+ * Theme palettes — Phase 9.
+ *
+ * Default (`:root`) is the original dark amber-on-charcoal Bloomberg look.
+ * `.theme-light` and `.theme-hc` swap the palette without re-rendering by
+ * toggling a class on <html>. Tailwind classes like `text-terminal-amber`
+ * resolve through `var(--bt-amber)` so every component picks up the new
+ * theme automatically.
+ */
+:root,
+.theme-dark {
   color-scheme: dark;
+  --bt-bg:         #0b0b0b;
+  --bt-panel:      #111418;
+  --bt-panel-alt:  #161a20;
+  --bt-border:     #1f242c;
+  --bt-text:       #e6e6e6;
+  --bt-muted:      #8a8f98;
+  --bt-amber:      #ff9f1c;
+  --bt-amber-dim:  #b26f14;
+  --bt-green:      #00d26a;
+  --bt-red:        #ff4d4d;
+  --bt-blue:       #4cc9f0;
+}
+
+.theme-light {
+  color-scheme: light;
+  --bt-bg:         #f7f7f5;
+  --bt-panel:      #ffffff;
+  --bt-panel-alt:  #f0efea;
+  --bt-border:     #d4d2cc;
+  --bt-text:       #1a1a1a;
+  --bt-muted:      #6b6b6b;
+  --bt-amber:      #c47100;
+  --bt-amber-dim:  #8a4f00;
+  --bt-green:      #006b3a;
+  --bt-red:        #c1272d;
+  --bt-blue:       #1a6f97;
+}
+
+/* High-contrast: black backgrounds, pure-white text, brighter amber.
+ * Optimised for low-vision users and direct-sunlight outdoor use. */
+.theme-hc {
+  color-scheme: dark;
+  --bt-bg:         #000000;
+  --bt-panel:      #050505;
+  --bt-panel-alt:  #0a0a0a;
+  --bt-border:     #ffffff;
+  --bt-text:       #ffffff;
+  --bt-muted:      #c8c8c8;
+  --bt-amber:      #ffcc00;
+  --bt-amber-dim:  #b29200;
+  --bt-green:      #00ff7f;
+  --bt-red:        #ff5555;
+  --bt-blue:       #66e0ff;
 }
 
 html,
@@ -24,16 +77,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b0b0b;
+  background: var(--bt-bg);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1f242c;
+  background: var(--bt-border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a313c;
+  background: var(--bt-muted);
 }
 
 .tabular {
