@@ -75,7 +75,7 @@ export default function Launchpad({
 
   // When the parent supplies a saved layout (after login), seed it through
   // the same merge step so a release adding new panels doesn't strand them.
-  const layouts = useMemo(() => {
+  const rawLayouts = useMemo(() => {
     if (!controlled) return localLayouts;
     const incoming =
       controlledLayouts && Object.keys(controlledLayouts).length
@@ -83,6 +83,20 @@ export default function Launchpad({
         : null;
     return mergeMissing(incoming, defaultLayouts);
   }, [controlled, controlledLayouts, localLayouts, defaultLayouts]);
+
+  // Strip layout entries whose panel id isn't in the currently-rendered
+  // set. React-grid-layout sizes its container to fit every layout entry,
+  // so orphan ids (e.g. AURORA panels that used to live in Terminal mode
+  // but are now Intelligence-only) would leave a tall blank gap below the
+  // last real panel. This keeps the grid as tall as the visible content.
+  const renderedIds = useMemo(() => new Set(panels.map((p) => p.id)), [panels]);
+  const layouts = useMemo(() => {
+    const out = {};
+    for (const bp of Object.keys(rawLayouts || {})) {
+      out[bp] = (rawLayouts[bp] || []).filter((entry) => renderedIds.has(entry.i));
+    }
+    return out;
+  }, [rawLayouts, renderedIds]);
 
   const hidden = useMemo(() => {
     if (controlled) return new Set(controlledHidden || []);
