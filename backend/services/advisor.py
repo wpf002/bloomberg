@@ -131,12 +131,18 @@ and recent news. You MUST:
 
 - Only reference data present in the CONTEXT. Never invent numbers,
   prices, or holdings. When a field is missing, say "n/a".
-- Style: terse, fact-dense, no hedging language, no "as an AI", no
-  legal disclaimers. Plain text with short uppercase section headings.
+- ABSOLUTELY NO MARKDOWN. Do not use `#`, `##`, `**`, `__`, backticks,
+  bullet markers like `*` or `-`, or any other markdown formatting.
+  Section headings are ALL-CAPS plain text (e.g. "STATE", "FRAGILITIES")
+  on their own line. Lists use the character "›" followed by a space.
+- Terse, fact-dense, no hedging language, no "as an AI", no
+  legal disclaimers.
 - Cite specific numbers when present ("VaR-95: -1.42%", "fragility 78
   → HIGH RISK", "AAPL 12.4% of book"), never vague qualifiers.
 - Respect the user's regime: in RISK_OFF, lean defensive; in RISK_ON,
   lean opportunistic. Always tie advice back to the regime.
+- When PRIOR_CONVERSATION is supplied below, treat it as the running
+  thread — build on what you already said instead of repeating it.
 """
 
 
@@ -145,31 +151,37 @@ def _system_for(capability: str) -> str:
         "review": (
             "TASK: Produce a structured PORTFOLIO REVIEW. Sections: STATE, "
             "WHAT'S WORKING, FRAGILITIES, REGIME ALIGNMENT, NEXT MOVES. "
-            "Use bullet points. Reference per-position numbers from CONTEXT.positions."
+            "Each section heading on its own line in ALL CAPS, no markdown. "
+            "List items prefixed with '› '. Reference per-position numbers "
+            "from CONTEXT.positions."
         ),
         "picks": (
             "TASK: Recommend 3-5 NEW positions or adjustments. Each pick "
-            "must include: TICKER, THESIS (1-2 sentences), ENTRY LOGIC "
-            "(price levels / triggers / sizing relative to current book), "
-            "RISK (what would invalidate the thesis). Format each pick as "
-            "a markdown subsection. Picks must align with the current regime "
-            "and rotation phase. Never recommend without a stated thesis."
+            "appears as: a TICKER line in ALL CAPS, then THESIS: line "
+            "(1-2 sentences), ENTRY: line (price levels / triggers / sizing "
+            "relative to current book), RISK: line (what would invalidate "
+            "the thesis). Plain text only — no markdown headings, no bold, "
+            "no bullets. Picks must align with the current regime and "
+            "rotation phase. Never recommend without a stated thesis."
         ),
         "ask": (
             "TASK: Answer the user's QUESTION using only CONTEXT. Be terse. "
             "If the question requires data not in CONTEXT, say so explicitly "
-            "and recommend which mnemonic to run."
+            "and recommend which mnemonic to run. Plain text only — no "
+            "markdown."
         ),
         "brief": (
             "TASK: Produce a WEEKLY RISK BRIEF. Sections: PORTFOLIO DELTA, "
             "MACRO REGIME, TOP FRAGILITY RISKS, SECTOR ROTATION UPDATE, "
-            "3 THINGS TO WATCH NEXT WEEK. Output valid markdown — the user "
-            "will export it as a file."
+            "3 THINGS TO WATCH NEXT WEEK. Each heading on its own line in "
+            "ALL CAPS, no markdown. List items prefixed with '› '. Output "
+            "is exported verbatim, so keep it readable as plain text."
         ),
         "alert-analysis": (
             "TASK: Explain the supplied ALERT in plain language and assess "
             "its impact on the user's specific portfolio. Sections: WHAT "
-            "FIRED, WHY IT MATTERS FOR YOU, RECOMMENDED ACTION. ≤150 words."
+            "FIRED, WHY IT MATTERS FOR YOU, RECOMMENDED ACTION. Plain text "
+            "only, headings in ALL CAPS, ≤150 words."
         ),
     }
     return _BASE_SYSTEM + "\n\n" + extras.get(capability, "")
@@ -178,27 +190,56 @@ def _system_for(capability: str) -> str:
 # ── streaming wrapper ──────────────────────────────────────────────────
 
 
+def _build_messages(
+    context: dict[str, Any],
+    user_message: str,
+    history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
+    """Build the messages list passed to Anthropic's streaming API.
+
+    The first user turn always carries the CONTEXT JSON so freshness is
+    guaranteed (data may have changed since the last turn). Prior chat
+    turns are appended verbatim so Claude can build on what it already
+    said instead of restarting from scratch.
+    """
+    messages: list[dict[str, str]] = []
+    primer = (
+        f"CONTEXT (JSON):\n{json.dumps(context, default=str)}\n\n"
+        "Acknowledge in one short sentence that the context loaded; the "
+        "next user message will state the actual task."
+    )
+    messages.append({"role": "user", "content": primer})
+    messages.append(
+        {"role": "assistant", "content": "Context loaded. Ready for the task."}
+    )
+    for turn in history or []:
+        role = turn.get("role")
+        text = (turn.get("content") or "").strip()
+        if role in ("user", "assistant") and text:
+            messages.append({"role": role, "content": text})
+    messages.append({"role": "user", "content": user_message})
+    return messages
+
+
 async def stream_advisor(
     *,
     capability: str,
     user_message: str,
     context: dict[str, Any],
+    history: list[dict[str, str]] | None = None,
 ) -> AsyncIterator[str]:
     """Stream Claude tokens as plain text chunks. The caller wraps these
     in a FastAPI StreamingResponse with media_type='text/plain'."""
     client = _client()
     system = _system_for(capability)
-    user = (
-        f"CONTEXT (JSON):\n```json\n{json.dumps(context, default=str)}\n```\n\n"
-        f"USER MESSAGE:\n{user_message}"
-    )
+    messages = _build_messages(context, user_message, history)
     try:
         async with client.messages.stream(
             model=ADVISOR_MODEL,
             max_tokens=2000,
             temperature=0.4,
             system=system,
-            messages=[{"role": "user", "content": user}],
+            messages=messages,
         ) as stream:
             async for text in stream.text_stream:
                 yield text
@@ -207,15 +248,20 @@ async def stream_advisor(
         yield f"\n\n[advisor error: {exc}]"
 
 
-async def stream_review(context: dict[str, Any]) -> AsyncIterator[str]:
+async def stream_review(
+    context: dict[str, Any], history: list[dict[str, str]] | None = None
+) -> AsyncIterator[str]:
     return stream_advisor(
         capability="review",
         user_message="Produce a complete portfolio review now.",
         context=context,
+        history=history,
     )
 
 
-async def stream_picks(context: dict[str, Any]) -> AsyncIterator[str]:
+async def stream_picks(
+    context: dict[str, Any], history: list[dict[str, str]] | None = None
+) -> AsyncIterator[str]:
     return stream_advisor(
         capability="picks",
         user_message=(
@@ -223,26 +269,39 @@ async def stream_picks(context: dict[str, Any]) -> AsyncIterator[str]:
             "current regime, rotation, and fragility profile."
         ),
         context=context,
+        history=history,
     )
 
 
-async def stream_ask(context: dict[str, Any], question: str) -> AsyncIterator[str]:
-    return stream_advisor(capability="ask", user_message=question, context=context)
+async def stream_ask(
+    context: dict[str, Any],
+    question: str,
+    history: list[dict[str, str]] | None = None,
+) -> AsyncIterator[str]:
+    return stream_advisor(
+        capability="ask", user_message=question, context=context, history=history
+    )
 
 
-async def stream_brief(context: dict[str, Any]) -> AsyncIterator[str]:
+async def stream_brief(
+    context: dict[str, Any], history: list[dict[str, str]] | None = None
+) -> AsyncIterator[str]:
     return stream_advisor(
         capability="brief",
         user_message="Produce this week's risk brief now.",
         context=context,
+        history=history,
     )
 
 
 async def stream_alert_analysis(
-    context: dict[str, Any], alert: dict[str, Any]
+    context: dict[str, Any],
+    alert: dict[str, Any],
+    history: list[dict[str, str]] | None = None,
 ) -> AsyncIterator[str]:
     return stream_advisor(
         capability="alert-analysis",
         user_message=f"Alert payload: {json.dumps(alert, default=str)}",
         context=context,
+        history=history,
     )

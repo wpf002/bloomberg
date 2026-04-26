@@ -107,6 +107,8 @@ export default function RiskPanel() {
         <div className="text-terminal-muted">Loading risk analytics…</div>
       ) : error ? (
         <div className="text-terminal-red">{error}</div>
+      ) : isPortfolioEmpty(exposure, varData) ? (
+        <EmptyState />
       ) : tab === "summary" ? (
         <SummaryTab varData={varData} drawdown={drawdown} />
       ) : tab === "exposure" ? (
@@ -119,6 +121,27 @@ export default function RiskPanel() {
         <StressTab stress={stress} />
       )}
     </Panel>
+  );
+}
+
+function isPortfolioEmpty(exposure, varData) {
+  const noExposure = !exposure || (exposure.total_value ?? 0) <= 0;
+  const noObservations = !varData || (varData.observations ?? 0) === 0;
+  return noExposure && noObservations;
+}
+
+function EmptyState() {
+  return (
+    <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
+      <div className="text-terminal-amber">No open positions.</div>
+      <div className="text-terminal-muted leading-relaxed">
+        Risk analytics need at least one holding to compute against. Open a
+        paper position from the <span className="text-terminal-text">TRADE</span>{" "}
+        panel (mnemonic <span className="text-terminal-amber">TRADE</span> or{" "}
+        <span className="text-terminal-amber">BUY</span>), then come back —
+        VaR, drawdown, correlation, and stress will populate automatically.
+      </div>
+    </div>
   );
 }
 

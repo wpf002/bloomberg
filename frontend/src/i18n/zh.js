@@ -3,7 +3,7 @@ export default {
   app: {
     title: "彭博终端",
     edition: "公开版",
-    phase: "AURORA · 数据溯源 · 风险 · 智能 · 顾问 · TimescaleDB",
+    phase: "AURORA · 机构级智能",
   },
   command: {
     placeholder: "当前: {symbol}   回车: <代码> <功能>   (HELP 查看助记符)",

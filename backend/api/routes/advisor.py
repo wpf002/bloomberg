@@ -29,9 +29,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class _ChatTurn(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
 class _BaseAdvisorRequest(BaseModel):
     active_symbol: str | None = None
     watchlist: list[str] | None = None
+    history: list[_ChatTurn] | None = None
 
 
 class AskRequest(_BaseAdvisorRequest):
@@ -40,6 +46,12 @@ class AskRequest(_BaseAdvisorRequest):
 
 class AlertAnalysisRequest(_BaseAdvisorRequest):
     alert: dict[str, Any]
+
+
+def _history_dicts(req: _BaseAdvisorRequest) -> list[dict[str, str]] | None:
+    if not req.history:
+        return None
+    return [{"role": t.role, "content": t.content} for t in req.history]
 
 
 def _stream_response(generator) -> StreamingResponse:
@@ -75,7 +87,7 @@ async def post_review(req: _BaseAdvisorRequest):
     ctx = await advisor.build_context(
         active_symbol=req.active_symbol, watchlist=req.watchlist
     )
-    return _stream_response(advisor.stream_review(ctx))
+    return _stream_response(advisor.stream_review(ctx, _history_dicts(req)))
 
 
 @router.post("/picks")
@@ -84,7 +96,7 @@ async def post_picks(req: _BaseAdvisorRequest):
     ctx = await advisor.build_context(
         active_symbol=req.active_symbol, watchlist=req.watchlist
     )
-    return _stream_response(advisor.stream_picks(ctx))
+    return _stream_response(advisor.stream_picks(ctx, _history_dicts(req)))
 
 
 @router.post("/ask")
@@ -93,7 +105,9 @@ async def post_ask(req: AskRequest):
     ctx = await advisor.build_context(
         active_symbol=req.active_symbol, watchlist=req.watchlist
     )
-    return _stream_response(advisor.stream_ask(ctx, req.question))
+    return _stream_response(
+        advisor.stream_ask(ctx, req.question, _history_dicts(req))
+    )
 
 
 @router.post("/brief")
@@ -104,7 +118,7 @@ async def post_brief(req: _BaseAdvisorRequest):
         watchlist=req.watchlist,
         include_news=False,
     )
-    return _stream_response(advisor.stream_brief(ctx))
+    return _stream_response(advisor.stream_brief(ctx, _history_dicts(req)))
 
 
 @router.post("/alert-analysis")
@@ -113,4 +127,6 @@ async def post_alert_analysis(req: AlertAnalysisRequest):
     ctx = await advisor.build_context(
         active_symbol=req.active_symbol, watchlist=req.watchlist
     )
-    return _stream_response(advisor.stream_alert_analysis(ctx, req.alert))
+    return _stream_response(
+        advisor.stream_alert_analysis(ctx, req.alert, _history_dicts(req))
+    )

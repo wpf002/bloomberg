@@ -204,27 +204,27 @@ const DEFAULT_LAYOUTS = {
   ],
 };
 
-// Intelligence-mode layout: 2×2 large tiles. Each panel gets ~half the
-// screen so the advisor chat, regime contributing factors, correlation
-// heatmap, and provenance log all have room to breathe.
+// Intelligence-mode layout: 2×2 large tiles sized to fit a typical
+// 1080p viewport without scrolling. Row height in Launchpad is 44px,
+// so h=10 ≈ 512px per panel; two rows ≈ 1024px including margins.
 const INTELLIGENCE_LAYOUTS = {
   lg: [
-    { i: "intelligence", x: 0, y: 0,  w: 6, h: 16, minW: 4, minH: 8 },
-    { i: "advisor",      x: 6, y: 0,  w: 6, h: 16, minW: 4, minH: 8 },
-    { i: "risk",         x: 0, y: 16, w: 6, h: 16, minW: 4, minH: 8 },
-    { i: "provenance",   x: 6, y: 16, w: 6, h: 16, minW: 4, minH: 8 },
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "advisor",      x: 6, y: 0,  w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "risk",         x: 0, y: 10, w: 6, h: 10, minW: 4, minH: 6 },
+    { i: "provenance",   x: 6, y: 10, w: 6, h: 10, minW: 4, minH: 6 },
   ],
   md: [
-    { i: "intelligence", x: 0, y: 0,  w: 6, h: 14 },
-    { i: "advisor",      x: 6, y: 0,  w: 6, h: 14 },
-    { i: "risk",         x: 0, y: 14, w: 6, h: 14 },
-    { i: "provenance",   x: 6, y: 14, w: 6, h: 14 },
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 10 },
+    { i: "advisor",      x: 6, y: 0,  w: 6, h: 10 },
+    { i: "risk",         x: 0, y: 10, w: 6, h: 10 },
+    { i: "provenance",   x: 6, y: 10, w: 6, h: 10 },
   ],
   sm: [
-    { i: "intelligence", x: 0, y: 0,  w: 6, h: 14 },
-    { i: "advisor",      x: 0, y: 14, w: 6, h: 14 },
-    { i: "risk",         x: 0, y: 28, w: 6, h: 14 },
-    { i: "provenance",   x: 0, y: 42, w: 6, h: 14 },
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 12 },
+    { i: "advisor",      x: 0, y: 12, w: 6, h: 12 },
+    { i: "risk",         x: 0, y: 24, w: 6, h: 12 },
+    { i: "provenance",   x: 0, y: 36, w: 6, h: 12 },
   ],
 };
 
@@ -682,7 +682,7 @@ export default function Terminal() {
             </span>
           )}
         </span>
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 hidden md:inline">{t("app.phase")}</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 hidden 2xl:inline max-w-[28%] truncate" title={t("app.phase")}>{t("app.phase")}</span>
       </footer>
       <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
       {helpOpen ? (

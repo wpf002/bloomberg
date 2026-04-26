@@ -4,7 +4,7 @@ export default {
   app: {
     title: "Bloomberg Terminal",
     edition: "Public Edition",
-    phase: "AURORA · Provenance · Risk · Intelligence · Advisor · TimescaleDB",
+    phase: "AURORA · institutional intelligence",
   },
   command: {
     placeholder: "Active: {symbol}   Enter: <SYMBOL> <FN>   (HELP for mnemonics)",

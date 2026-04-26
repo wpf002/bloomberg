@@ -65,57 +65,79 @@ export default function AdvisorPanel({ symbol }) {
     [],
   );
 
+  // The chat history is one continuous thread across all five tabs so
+  // the AI can build on prior turns. We send it back to the backend on
+  // every call (last 12 turns is plenty of context without exhausting
+  // token budget), mapped to {role, content} pairs the API expects.
+  const apiHistory = useCallback(
+    () =>
+      history.slice(-12).map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.text,
+      })),
+    [history],
+  );
+
   const onAsk = useCallback(() => {
     const q = input.trim();
     if (!q || busy) return;
     setInput("");
+    const histSnapshot = apiHistory();
     setHistory((h) => [...h, { role: "user", text: q }]);
     runStream(
       "ask",
-      { active_symbol: symbol, question: q },
+      { active_symbol: symbol, question: q, history: histSnapshot },
       (full) => setHistory((h) => [...h, { role: "advisor", text: full }]),
     );
-  }, [input, busy, symbol, runStream]);
+  }, [input, busy, symbol, runStream, apiHistory]);
 
   const onReview = useCallback(() => {
     if (busy) return;
+    const histSnapshot = apiHistory();
     setHistory((h) => [...h, { role: "user", text: "[Generate portfolio review]" }]);
     runStream(
       "review",
-      { active_symbol: symbol },
+      { active_symbol: symbol, history: histSnapshot },
       (full) => setHistory((h) => [...h, { role: "advisor", text: full }]),
     );
-  }, [busy, symbol, runStream]);
+  }, [busy, symbol, runStream, apiHistory]);
 
   const onPicks = useCallback(() => {
     if (busy) return;
+    const histSnapshot = apiHistory();
     setHistory((h) => [...h, { role: "user", text: "[Generate picks]" }]);
     runStream(
       "picks",
-      { active_symbol: symbol },
+      { active_symbol: symbol, history: histSnapshot },
       (full) => setHistory((h) => [...h, { role: "advisor", text: full }]),
     );
-  }, [busy, symbol, runStream]);
+  }, [busy, symbol, runStream, apiHistory]);
 
   const onBrief = useCallback(() => {
     if (busy) return;
     setBriefMd("");
+    const histSnapshot = apiHistory();
     runStream(
       "brief",
-      { active_symbol: symbol },
+      { active_symbol: symbol, history: histSnapshot },
       (full) => setBriefMd(full),
     );
-  }, [busy, symbol, runStream]);
+  }, [busy, symbol, runStream, apiHistory]);
 
   const onAlert = useCallback(() => {
     if (busy) return;
+    const histSnapshot = apiHistory();
     setHistory((h) => [...h, { role: "user", text: "[Analyze most-recent alert]" }]);
     runStream(
       "alert-analysis",
-      { active_symbol: symbol, alert: { symbol, condition: "manual trigger" } },
+      {
+        active_symbol: symbol,
+        alert: { symbol, condition: "manual trigger" },
+        history: histSnapshot,
+      },
       (full) => setHistory((h) => [...h, { role: "advisor", text: full }]),
     );
-  }, [busy, symbol, runStream]);
+  }, [busy, symbol, runStream, apiHistory]);
 
   const exportBrief = useCallback(
     (format) => {
@@ -258,6 +280,18 @@ export default function AdvisorPanel({ symbol }) {
               {t.label}
             </button>
           ))}
+          {history.length > 0 ? (
+            <button
+              onClick={() => {
+                setHistory([]);
+                setBriefMd("");
+              }}
+              className="ml-2 border border-terminal-border px-2 text-terminal-muted hover:text-terminal-red"
+              title="Wipe conversation thread and start fresh"
+            >
+              CLEAR
+            </button>
+          ) : null}
         </div>
       }
     >

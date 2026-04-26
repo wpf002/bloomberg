@@ -172,53 +172,53 @@ def classify_regime(f: RegimeFactors) -> tuple[str, float, list[str]]:
     if f.vix is not None:
         if f.vix < 18:
             scores["RISK_ON"] += 1.0
-            contributing.append(f"VIX {f.vix:.1f} (low)")
+            contributing.append(f"VIX {f.vix:.1f} (LOW)")
         elif f.vix > 25:
             scores["RISK_OFF"] += 1.0
             scores["LIQUIDITY_CONTRACTION"] += 0.5
-            contributing.append(f"VIX {f.vix:.1f} (elevated)")
+            contributing.append(f"VIX {f.vix:.1f} (ELEVATED)")
         else:
-            contributing.append(f"VIX {f.vix:.1f} (mid)")
+            contributing.append(f"VIX {f.vix:.1f} (MID)")
 
     if f.yield_curve is not None:
         if f.yield_curve > 0.2:
             scores["RISK_ON"] += 0.5
-            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (positive)")
+            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (POSITIVE)")
         elif f.yield_curve < 0:
             scores["RISK_OFF"] += 0.5
             scores["LIQUIDITY_CONTRACTION"] += 1.0
-            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (inverted)")
+            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (INVERTED)")
         else:
-            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (flat)")
+            contributing.append(f"10Y-2Y {f.yield_curve:+.2f}% (FLAT)")
 
     if f.spy_30d_return is not None:
         if f.spy_30d_return > 0.03:
             scores["RISK_ON"] += 0.5
-            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (rising)")
+            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (RISING)")
         elif f.spy_30d_return < -0.03:
             scores["RISK_OFF"] += 0.5
-            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (declining)")
+            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (DECLINING)")
         else:
-            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (flat)")
+            contributing.append(f"SPY 30d {f.spy_30d_return*100:+.1f}% (FLAT)")
 
     if f.cpi_mom_pct is not None:
         if f.cpi_mom_pct > 0.4:
             scores["INFLATIONARY"] += 1.0
-            contributing.append(f"CPI MoM {f.cpi_mom_pct:+.2f}% (hot)")
+            contributing.append(f"CPI MoM {f.cpi_mom_pct:+.2f}% (HOT)")
         elif f.cpi_mom_pct < 0.1:
-            contributing.append(f"CPI MoM {f.cpi_mom_pct:+.2f}% (soft)")
+            contributing.append(f"CPI MoM {f.cpi_mom_pct:+.2f}% (SOFT)")
         else:
             contributing.append(f"CPI MoM {f.cpi_mom_pct:+.2f}%")
 
     if f.ten_year is not None and f.dxy is not None:
         if f.cpi_mom_pct is not None and f.cpi_mom_pct > 0.4 and f.ten_year > 4.0:
             scores["INFLATIONARY"] += 0.5
-            contributing.append(f"10Y {f.ten_year:.2f}% (rising into hot CPI)")
+            contributing.append(f"10Y {f.ten_year:.2f}% (RISING INTO HOT CPI)")
 
     if f.m2_yoy_pct is not None:
         if f.m2_yoy_pct < 0:
             scores["LIQUIDITY_CONTRACTION"] += 1.0
-            contributing.append(f"M2 YoY {f.m2_yoy_pct:+.2f}% (contracting)")
+            contributing.append(f"M2 YoY {f.m2_yoy_pct:+.2f}% (CONTRACTING)")
         else:
             contributing.append(f"M2 YoY {f.m2_yoy_pct:+.2f}%")
 
@@ -234,7 +234,7 @@ def classify_regime(f: RegimeFactors) -> tuple[str, float, list[str]]:
         and f.vix > 20
     ):
         scores["STAGFLATIONARY"] += 1.5
-        contributing.append("Stagflation triad: hot CPI + falling equities + elevated VIX")
+        contributing.append("STAGFLATION TRIAD: HOT CPI + FALLING EQUITIES + ELEVATED VIX")
 
     # Decide winner.
     regime = max(scores, key=scores.get)

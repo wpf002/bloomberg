@@ -3,7 +3,7 @@ export default {
   app: {
     title: "Terminal Bloomberg",
     edition: "Edição Pública",
-    phase: "AURORA · Proveniência · Risco · Inteligência · Conselheiro · TimescaleDB",
+    phase: "AURORA · inteligência institucional",
   },
   command: {
     placeholder: "Ativo: {symbol}   Enter: <SÍMBOLO> <FN>   (HELP para mnemônicos)",
