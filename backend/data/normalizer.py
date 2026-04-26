@@ -19,6 +19,7 @@ TimescaleDB persistence layer is wired in.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -311,6 +312,28 @@ class Normalizer:
                 buf = _RingBuffer(capacity=self._buffer_capacity)
                 self._buffers[key] = buf
             buf.push(rec)
+        # Best-effort fan-out to TimescaleDB. We schedule this on the
+        # running event loop and ignore failures — the in-memory buffer
+        # already holds the record so reads stay fast even when
+        # Postgres is down.
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # called outside an event loop (e.g. unit tests)
+        try:
+            from ..core.audit import persist_normalized, persist_audit
+
+            loop.create_task(persist_normalized(rec))
+            loop.create_task(
+                persist_audit(
+                    record_id=None,
+                    source=rec.source,
+                    symbol=rec.symbol,
+                    endpoint_called=rec.series_id,
+                )
+            )
+        except Exception as exc:
+            logger.debug("audit fan-out failed: %s", exc)
 
 
 _normalizer_singleton: Normalizer | None = None

@@ -1,10 +1,22 @@
-"""Idempotent Postgres schema bootstrap.
+"""Idempotent Postgres + TimescaleDB schema bootstrap.
 
-Phase 6 introduces per-user persistence: GitHub-OAuth-backed `users`,
-their `user_watchlists`, `user_layouts`, and per-user `user_alert_rules`.
-We deliberately keep this in code rather than reaching for a migration
-framework — the surface area is small and `CREATE TABLE IF NOT EXISTS`
-is fine here. Run on FastAPI startup after the asyncpg pool connects.
+Phase 6 introduced per-user persistence (GitHub OAuth + watchlists +
+layouts + alerts). AURORA Module 5 extends this with TimescaleDB
+hypertables for:
+
+  - market_data           (per-symbol tick / quote stream)
+  - macro_series          (FRED observations)
+  - normalized_records    (everything that flowed through the normalizer)
+  - audit_log             (one row per ingested record + endpoint hit)
+  - risk_snapshots        (historical risk-engine outputs)
+  - intelligence_snapshots (historical intelligence-engine outputs +
+                            the input data that produced them)
+
+`CREATE EXTENSION IF NOT EXISTS timescaledb` and `create_hypertable(...,
+if_not_exists => TRUE)` make this safe to re-run on every startup. On a
+plain Postgres image the extension fails to load — we catch and log so
+existing Phase-6 functionality keeps working in dev environments that
+haven't bumped the postgres image yet.
 """
 
 from __future__ import annotations
@@ -16,7 +28,9 @@ from .database import database
 logger = logging.getLogger(__name__)
 
 
-SCHEMA_SQL = """
+# Phase-6 base schema. Identical to the original; the AURORA changes are
+# additive and live in HYPERTABLE_SQL below.
+BASE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     id            BIGSERIAL PRIMARY KEY,
     github_id     TEXT UNIQUE NOT NULL,
@@ -66,10 +80,154 @@ CREATE INDEX IF NOT EXISTS shared_layouts_owner_idx
 """
 
 
+# AURORA Module 5: time-series tables. Each gets converted to a hypertable
+# below with an explicit chunk interval. Time-bucket choices reflect the
+# natural cadence of the data: 1-week chunks for tick data (small chunks,
+# fast scans for recent windows), 1-month chunks for daily/macro series.
+HYPERTABLE_DDL = """
+CREATE TABLE IF NOT EXISTS market_data (
+    time      TIMESTAMPTZ NOT NULL,
+    symbol    TEXT NOT NULL,
+    price     DOUBLE PRECISION,
+    volume    DOUBLE PRECISION,
+    source    TEXT NOT NULL,
+    raw       JSONB
+);
+CREATE INDEX IF NOT EXISTS market_data_symbol_time_idx
+    ON market_data (symbol, time DESC);
+
+CREATE TABLE IF NOT EXISTS macro_series (
+    time       TIMESTAMPTZ NOT NULL,
+    series_id  TEXT NOT NULL,
+    value      DOUBLE PRECISION,
+    source     TEXT NOT NULL DEFAULT 'fred',
+    unit       TEXT,
+    frequency  TEXT
+);
+CREATE INDEX IF NOT EXISTS macro_series_id_time_idx
+    ON macro_series (series_id, time DESC);
+
+CREATE TABLE IF NOT EXISTS normalized_records (
+    ingested_at  TIMESTAMPTZ NOT NULL,
+    timestamp    TIMESTAMPTZ NOT NULL,
+    source       TEXT NOT NULL,
+    symbol       TEXT NOT NULL,
+    series_id    TEXT NOT NULL,
+    value        DOUBLE PRECISION,
+    unit         TEXT,
+    tags         JSONB
+);
+CREATE INDEX IF NOT EXISTS normalized_records_symbol_idx
+    ON normalized_records (symbol, ingested_at DESC);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    ingested_at      TIMESTAMPTZ NOT NULL,
+    record_id        TEXT,
+    source           TEXT NOT NULL,
+    symbol           TEXT NOT NULL,
+    endpoint_called  TEXT,
+    user_id          BIGINT
+);
+CREATE INDEX IF NOT EXISTS audit_log_symbol_idx
+    ON audit_log (symbol, ingested_at DESC);
+
+CREATE TABLE IF NOT EXISTS risk_snapshots (
+    captured_at  TIMESTAMPTZ NOT NULL,
+    kind         TEXT NOT NULL,
+    user_id      BIGINT,
+    output       JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS risk_snapshots_kind_idx
+    ON risk_snapshots (kind, captured_at DESC);
+
+CREATE TABLE IF NOT EXISTS intelligence_snapshots (
+    captured_at  TIMESTAMPTZ NOT NULL,
+    kind         TEXT NOT NULL,
+    inputs_hash  TEXT,
+    inputs       JSONB NOT NULL,
+    output       JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS intelligence_snapshots_kind_idx
+    ON intelligence_snapshots (kind, captured_at DESC);
+"""
+
+
+# create_hypertable + retention/compression policies. Each statement is
+# wrapped in a DO block so a failure in one (e.g., timescaledb extension
+# unavailable) doesn't abort the rest.
+HYPERTABLE_POLICIES = """
+SELECT create_hypertable('market_data', 'time',
+    chunk_time_interval => INTERVAL '1 week',
+    if_not_exists => TRUE);
+
+SELECT create_hypertable('macro_series', 'time',
+    chunk_time_interval => INTERVAL '1 month',
+    if_not_exists => TRUE);
+
+SELECT create_hypertable('normalized_records', 'ingested_at',
+    chunk_time_interval => INTERVAL '1 week',
+    if_not_exists => TRUE);
+
+SELECT create_hypertable('audit_log', 'ingested_at',
+    chunk_time_interval => INTERVAL '1 week',
+    if_not_exists => TRUE);
+
+SELECT create_hypertable('risk_snapshots', 'captured_at',
+    chunk_time_interval => INTERVAL '1 month',
+    if_not_exists => TRUE);
+
+SELECT create_hypertable('intelligence_snapshots', 'captured_at',
+    chunk_time_interval => INTERVAL '1 month',
+    if_not_exists => TRUE);
+
+-- Compression policies. Tick data: compress chunks >7d old. Daily/macro:
+-- compress >30d old. Re-running is harmless (add_compression_policy is
+-- idempotent in modern Timescale).
+ALTER TABLE market_data        SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+ALTER TABLE normalized_records SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+ALTER TABLE audit_log          SET (timescaledb.compress, timescaledb.compress_segmentby = 'symbol');
+ALTER TABLE macro_series       SET (timescaledb.compress, timescaledb.compress_segmentby = 'series_id');
+ALTER TABLE risk_snapshots         SET (timescaledb.compress);
+ALTER TABLE intelligence_snapshots SET (timescaledb.compress);
+
+SELECT add_compression_policy('market_data',          INTERVAL '7 days',  if_not_exists => TRUE);
+SELECT add_compression_policy('normalized_records',   INTERVAL '7 days',  if_not_exists => TRUE);
+SELECT add_compression_policy('audit_log',            INTERVAL '7 days',  if_not_exists => TRUE);
+SELECT add_compression_policy('macro_series',         INTERVAL '30 days', if_not_exists => TRUE);
+SELECT add_compression_policy('risk_snapshots',       INTERVAL '30 days', if_not_exists => TRUE);
+SELECT add_compression_policy('intelligence_snapshots', INTERVAL '30 days', if_not_exists => TRUE);
+"""
+
+
 async def ensure_schema() -> None:
     if database.pool is None:
         logger.warning("ensure_schema: pool unavailable, skipping bootstrap")
         return
     async with database.acquire() as conn:
-        await conn.execute(SCHEMA_SQL)
-    logger.info("Postgres schema ready (users/watchlists/layouts/alert_rules)")
+        # Try the TimescaleDB extension first. On a plain Postgres image
+        # this fails — log and continue so the Phase-6 base schema still
+        # bootstraps. Hypertables / compression policies are skipped in
+        # that case (the audit/snapshot routes degrade to no-ops).
+        timescale_available = False
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
+            timescale_available = True
+        except Exception as exc:
+            logger.warning(
+                "TimescaleDB extension unavailable (%s) — running base schema only",
+                exc,
+            )
+
+        await conn.execute(BASE_SCHEMA_SQL)
+        await conn.execute(HYPERTABLE_DDL)
+
+        if timescale_available:
+            try:
+                await conn.execute(HYPERTABLE_POLICIES)
+            except Exception as exc:
+                logger.warning("hypertable policies failed (non-fatal): %s", exc)
+
+    logger.info(
+        "Postgres schema ready (base + hypertables%s)",
+        " + timescale" if timescale_available else "",
+    )

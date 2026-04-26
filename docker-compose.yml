@@ -1,6 +1,10 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    # AURORA Module 5: TimescaleDB extension on top of Postgres 15.
+    # Existing tables/data continue to work — TimescaleDB is additive
+    # (CREATE EXTENSION inside ensure_schema). Switching back to plain
+    # postgres:15-alpine would only break the AURORA hypertables.
+    image: timescale/timescaledb:latest-pg15
     container_name: bt-postgres
     restart: unless-stopped
     environment:

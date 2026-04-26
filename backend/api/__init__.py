@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from .routes import (
     advisor,
     alerts,
+    audit,
     auth,
     calendar,
     compare,
@@ -62,5 +63,6 @@ api_router.include_router(provenance.router, prefix="/provenance", tags=["proven
 api_router.include_router(risk.router, prefix="/risk", tags=["risk"])
 api_router.include_router(intelligence.router, prefix="/intelligence", tags=["intelligence"])
 api_router.include_router(advisor.router, prefix="/advisor", tags=["advisor"])
+api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 
 __all__ = ["api_router"]
