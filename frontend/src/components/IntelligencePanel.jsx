@@ -39,6 +39,7 @@ export default function IntelligencePanel() {
   const [fragility, setFragility] = useState(null);
   const [flows, setFlows] = useState(null);
   const [rotation, setRotation] = useState(null);
+  const [pendingOrders, setPendingOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,13 +50,19 @@ export default function IntelligencePanel() {
       api.intelFragility().catch(() => null),
       api.intelFlows().catch(() => null),
       api.intelRotation().catch(() => null),
+      api.orders("open", 50).catch(() => []),
     ])
-      .then(([r, f, fl, ro]) => {
+      .then(([r, f, fl, ro, ords]) => {
         if (cancelled) return;
         setRegime(r);
         setFragility(f);
         setFlows(fl);
         setRotation(ro);
+        setPendingOrders(
+          (ords || []).filter(
+            (o) => ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
+          ),
+        );
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -91,7 +98,7 @@ export default function IntelligencePanel() {
       ) : tab === "regime" ? (
         <RegimeTab regime={regime} />
       ) : tab === "fragility" ? (
-        <FragilityTab fragility={fragility} />
+        <FragilityTab fragility={fragility} pendingOrders={pendingOrders} />
       ) : tab === "flows" ? (
         <FlowsTab flows={flows} />
       ) : (
@@ -132,10 +139,32 @@ function RegimeTab({ regime }) {
   );
 }
 
-function FragilityTab({ fragility }) {
+function FragilityTab({ fragility, pendingOrders = [] }) {
   if (!fragility) return <div className="text-terminal-muted">Fragility data unavailable.</div>;
   const positions = fragility.positions || [];
   if (positions.length === 0) {
+    if (pendingOrders.length > 0) {
+      return (
+        <div className="flex flex-col gap-2 text-[12px]">
+          <div className="text-terminal-amber">
+            {pendingOrders.length} order{pendingOrders.length === 1 ? "" : "s"} pending fill.
+          </div>
+          <div className="text-terminal-muted leading-relaxed">
+            Orders submitted outside market hours stay <span className="text-terminal-text">accepted</span>
+            {" "}and fill at the next session open. Fragility scores will compute
+            against your filled positions automatically. Current regime:
+            {" "}<span className="text-terminal-text">{fragility.regime || "—"}</span>.
+          </div>
+          <ul className="mt-1 text-[11px] text-terminal-text">
+            {pendingOrders.map((o) => (
+              <li key={o.id}>
+                › {o.side?.toUpperCase()} {o.qty} {o.symbol} ({o.type}) — {o.status}
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col gap-2 text-[12px]">
         <div className="text-terminal-amber">No open positions.</div>

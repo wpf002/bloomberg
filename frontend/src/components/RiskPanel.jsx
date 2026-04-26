@@ -48,6 +48,7 @@ export default function RiskPanel() {
   const [drawdown, setDrawdown] = useState(null);
   const [varData, setVarData] = useState(null);
   const [stress, setStress] = useState(null);
+  const [pendingOrders, setPendingOrders] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -61,14 +62,20 @@ export default function RiskPanel() {
       api.riskDrawdown().catch(() => null),
       api.riskVar().catch(() => null),
       api.riskStress().catch(() => null),
+      api.orders("open", 50).catch(() => []),
     ])
-      .then(([e, c, d, v, s]) => {
+      .then(([e, c, d, v, s, ords]) => {
         if (cancelled) return;
         setExposure(e);
         setCorrelation(c);
         setDrawdown(d);
         setVarData(v);
         setStress(s);
+        setPendingOrders(
+          (ords || []).filter(
+            (o) => ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
+          ),
+        );
         if (!e && !c && !d && !v && !s) {
           setError("All risk endpoints failed — Alpaca credentials may be missing.");
         }
@@ -108,7 +115,7 @@ export default function RiskPanel() {
       ) : error ? (
         <div className="text-terminal-red">{error}</div>
       ) : isPortfolioEmpty(exposure, varData) ? (
-        <EmptyState />
+        <EmptyState pendingOrders={pendingOrders} />
       ) : tab === "summary" ? (
         <SummaryTab varData={varData} drawdown={drawdown} />
       ) : tab === "exposure" ? (
@@ -130,7 +137,49 @@ function isPortfolioEmpty(exposure, varData) {
   return noExposure && noObservations;
 }
 
-function EmptyState() {
+function EmptyState({ pendingOrders = [] }) {
+  if (pendingOrders.length > 0) {
+    return (
+      <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
+        <div className="text-terminal-amber">
+          {pendingOrders.length} order{pendingOrders.length === 1 ? "" : "s"} pending fill.
+        </div>
+        <div className="text-terminal-muted leading-relaxed">
+          Orders submitted outside market hours stay in <span className="text-terminal-text">accepted</span>
+          {" "}status and fill at the next session open (Mon–Fri 09:30 ET for regular hours).
+          Risk metrics will populate automatically once your fills land. Pending:
+        </div>
+        <table className="w-full text-[11px] mt-1">
+          <thead className="text-terminal-muted">
+            <tr>
+              <th className="text-left">SYM</th>
+              <th className="text-left">SIDE</th>
+              <th className="text-right">QTY</th>
+              <th className="text-left pl-2">TYPE</th>
+              <th className="text-left pl-2">SUBMITTED</th>
+              <th className="text-left pl-2">STATUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {pendingOrders.map((o) => (
+              <tr key={o.id} className="border-b border-terminal-border/30">
+                <td className="text-terminal-text">{o.symbol}</td>
+                <td className={o.side === "buy" ? "text-terminal-green" : "text-terminal-red"}>
+                  {o.side?.toUpperCase()}
+                </td>
+                <td className="text-right text-terminal-amber">{o.qty}</td>
+                <td className="pl-2 text-terminal-muted">{o.type}</td>
+                <td className="pl-2 text-terminal-muted">
+                  {o.submitted_at ? new Date(o.submitted_at).toLocaleString() : "—"}
+                </td>
+                <td className="pl-2 text-terminal-blue">{o.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
       <div className="text-terminal-amber">Your Alpaca paper account holds 0 positions.</div>
