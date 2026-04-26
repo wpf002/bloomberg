@@ -109,6 +109,7 @@ export default {
     notFound: "Diseño compartido {slug} no encontrado.",
     dismiss: "Descartar",
   },
+  mode: { terminal: "Terminal", intelligence: "Inteligencia" },
   theme: { label: "Tema:" },
   language: { label: "Idioma:" },
 };

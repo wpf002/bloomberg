@@ -110,6 +110,10 @@ export default {
     notFound: "Shared layout {slug} not found.",
     dismiss: "Dismiss",
   },
+  mode: {
+    terminal: "Terminal",
+    intelligence: "Intelligence",
+  },
   theme: {
     label: "Theme:",
   },

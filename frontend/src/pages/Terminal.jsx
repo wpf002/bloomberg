@@ -45,6 +45,26 @@ const MOBILE_PRIORITY_PANELS = new Set([
   "portfolio",
 ]);
 
+// AURORA: panels exclusive to "intelligence" mode. The mode toggle next to
+// the command bar swaps between Terminal panels (everything else) and these.
+const INTELLIGENCE_PANELS = new Set([
+  "intelligence",
+  "risk",
+  "advisor",
+  "provenance",
+]);
+
+// Mnemonic intents that should auto-flip the user into Intelligence mode.
+// Symmetrically, every other intent flips back to Terminal mode.
+const INTELLIGENCE_INTENTS = new Set([
+  "intelligence",
+  "risk",
+  "advisor",
+  "provenance",
+]);
+
+const MODE_STORAGE_KEY = "bt.mode.v1";
+
 const DEFAULT_WATCHLIST = [
   "AAPL",
   "MSFT",
@@ -184,6 +204,30 @@ const DEFAULT_LAYOUTS = {
   ],
 };
 
+// Intelligence-mode layout: 2×2 large tiles. Each panel gets ~half the
+// screen so the advisor chat, regime contributing factors, correlation
+// heatmap, and provenance log all have room to breathe.
+const INTELLIGENCE_LAYOUTS = {
+  lg: [
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 16, minW: 4, minH: 8 },
+    { i: "advisor",      x: 6, y: 0,  w: 6, h: 16, minW: 4, minH: 8 },
+    { i: "risk",         x: 0, y: 16, w: 6, h: 16, minW: 4, minH: 8 },
+    { i: "provenance",   x: 6, y: 16, w: 6, h: 16, minW: 4, minH: 8 },
+  ],
+  md: [
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 14 },
+    { i: "advisor",      x: 6, y: 0,  w: 6, h: 14 },
+    { i: "risk",         x: 0, y: 14, w: 6, h: 14 },
+    { i: "provenance",   x: 6, y: 14, w: 6, h: 14 },
+  ],
+  sm: [
+    { i: "intelligence", x: 0, y: 0,  w: 6, h: 14 },
+    { i: "advisor",      x: 0, y: 14, w: 6, h: 14 },
+    { i: "risk",         x: 0, y: 28, w: 6, h: 14 },
+    { i: "provenance",   x: 0, y: 42, w: 6, h: 14 },
+  ],
+};
+
 export default function Terminal() {
   const { user, oauthConfigured, login, logout } = useAuth();
   const { theme, cycle: cycleTheme, themes } = useTheme();
@@ -214,6 +258,25 @@ export default function Terminal() {
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST);
   const [activeSymbol, setActiveSymbol] = useState(DEFAULT_WATCHLIST[0]);
   const [compareSymbols, setCompareSymbols] = useState([DEFAULT_WATCHLIST[0], ""]);
+
+  // AURORA: Terminal vs Intelligence mode. Persisted to localStorage so
+  // the user's choice survives a refresh. Mnemonics auto-switch the mode
+  // (typing RISK from Terminal mode takes you straight into Intelligence).
+  const [mode, setMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem(MODE_STORAGE_KEY);
+      return saved === "intelligence" ? "intelligence" : "terminal";
+    } catch {
+      return "terminal";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, mode);
+    } catch {
+      // private mode / quota — non-fatal
+    }
+  }, [mode]);
 
   // Keep Compare's "A" in sync with the active symbol so changing the
   // focused stock from anywhere (watchlist click, command bar, chip,
@@ -385,11 +448,22 @@ export default function Terminal() {
           return;
         default: {
           const panel = INTENT_TO_PANEL[parsed.intent];
-          if (panel) triggerFlash(panel);
+          if (panel) {
+            // AURORA: auto-flip the mode based on the panel target so the
+            // user doesn't have to know which mode owns which mnemonic.
+            // Typing RISK from Terminal mode jumps you into Intelligence;
+            // typing CHART from Intelligence mode jumps back to Terminal.
+            if (INTELLIGENCE_PANELS.has(panel)) {
+              setMode("intelligence");
+            } else if (mode === "intelligence") {
+              setMode("terminal");
+            }
+            triggerFlash(panel);
+          }
         }
       }
     },
-    [triggerFlash, persistWatchlist, login, logout, user, cycleTheme, cycleLocale]
+    [triggerFlash, persistWatchlist, login, logout, user, cycleTheme, cycleLocale, mode]
   );
 
   const handleSelect = useCallback(
@@ -447,14 +521,21 @@ export default function Terminal() {
     [watchlist, activeSymbol, compareSymbols, handleSelect, handleRemove]
   );
 
-  // On mobile, narrow to the priority set unless the user explicitly
-  // toggled "+ MORE PANELS". Layout sharing still includes every panel
-  // — this is a pure render-time filter so a mobile viewer of a
-  // desktop layout doesn't get a 19-tile wall of charts.
-  const renderedPanels = useMemo(
-    () => (mobilePriorityOnly ? panels.filter((p) => MOBILE_PRIORITY_PANELS.has(p.id)) : panels),
-    [panels, mobilePriorityOnly]
-  );
+  // AURORA: filter panel set by mode first.
+  //   - "intelligence" mode: only the 4 AURORA panels (large 2×2 grid).
+  //   - "terminal" mode: everything except the 4 AURORA panels.
+  // The mobile-priority filter still applies on top in terminal mode.
+  const renderedPanels = useMemo(() => {
+    if (mode === "intelligence") {
+      return panels.filter((p) => INTELLIGENCE_PANELS.has(p.id));
+    }
+    const terminalSet = panels.filter((p) => !INTELLIGENCE_PANELS.has(p.id));
+    return mobilePriorityOnly
+      ? terminalSet.filter((p) => MOBILE_PRIORITY_PANELS.has(p.id))
+      : terminalSet;
+  }, [panels, mode, mobilePriorityOnly]);
+
+  const activeLayouts = mode === "intelligence" ? INTELLIGENCE_LAYOUTS : DEFAULT_LAYOUTS;
 
   return (
     <div className="flex h-screen flex-col bg-terminal-bg text-terminal-text">
@@ -462,6 +543,8 @@ export default function Terminal() {
         onCommand={onCommand}
         activeSymbol={activeSymbol}
         lastCommand={lastCommand}
+        mode={mode}
+        onModeChange={setMode}
       />
       {sharedView ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-terminal-amber/60 bg-terminal-amber/10 px-4 py-1.5 text-[11px] uppercase tracking-widest text-terminal-amber">
@@ -497,32 +580,44 @@ export default function Terminal() {
       ) : null}
       <main className="flex-1 min-h-0 overflow-auto">
         <Launchpad
+          // AURORA: keying on mode forces a clean remount when the user
+          // toggles modes, so layouts don't bleed across them.
+          key={`launchpad-${mode}`}
           panels={renderedPanels}
-          defaultLayouts={DEFAULT_LAYOUTS}
+          defaultLayouts={activeLayouts}
           editMode={editMode && !sharedView}
           resetKey={resetKey}
           flash={flash}
           controlledLayouts={
-            sharedView && !sharedView.error
-              ? sharedView.layouts ?? {}
-              : user
-                ? serverLayouts ?? {}
-                : undefined
+            // Intelligence mode uses its own static layout; we don't
+            // overlay shared / per-user saved layouts on top because
+            // those were authored against the Terminal-mode panel set.
+            mode === "intelligence"
+              ? activeLayouts
+              : sharedView && !sharedView.error
+                ? sharedView.layouts ?? {}
+                : user
+                  ? serverLayouts ?? {}
+                  : undefined
           }
           controlledHidden={
-            sharedView && !sharedView.error
-              ? sharedView.hidden ?? []
-              : user
-                ? serverHidden ?? []
-                : undefined
+            mode === "intelligence"
+              ? []
+              : sharedView && !sharedView.error
+                ? sharedView.hidden ?? []
+                : user
+                  ? serverHidden ?? []
+                  : undefined
           }
           onLayoutsChange={(next) => {
             if (sharedView) return; // read-only when viewing a shared layout
+            if (mode === "intelligence") return; // intelligence layout isn't persisted
             setServerLayouts(next);
             persistLayout(next, serverHidden ?? []);
           }}
           onHiddenChange={(next) => {
             if (sharedView) return;
+            if (mode === "intelligence") return;
             setServerHidden(next);
             persistLayout(serverLayouts ?? {}, next);
           }}

@@ -35,7 +35,7 @@ function splitTail(input) {
   return { head: up.slice(0, lastSpace + 1), tail: up.slice(lastSpace + 1) };
 }
 
-export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
+export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode, onModeChange }) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [clock, setClock] = useState(() => new Date());
@@ -214,6 +214,36 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand }) {
             v0.1 · {t("app.edition")}
           </span>
         </div>
+        {onModeChange ? (
+          <div className="flex items-center border border-terminal-border bg-terminal-bg">
+            <button
+              type="button"
+              onClick={() => onModeChange("terminal")}
+              className={clsx(
+                "px-3 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors",
+                mode === "terminal"
+                  ? "bg-terminal-amber/20 text-terminal-amber"
+                  : "text-terminal-muted hover:text-terminal-text"
+              )}
+              title="Standard terminal panels (chart, news, fundamentals, options, etc.)"
+            >
+              {t("mode.terminal") || "Terminal"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onModeChange("intelligence")}
+              className={clsx(
+                "border-l border-terminal-border px-3 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors",
+                mode === "intelligence"
+                  ? "bg-terminal-amber/20 text-terminal-amber"
+                  : "text-terminal-muted hover:text-terminal-text"
+              )}
+              title="AURORA intelligence — regime, fragility, AI advisor, provenance"
+            >
+              {t("mode.intelligence") || "Intelligence"}
+            </button>
+          </div>
+        ) : null}
         <form onSubmit={submit} className="relative flex-1">
           <div className="flex items-center border border-terminal-border bg-terminal-bg px-2 py-1">
             <span className="pr-2 text-terminal-amber">›</span>

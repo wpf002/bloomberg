@@ -109,6 +109,7 @@ export default {
     notFound: "未找到共享布局 {slug}。",
     dismiss: "关闭",
   },
+  mode: { terminal: "终端", intelligence: "智能" },
   theme: { label: "主题:" },
   language: { label: "语言:" },
 };
