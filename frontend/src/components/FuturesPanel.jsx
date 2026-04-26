@@ -75,6 +75,7 @@ export default function FuturesPanel() {
         </span>
       }
     >
+    <div className="flex h-full flex-col">
       <div className="grid grid-cols-5 gap-1 text-xs">
         {dash.map((c) => (
           <div
@@ -128,25 +129,27 @@ export default function FuturesPanel() {
           illiquid expirations. Front-month strip above is current.
         </div>
       ) : (
-        <div className="mt-2">
-          <ResponsiveContainer width="100%" height={180}>
-            <LineChart data={points} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-              <XAxis
-                dataKey="expiration"
-                tick={{ fontSize: 10, fill: "#888" }}
-                tickFormatter={(d) => (d ? String(d).slice(2, 7) : "")}
-              />
-              <YAxis tick={{ fontSize: 10, fill: "#888" }} domain={["auto", "auto"]} width={50} />
-              <Tooltip
-                contentStyle={{ background: "#111", border: "1px solid #333", fontSize: 11 }}
-                formatter={(value) => [fmt(value), "Price"]}
-              />
-              {front ? (
-                <ReferenceLine y={front} stroke="#ff9f1c" strokeDasharray="4 4" />
-              ) : null}
-              <Line type="monotone" dataKey="price" stroke="#ff9f1c" strokeWidth={2} dot={{ r: 2 }} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="mt-2 flex flex-1 min-h-0 flex-col">
+          <div className="flex-1 min-h-[140px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={points} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                <XAxis
+                  dataKey="expiration"
+                  tick={{ fontSize: 10, fill: "#888" }}
+                  tickFormatter={(d) => (d ? String(d).slice(2, 7) : "")}
+                />
+                <YAxis tick={{ fontSize: 10, fill: "#888" }} domain={["auto", "auto"]} width={50} />
+                <Tooltip
+                  contentStyle={{ background: "#111", border: "1px solid #333", fontSize: 11 }}
+                  formatter={(value) => [fmt(value), "Price"]}
+                />
+                {front ? (
+                  <ReferenceLine y={front} stroke="#ff9f1c" strokeDasharray="4 4" />
+                ) : null}
+                <Line type="monotone" dataKey="price" stroke="#ff9f1c" strokeWidth={2} dot={{ r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
           <table className="mt-2 w-full text-[11px] tabular">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-terminal-muted">
@@ -184,6 +187,7 @@ export default function FuturesPanel() {
           </p>
         </div>
       )}
+    </div>
     </Panel>
   );
 }
