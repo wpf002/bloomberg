@@ -3,13 +3,35 @@ import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
 
-const TABS = [
-  { key: "ask", label: "ASK" },
-  { key: "review", label: "REVIEW" },
-  { key: "picks", label: "PICKS" },
-  { key: "brief", label: "BRIEF" },
-  { key: "alert-analysis", label: "ALERT" },
+// 11 tabs: 5 from Module 4 + 6 added in Phase 9.2.
+const TAB_KEYS = [
+  "ask",
+  "review",
+  "picks",
+  "brief",
+  "validate-thesis",
+  "simulate",
+  "earnings-prep",
+  "rebalance",
+  "open-brief",
+  "post-mortem",
+  "alert-analysis",
 ];
+
+// Map endpoint key -> i18n tab label key
+const TAB_LABEL = {
+  ask: "ask",
+  review: "review",
+  picks: "picks",
+  brief: "brief",
+  "validate-thesis": "validate",
+  simulate: "simulate",
+  "earnings-prep": "earnings",
+  rebalance: "rebalance",
+  "open-brief": "morning",
+  "post-mortem": "postmortem",
+  "alert-analysis": "alert",
+};
 
 async function streamInto(response, onChunk, onDone) {
   if (!response.ok) {
@@ -28,24 +50,30 @@ async function streamInto(response, onChunk, onDone) {
   onDone();
 }
 
-export default function AdvisorPanel({ symbol }) {
+export default function AdvisorPanel({ symbol, watchlist }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState("ask");
 
-  // Ask tab is a multi-turn chat — history is sent back to the backend
-  // so Claude can build on prior turns within the Ask conversation.
+  // Ask is the only multi-turn tab. Everything else is stateless.
   const [askHistory, setAskHistory] = useState([]); // [{role, text}]
   const [askInput, setAskInput] = useState("");
 
-  // Review / Picks / Brief / Alert tabs each cache their own most-recent
-  // output. Switching tabs does NOT wipe state — clicking Generate within
-  // a tab replaces that tab's output. Each Generate call is fresh (no
-  // cross-tab context) so the user sees a clean prompt every time.
-  const [tabOutputs, setTabOutputs] = useState({
-    review: "",
-    picks: "",
-    brief: "",
-    "alert-analysis": "",
+  // Per-tab cached output (last completed stream).
+  const [tabOutputs, setTabOutputs] = useState(
+    () => Object.fromEntries(TAB_KEYS.filter((k) => k !== "ask").map((k) => [k, ""]))
+  );
+
+  // Per-tab form state for the new capabilities.
+  const [validateForm, setValidateForm] = useState({ ticker: "", thesis: "", size: "" });
+  const [simulateForm, setSimulateForm] = useState({ scenario: "" });
+  const [earningsForm, setEarningsForm] = useState({ ticker: "" });
+  const [postmortemForm, setPostmortemForm] = useState({
+    ticker: "",
+    entry_date: "",
+    entry_price: "",
+    exit_date: "",
+    exit_price: "",
+    thesis: "",
   });
 
   const [streaming, setStreaming] = useState("");
@@ -88,14 +116,11 @@ export default function AdvisorPanel({ symbol }) {
     setAskHistory((h) => [...h, { role: "user", text: q }]);
     runStream(
       "ask",
-      { active_symbol: symbol, question: q, history: histSnapshot },
+      { active_symbol: symbol, watchlist, question: q, history: histSnapshot },
       (full) => setAskHistory((h) => [...h, { role: "advisor", text: full }]),
     );
-  }, [askInput, busy, symbol, askHistory, runStream]);
+  }, [askInput, busy, symbol, watchlist, askHistory, runStream]);
 
-  // One-shot generators: each replaces that tab's cached output. No
-  // cross-tab history is sent — clicking Picks after Review gives a
-  // fresh picks prompt without the review baked in.
   const generateOneShot = useCallback(
     (endpoint, body) => {
       runStream(endpoint, body, (full) =>
@@ -108,66 +133,144 @@ export default function AdvisorPanel({ symbol }) {
   const onReview = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, review: "" }));
-    generateOneShot("review", { active_symbol: symbol });
-  }, [busy, symbol, generateOneShot]);
+    generateOneShot("review", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
 
   const onPicks = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, picks: "" }));
-    generateOneShot("picks", { active_symbol: symbol });
-  }, [busy, symbol, generateOneShot]);
+    generateOneShot("picks", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
 
   const onBrief = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, brief: "" }));
-    generateOneShot("brief", { active_symbol: symbol });
-  }, [busy, symbol, generateOneShot]);
+    generateOneShot("brief", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
 
   const onAlert = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, "alert-analysis": "" }));
     generateOneShot("alert-analysis", {
       active_symbol: symbol,
+      watchlist,
       alert: { symbol, condition: "manual trigger" },
     });
-  }, [busy, symbol, generateOneShot]);
+  }, [busy, symbol, watchlist, generateOneShot]);
 
-  // Generators stop mid-stream when the user switches tabs to keep the
-  // displayed text from leaking across tabs.
+  const onValidate = useCallback(() => {
+    if (busy || !validateForm.ticker.trim() || !validateForm.thesis.trim()) return;
+    setTabOutputs((p) => ({ ...p, "validate-thesis": "" }));
+    generateOneShot("validate-thesis", {
+      active_symbol: symbol,
+      watchlist,
+      ticker: validateForm.ticker.toUpperCase().trim(),
+      thesis: validateForm.thesis.trim(),
+      intended_size_usd: validateForm.size ? Number(validateForm.size) : null,
+    });
+  }, [busy, symbol, watchlist, validateForm, generateOneShot]);
+
+  const onSimulate = useCallback(() => {
+    if (busy || !simulateForm.scenario.trim()) return;
+    setTabOutputs((p) => ({ ...p, simulate: "" }));
+    generateOneShot("simulate", {
+      active_symbol: symbol,
+      watchlist,
+      scenario: simulateForm.scenario.trim(),
+    });
+  }, [busy, symbol, watchlist, simulateForm, generateOneShot]);
+
+  const onEarnings = useCallback(() => {
+    if (busy || !earningsForm.ticker.trim()) return;
+    setTabOutputs((p) => ({ ...p, "earnings-prep": "" }));
+    generateOneShot("earnings-prep", {
+      active_symbol: symbol,
+      watchlist,
+      ticker: earningsForm.ticker.toUpperCase().trim(),
+    });
+  }, [busy, symbol, watchlist, earningsForm, generateOneShot]);
+
+  const onRebalance = useCallback(() => {
+    if (busy) return;
+    setTabOutputs((p) => ({ ...p, rebalance: "" }));
+    generateOneShot("rebalance", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
+
+  const onOpenBrief = useCallback(() => {
+    if (busy) return;
+    setTabOutputs((p) => ({ ...p, "open-brief": "" }));
+    generateOneShot("open-brief", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
+
+  const onPostMortem = useCallback(() => {
+    if (
+      busy ||
+      !postmortemForm.ticker.trim() ||
+      !postmortemForm.entry_date ||
+      !postmortemForm.exit_date ||
+      !postmortemForm.entry_price ||
+      !postmortemForm.exit_price
+    )
+      return;
+    setTabOutputs((p) => ({ ...p, "post-mortem": "" }));
+    generateOneShot("post-mortem", {
+      active_symbol: symbol,
+      watchlist,
+      ticker: postmortemForm.ticker.toUpperCase().trim(),
+      entry_date: postmortemForm.entry_date,
+      entry_price: Number(postmortemForm.entry_price),
+      exit_date: postmortemForm.exit_date,
+      exit_price: Number(postmortemForm.exit_price),
+      original_thesis: postmortemForm.thesis.trim(),
+    });
+  }, [busy, symbol, watchlist, postmortemForm, generateOneShot]);
+
   const switchTab = useCallback((next) => {
     setTab(next);
     setStreaming(""); // hide any in-flight stream when leaving its tab
   }, []);
 
-  const exportBrief = useCallback(
-    (format) => {
-      const md = tabOutputs.brief;
-      if (!md) return;
-      const blob = new Blob([md], {
+  // ── copy / export helpers ──────────────────────────────────────────
+
+  const [copyFlash, setCopyFlash] = useState("");
+  const copyText = useCallback(async (text) => {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFlash("ok");
+      setTimeout(() => setCopyFlash(""), 1200);
+    } catch {
+      setCopyFlash("err");
+      setTimeout(() => setCopyFlash(""), 1500);
+    }
+  }, []);
+
+  const exportText = useCallback(
+    (text, capability, format) => {
+      if (!text) return;
+      const blob = new Blob([text], {
         type: format === "md" ? "text/markdown" : "text/plain",
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `aurora-brief-${new Date().toISOString().slice(0, 10)}.${format}`;
+      a.download = `aurora-${capability}-${new Date().toISOString().slice(0, 10)}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
     },
-    [tabOutputs.brief],
+    []
   );
 
-  // ── tab renderers ──────────────────────────────────────────────────
+  // ── tab renderers ───────────────────────────────────────────────────
 
   const renderAsk = () => (
     <div className="flex h-full flex-col">
       <div className="flex-1 min-h-0 overflow-auto pr-1">
         {askHistory.length === 0 && !streaming ? (
           <div className="text-terminal-muted text-[12px]">
-            Active: <span className="text-terminal-amber">{symbol || "—"}</span>. Ask anything
-            about the portfolio, current regime, fragility, or any symbol. The Ask tab
-            keeps a running conversation; the other tabs are one-shot generators.
+            {t("p.advisor.ask_empty", { sym: symbol || "—" })}
           </div>
         ) : null}
         {askHistory.map((m, i) => (
@@ -175,7 +278,7 @@ export default function AdvisorPanel({ symbol }) {
             <div
               className={`text-[10px] uppercase tracking-widest ${m.role === "user" ? "text-terminal-blue" : "text-terminal-amber"}`}
             >
-              {m.role === "user" ? "YOU" : "AURORA"}
+              {m.role === "user" ? t("p.advisor.you") : t("p.advisor.aurora")}
             </div>
             <div className="whitespace-pre-wrap text-[12px] leading-relaxed text-terminal-text">
               {m.text}
@@ -184,7 +287,9 @@ export default function AdvisorPanel({ symbol }) {
         ))}
         {tab === "ask" && streaming ? (
           <div>
-            <div className="text-[10px] uppercase tracking-widest text-terminal-amber">AURORA</div>
+            <div className="text-[10px] uppercase tracking-widest text-terminal-amber">
+              {t("p.advisor.aurora")}
+            </div>
             <div className="whitespace-pre-wrap text-[12px] leading-relaxed text-terminal-text">
               {streaming}
               <span className="animate-pulse text-terminal-amber"> ▌</span>
@@ -203,7 +308,7 @@ export default function AdvisorPanel({ symbol }) {
               onAsk();
             }
           }}
-          placeholder={t("aurora.advisor.placeholder") || "Ask…"}
+          placeholder={t("p.advisor.ask_placeholder")}
           className="flex-1 border border-terminal-border bg-terminal-bg px-2 py-1 text-[12px] text-terminal-text outline-none focus:border-terminal-amber"
         />
         <button
@@ -211,28 +316,45 @@ export default function AdvisorPanel({ symbol }) {
           disabled={busy || !askInput.trim()}
           className="border border-terminal-amber px-3 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/20 disabled:opacity-40"
         >
-          {t("aurora.advisor.send") || "Send"}
+          {t("aurora.advisor.send")}
         </button>
       </div>
     </div>
   );
 
-  const renderOneShot = (key, onGenerate, extras = null) => {
-    const cached = tabOutputs[key];
+  // Generic streaming output area with copy + export buttons.
+  const renderStreamingArea = (capability, runButton, formArea = null) => {
+    const cached = tabOutputs[capability];
+    const text = tab === capability && streaming ? streaming : cached;
     return (
       <div className="flex h-full flex-col">
+        {formArea}
         <div className="mb-2 flex flex-wrap gap-2">
+          {runButton}
           <button
-            onClick={onGenerate}
-            disabled={busy}
-            className="border border-terminal-amber px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/20 disabled:opacity-40"
+            onClick={() => copyText(text)}
+            disabled={!text}
+            className="border border-terminal-border px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-text disabled:opacity-30"
           >
-            {cached ? "REGENERATE" : (t("aurora.advisor.generate") || "Generate")}
+            {copyFlash === "ok" ? t("p.advisor.copied") : t("p.advisor.copy")}
           </button>
-          {extras}
+          <button
+            onClick={() => exportText(text, capability, "md")}
+            disabled={!text}
+            className="border border-terminal-border px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-text disabled:opacity-30"
+          >
+            {t("p.common.export_md")}
+          </button>
+          <button
+            onClick={() => exportText(text, capability, "txt")}
+            disabled={!text}
+            className="border border-terminal-border px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-text disabled:opacity-30"
+          >
+            {t("p.common.export_txt")}
+          </button>
         </div>
         <div className="flex-1 min-h-0 overflow-auto whitespace-pre-wrap text-[12px] leading-relaxed text-terminal-text">
-          {tab === key && streaming ? (
+          {tab === capability && streaming ? (
             <>
               {streaming}
               <span className="animate-pulse text-terminal-amber"> ▌</span>
@@ -241,7 +363,7 @@ export default function AdvisorPanel({ symbol }) {
             cached
           ) : (
             <span className="text-terminal-muted">
-              Click {cached ? "Regenerate" : "Generate"} to stream a fresh response.
+              {cached ? t("p.advisor.hint_regenerate") : t("p.advisor.hint_generate")}
             </span>
           )}
         </div>
@@ -249,59 +371,202 @@ export default function AdvisorPanel({ symbol }) {
     );
   };
 
-  const briefExtras = tabOutputs.brief ? (
-    <>
+  const inputCls =
+    "w-full border border-terminal-border bg-terminal-bg px-2 py-1 text-[12px] text-terminal-text outline-none focus:border-terminal-amber";
+
+  // Per-tab forms.
+  const validateForm_ui = (
+    <div className="mb-2 flex flex-col gap-2 border-b border-terminal-border/40 pb-2">
+      <input
+        value={validateForm.ticker}
+        onChange={(e) => setValidateForm({ ...validateForm, ticker: e.target.value.toUpperCase() })}
+        placeholder={t("p.advisor.validate.ticker")}
+        className={inputCls}
+      />
+      <textarea
+        value={validateForm.thesis}
+        onChange={(e) => setValidateForm({ ...validateForm, thesis: e.target.value })}
+        placeholder={t("p.advisor.validate.thesis_ph")}
+        rows={3}
+        className={inputCls + " resize-y"}
+      />
+      <input
+        type="number"
+        value={validateForm.size}
+        onChange={(e) => setValidateForm({ ...validateForm, size: e.target.value })}
+        placeholder={t("p.advisor.validate.size")}
+        className={inputCls}
+      />
+    </div>
+  );
+
+  const simulateForm_ui = (
+    <div className="mb-2 border-b border-terminal-border/40 pb-2">
+      <textarea
+        value={simulateForm.scenario}
+        onChange={(e) => setSimulateForm({ scenario: e.target.value })}
+        placeholder={t("p.advisor.simulate.scenario_ph")}
+        rows={3}
+        className={inputCls + " resize-y"}
+      />
+    </div>
+  );
+
+  const earningsForm_ui = (
+    <div className="mb-2 border-b border-terminal-border/40 pb-2">
+      <input
+        value={earningsForm.ticker}
+        onChange={(e) => setEarningsForm({ ticker: e.target.value.toUpperCase() })}
+        placeholder={t("p.advisor.earnings.ticker")}
+        className={inputCls}
+      />
+    </div>
+  );
+
+  const rebalance_ui = (
+    <div className="mb-2 text-[12px] text-terminal-muted">{t("p.advisor.rebalance.head")}</div>
+  );
+  const morning_ui = (
+    <div className="mb-2 text-[12px] text-terminal-muted">{t("p.advisor.morning.head")}</div>
+  );
+
+  const postmortem_ui = (
+    <div className="mb-2 grid grid-cols-2 gap-2 border-b border-terminal-border/40 pb-2">
+      <input
+        value={postmortemForm.ticker}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, ticker: e.target.value.toUpperCase() })}
+        placeholder={t("p.advisor.postmortem.ticker")}
+        className={inputCls}
+      />
+      <span />
+      <input
+        type="date"
+        value={postmortemForm.entry_date}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, entry_date: e.target.value })}
+        title={t("p.advisor.postmortem.entry_date")}
+        className={inputCls}
+      />
+      <input
+        type="number"
+        step="0.01"
+        value={postmortemForm.entry_price}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, entry_price: e.target.value })}
+        placeholder={t("p.advisor.postmortem.entry_price")}
+        className={inputCls}
+      />
+      <input
+        type="date"
+        value={postmortemForm.exit_date}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, exit_date: e.target.value })}
+        title={t("p.advisor.postmortem.exit_date")}
+        className={inputCls}
+      />
+      <input
+        type="number"
+        step="0.01"
+        value={postmortemForm.exit_price}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, exit_price: e.target.value })}
+        placeholder={t("p.advisor.postmortem.exit_price")}
+        className={inputCls}
+      />
+      <textarea
+        value={postmortemForm.thesis}
+        onChange={(e) => setPostmortemForm({ ...postmortemForm, thesis: e.target.value })}
+        placeholder={t("p.advisor.postmortem.thesis_ph")}
+        rows={2}
+        className={inputCls + " col-span-2 resize-y"}
+      />
+    </div>
+  );
+
+  // Helper: build a run button with regenerate fallback label.
+  const runBtn = (onClick, runLabel, capability) => {
+    const cached = tabOutputs[capability];
+    return (
       <button
-        onClick={() => exportBrief("md")}
-        className="border border-terminal-border px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-text"
+        onClick={onClick}
+        disabled={busy}
+        className="border border-terminal-amber px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/20 disabled:opacity-40"
       >
-        EXPORT MD
+        {cached ? t("p.common.regenerate") : runLabel}
       </button>
-      <button
-        onClick={() => exportBrief("txt")}
-        className="border border-terminal-border px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-text"
-      >
-        EXPORT TXT
-      </button>
-    </>
-  ) : null;
+    );
+  };
 
   return (
     <Panel
       title={t("panels.advisor")}
       accent="amber"
       actions={
-        <div className="flex gap-2 text-[10px] uppercase tracking-widest">
-          {TABS.map((opt) => (
+        <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-widest">
+          {TAB_KEYS.map((key) => (
             <button
-              key={opt.key}
-              onClick={() => switchTab(opt.key)}
-              className={tab === opt.key ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
+              key={key}
+              onClick={() => switchTab(key)}
+              className={tab === key ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
             >
-              {opt.label}
+              {t(`p.advisor.tabs.${TAB_LABEL[key]}`)}
             </button>
           ))}
           {tab === "ask" && askHistory.length > 0 ? (
             <button
               onClick={() => setAskHistory([])}
               className="ml-2 border border-terminal-border px-2 text-terminal-muted hover:text-terminal-red"
-              title="Wipe Ask conversation thread"
+              title={t("p.advisor.clear_title")}
             >
-              CLEAR
+              {t("p.common.clear")}
             </button>
           ) : null}
         </div>
       }
     >
-      {tab === "ask"
-        ? renderAsk()
-        : tab === "review"
-          ? renderOneShot("review", onReview)
-          : tab === "picks"
-            ? renderOneShot("picks", onPicks)
-            : tab === "brief"
-              ? renderOneShot("brief", onBrief, briefExtras)
-              : renderOneShot("alert-analysis", onAlert)}
+      {tab === "ask" ? (
+        renderAsk()
+      ) : tab === "review" ? (
+        renderStreamingArea("review", runBtn(onReview, t("aurora.advisor.generate"), "review"))
+      ) : tab === "picks" ? (
+        renderStreamingArea("picks", runBtn(onPicks, t("aurora.advisor.generate"), "picks"))
+      ) : tab === "brief" ? (
+        renderStreamingArea("brief", runBtn(onBrief, t("aurora.advisor.generate"), "brief"))
+      ) : tab === "validate-thesis" ? (
+        renderStreamingArea(
+          "validate-thesis",
+          runBtn(onValidate, t("p.advisor.validate.run"), "validate-thesis"),
+          validateForm_ui,
+        )
+      ) : tab === "simulate" ? (
+        renderStreamingArea(
+          "simulate",
+          runBtn(onSimulate, t("p.advisor.simulate.run"), "simulate"),
+          simulateForm_ui,
+        )
+      ) : tab === "earnings-prep" ? (
+        renderStreamingArea(
+          "earnings-prep",
+          runBtn(onEarnings, t("p.advisor.earnings.run"), "earnings-prep"),
+          earningsForm_ui,
+        )
+      ) : tab === "rebalance" ? (
+        renderStreamingArea(
+          "rebalance",
+          runBtn(onRebalance, t("p.advisor.rebalance.run"), "rebalance"),
+          rebalance_ui,
+        )
+      ) : tab === "open-brief" ? (
+        renderStreamingArea(
+          "open-brief",
+          runBtn(onOpenBrief, t("p.advisor.morning.run"), "open-brief"),
+          morning_ui,
+        )
+      ) : tab === "post-mortem" ? (
+        renderStreamingArea(
+          "post-mortem",
+          runBtn(onPostMortem, t("p.advisor.postmortem.run"), "post-mortem"),
+          postmortem_ui,
+        )
+      ) : (
+        renderStreamingArea("alert-analysis", runBtn(onAlert, t("aurora.advisor.generate"), "alert-analysis"))
+      )}
     </Panel>
   );
 }

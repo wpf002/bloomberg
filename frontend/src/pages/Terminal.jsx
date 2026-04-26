@@ -506,7 +506,7 @@ export default function Terminal() {
       { id: "futures",      render: () => <FuturesPanel /> },
       { id: "intelligence", render: () => <IntelligencePanel /> },
       { id: "risk",         render: () => <RiskPanel /> },
-      { id: "advisor",      render: () => <AdvisorPanel symbol={activeSymbol} /> },
+      { id: "advisor",      render: () => <AdvisorPanel symbol={activeSymbol} watchlist={watchlist} /> },
       { id: "provenance",   render: () => <ProvenancePanel symbol={activeSymbol} /> },
     ],
     [watchlist, activeSymbol, compareSymbols, handleSelect, handleRemove]

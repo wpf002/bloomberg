@@ -1,16 +1,25 @@
-"""AI Advisor API — five capabilities, all streaming.
+"""AI Advisor API — eleven capabilities, all streaming.
 
 Each route accepts a JSON body containing the active symbol + optional
 extra payload (the user's question for /ask, the alert blob for /alert-
-analysis), builds the full context via advisor.build_context, and
-streams Claude tokens as text/plain.
+analysis, the trade thesis for /validate-thesis, etc.), builds the
+full context via advisor.build_context, and streams Claude tokens as
+text/plain.
 
-Endpoints:
+Endpoints (existing five):
 - POST /api/advisor/review
 - POST /api/advisor/picks
 - POST /api/advisor/ask
 - POST /api/advisor/brief
 - POST /api/advisor/alert-analysis
+
+Endpoints (Phase 9.2):
+- POST /api/advisor/validate-thesis
+- POST /api/advisor/simulate
+- POST /api/advisor/earnings-prep
+- POST /api/advisor/rebalance
+- POST /api/advisor/open-brief
+- POST /api/advisor/post-mortem
 """
 
 from __future__ import annotations
@@ -22,7 +31,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...core.llm import LLMNotConfigured
 from ...services import advisor
 
 logger = logging.getLogger(__name__)
@@ -46,6 +54,29 @@ class AskRequest(_BaseAdvisorRequest):
 
 class AlertAnalysisRequest(_BaseAdvisorRequest):
     alert: dict[str, Any]
+
+
+class ValidateThesisRequest(_BaseAdvisorRequest):
+    ticker: str
+    thesis: str
+    intended_size_usd: float | None = None
+
+
+class SimulateRequest(_BaseAdvisorRequest):
+    scenario: str
+
+
+class EarningsPrepRequest(_BaseAdvisorRequest):
+    ticker: str
+
+
+class PostMortemRequest(_BaseAdvisorRequest):
+    ticker: str
+    entry_date: str
+    entry_price: float
+    exit_date: str
+    exit_price: float
+    original_thesis: str
 
 
 def _history_dicts(req: _BaseAdvisorRequest) -> list[dict[str, str]] | None:
@@ -79,6 +110,9 @@ def _503_if_no_llm():
             status_code=503,
             detail="ANTHROPIC_API_KEY not set — add it to .env to enable the advisor.",
         )
+
+
+# ── existing five capabilities ──────────────────────────────────────────
 
 
 @router.post("/review")
@@ -129,4 +163,95 @@ async def post_alert_analysis(req: AlertAnalysisRequest):
     )
     return _stream_response(
         advisor.stream_alert_analysis(ctx, req.alert, _history_dicts(req))
+    )
+
+
+# ── Phase 9.2: six new capabilities ─────────────────────────────────────
+
+
+@router.post("/validate-thesis")
+async def post_validate_thesis(req: ValidateThesisRequest):
+    """Grade the user's stated thesis against current regime, fundamentals,
+    and portfolio fragility. Streams a structured response."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.ticker or req.active_symbol,
+        watchlist=req.watchlist,
+    )
+    return _stream_response(
+        advisor.stream_validate_thesis(
+            ctx, req.ticker, req.thesis, req.intended_size_usd
+        )
+    )
+
+
+@router.post("/simulate")
+async def post_simulate(req: SimulateRequest):
+    """Run a free-form scenario simulation against the live portfolio. The
+    scenario is interpreted by the model against CONTEXT — no separate
+    quantitative engine is invoked."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.active_symbol,
+        watchlist=req.watchlist,
+    )
+    return _stream_response(advisor.stream_simulate(ctx, req.scenario))
+
+
+@router.post("/earnings-prep")
+async def post_earnings_prep(req: EarningsPrepRequest):
+    """Pre-earnings briefing — pulls historical earnings reactions for the
+    requested ticker and the next earnings event from Finnhub."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.ticker,
+        watchlist=req.watchlist,
+        include_earnings_reactions=True,
+    )
+    return _stream_response(advisor.stream_earnings_prep(ctx, req.ticker))
+
+
+@router.post("/rebalance")
+async def post_rebalance(req: _BaseAdvisorRequest):
+    """Run a portfolio-wide rebalance review. No extra input required."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.active_symbol,
+        watchlist=req.watchlist,
+    )
+    return _stream_response(advisor.stream_rebalance(ctx))
+
+
+@router.post("/open-brief")
+async def post_open_brief(req: _BaseAdvisorRequest):
+    """Market-open briefing — overnight macro, watchlist movers, regime
+    delta, top three things to watch today."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.active_symbol,
+        watchlist=req.watchlist,
+        include_news=True,
+    )
+    return _stream_response(advisor.stream_open_brief(ctx))
+
+
+@router.post("/post-mortem")
+async def post_post_mortem(req: PostMortemRequest):
+    """Structured post-mortem on a closed trade — regime at entry vs exit,
+    thesis verdict, primary outcome driver, lesson classification."""
+    _503_if_no_llm()
+    ctx = await advisor.build_context(
+        active_symbol=req.ticker,
+        watchlist=req.watchlist,
+    )
+    return _stream_response(
+        advisor.stream_post_mortem(
+            ctx,
+            req.ticker,
+            req.entry_date,
+            req.entry_price,
+            req.exit_date,
+            req.exit_price,
+            req.original_thesis,
+        )
     )
