@@ -69,7 +69,7 @@ def _filings_lines(items, limit: int = 6) -> str:
     return "\n".join(lines) if lines else "(no recent filings)"
 
 
-@cached("llm:explain", ttl=1800, model=Brief)
+@cached("llm:explain", ttl=1800, model=Brief, strip_first_arg=False)
 async def _build_brief(symbol: str) -> Brief:
     # Gather context concurrently; any individual source is allowed to fail.
     async def safe(coro, default):

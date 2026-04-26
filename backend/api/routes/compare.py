@@ -83,7 +83,7 @@ async def _gather_for(symbol: str) -> tuple[Any, list]:
     return fundamentals, news
 
 
-@cached("llm:compare:v2", ttl=1800, model=ComparisonBrief)
+@cached("llm:compare:v2", ttl=1800, model=ComparisonBrief, strip_first_arg=False)
 async def _build_comparison(symbol_a: str, symbol_b: str) -> ComparisonBrief:
     (fa, news_a), (fb, news_b) = await asyncio.gather(
         _gather_for(symbol_a),

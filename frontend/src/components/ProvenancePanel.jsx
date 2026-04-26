@@ -6,6 +6,12 @@ import { useTranslation } from "../i18n/index.jsx";
 const FRESH_THRESHOLD_S = 60;
 const STALE_THRESHOLD_S = 600;
 
+const SNAP_KINDS = [
+  { id: "regime",    label: "Regime" },
+  { id: "fragility", label: "Fragility" },
+  { id: "rotation",  label: "Rotation" },
+];
+
 function freshnessDot(ingestedAt) {
   if (!ingestedAt) return { color: "bg-terminal-muted", label: "n/a" };
   const ageS = (Date.now() - new Date(ingestedAt).getTime()) / 1000;
@@ -21,6 +27,17 @@ function fmtTime(iso) {
   return `${d.toISOString().slice(0, 19).replace("T", " ")}Z`;
 }
 
+// Compact two-line "Apr 26 · 19:11:24" rendering for the captured-at column.
+// Avoids the wrapped ISO timestamp the panel was showing before.
+function fmtCompactTime(iso) {
+  if (!iso) return { date: "—", time: "" };
+  const d = new Date(iso);
+  return {
+    date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    time: d.toLocaleTimeString(undefined, { hour12: false }),
+  };
+}
+
 function fmtValue(v, unit) {
   if (v == null) return "—";
   const num = Number(v);
@@ -30,6 +47,74 @@ function fmtValue(v, unit) {
       ? num.toLocaleString(undefined, { maximumFractionDigits: 2 })
       : num.toFixed(4);
   return unit ? `${formatted} ${unit}` : formatted;
+}
+
+// Render a snapshot output JSON as a key/value table. Falls back to the
+// raw string when the payload doesn't look like an object (or contains
+// nested arrays we'd rather just print verbatim).
+//
+// The value cell uses min-w-0 + break-all so a long raw JSON blob (or a
+// list of contributing factors) wraps within the card instead of pushing
+// the right border off-screen.
+function SnapshotOutput({ output }) {
+  if (output == null) return <span className="text-terminal-muted">—</span>;
+  if (typeof output === "string") {
+    return (
+      <pre className="whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-terminal-text">
+        {output}
+      </pre>
+    );
+  }
+  if (typeof output !== "object") return <span>{String(output)}</span>;
+
+  const entries = Object.entries(output);
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[11px] tabular">
+      {entries.map(([k, v]) => (
+        <SnapshotRow key={k} k={k} v={v} />
+      ))}
+    </div>
+  );
+}
+
+function SnapshotRow({ k, v }) {
+  const formatted = formatSnapshotValue(v);
+  return (
+    <>
+      <div className="text-[10px] uppercase tracking-widest text-terminal-muted whitespace-nowrap">
+        {k}
+      </div>
+      <div className="min-w-0 break-words text-terminal-text">{formatted}</div>
+    </>
+  );
+}
+
+function formatSnapshotValue(v) {
+  if (v == null) return "—";
+  if (Array.isArray(v)) {
+    if (v.length === 0) return "[]";
+    if (v.every((x) => typeof x === "string" || typeof x === "number")) {
+      return v.join(" · ");
+    }
+    return (
+      <span className="text-terminal-muted">
+        [{v.length} items]
+      </span>
+    );
+  }
+  if (typeof v === "object") {
+    // Long raw JSON blobs need explicit break-all so they don't shoot
+    // past the card edge on a single unbroken character run.
+    return (
+      <span className="break-all font-mono text-[10px] text-terminal-muted">
+        {JSON.stringify(v)}
+      </span>
+    );
+  }
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(4);
+  }
+  return String(v);
 }
 
 export default function ProvenancePanel({ symbol }) {
@@ -211,43 +296,47 @@ export default function ProvenancePanel({ symbol }) {
         </div>
       ) : (
         <div>
-          <div className="mb-2 flex gap-2 text-[10px] uppercase tracking-widest">
-            {["regime", "fragility", "rotation"].map((k) => (
+          <div className="mb-2 flex gap-1 text-[10px] uppercase tracking-widest">
+            {SNAP_KINDS.map((k) => (
               <button
-                key={k}
-                onClick={() => setSnapKind(k)}
-                className={snapKind === k ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
+                key={k.id}
+                onClick={() => setSnapKind(k.id)}
+                className={
+                  snapKind === k.id
+                    ? "border border-terminal-amber px-2 py-0.5 text-terminal-amber"
+                    : "border border-terminal-border px-2 py-0.5 text-terminal-muted hover:text-terminal-text"
+                }
               >
-                {k}
+                {k.label}
               </button>
             ))}
           </div>
-          <table className="w-full text-[11px] leading-tight">
-            <thead className="text-terminal-muted">
-              <tr>
-                <th className="text-left">{t("p.provenance.cols_s.captured")}</th>
-                <th className="text-left pl-2">{t("p.provenance.cols_s.output")}</th>
-                <th className="text-left pl-2">{t("p.provenance.cols_s.inputs_hash")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshots.length === 0 ? (
-                <tr>
-                  <td colSpan="3" className="py-2 text-terminal-muted">
-                    {t("p.provenance.snap_empty")}
-                  </td>
-                </tr>
-              ) : (
-                snapshots.map((r, i) => (
-                  <tr key={i} className="border-b border-terminal-border/30">
-                    <td className="text-terminal-muted">{fmtTime(r.captured_at)}</td>
-                    <td className="pl-2 text-terminal-text">{JSON.stringify(r.output)}</td>
-                    <td className="pl-2 text-terminal-blue">{r.inputs_hash || "—"}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          {snapshots.length === 0 ? (
+            <div className="py-3 text-[11px] text-terminal-muted">
+              {t("p.provenance.snap_empty")}
+            </div>
+          ) : (
+            <ul className="space-y-2">
+              {snapshots.map((r, i) => {
+                const ts = fmtCompactTime(r.captured_at);
+                return (
+                  <li
+                    key={i}
+                    className="border border-terminal-border/40 bg-terminal-panelAlt/40 px-2 py-1.5"
+                  >
+                    <div className="mb-1 flex items-baseline justify-between text-[10px] uppercase tracking-widest text-terminal-muted">
+                      <span>
+                        <span className="text-terminal-amber">{ts.date}</span>{" "}
+                        <span className="tabular text-terminal-text">{ts.time}</span>
+                      </span>
+                      <span className="text-terminal-blue">{r.inputs_hash || "—"}</span>
+                    </div>
+                    <SnapshotOutput output={r.output} />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
     </Panel>

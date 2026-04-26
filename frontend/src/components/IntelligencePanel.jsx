@@ -32,43 +32,66 @@ function fragilityBarColor(score) {
   return "bg-terminal-green";
 }
 
+// Per-tab fetcher map. Each entry: api call + state setter slot.
+const TAB_FETCHERS = {
+  regime:    (api) => api.intelRegime(),
+  fragility: (api) => api.intelFragility(),
+  flows:     (api) => api.intelFlows(),
+  rotation:  (api) => api.intelRotation(),
+};
+
 export default function IntelligencePanel() {
   const { t } = useTranslation();
   const [tab, setTab] = useState("regime");
-  const [regime, setRegime] = useState(null);
-  const [fragility, setFragility] = useState(null);
-  const [flows, setFlows] = useState(null);
-  const [rotation, setRotation] = useState(null);
+  const [data, setData] = useState({ regime: null, fragility: null, flows: null, rotation: null });
+  const [loaded, setLoaded] = useState({ regime: false, fragility: false, flows: false, rotation: false });
+  const [loading, setLoading] = useState({});
   const [pendingOrders, setPendingOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  // Fragility tab needs pending orders for the empty-state copy. We only
+  // pull them once, lazily, when fragility is first opened.
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
 
   useEffect(() => {
+    if (loaded[tab] || loading[tab]) return;
     let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      api.intelRegime().catch(() => null),
-      api.intelFragility().catch(() => null),
-      api.intelFlows().catch(() => null),
-      api.intelRotation().catch(() => null),
-      api.orders("open", 50).catch(() => []),
-    ])
-      .then(([r, f, fl, ro, ords]) => {
+    setLoading((p) => ({ ...p, [tab]: true }));
+    TAB_FETCHERS[tab](api)
+      .then((d) => {
         if (cancelled) return;
-        setRegime(r);
-        setFragility(f);
-        setFlows(fl);
-        setRotation(ro);
-        setPendingOrders(
-          (ords || []).filter(
-            (o) => ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
-          ),
-        );
+        setData((p) => ({ ...p, [tab]: d }));
+        setLoaded((p) => ({ ...p, [tab]: true }));
       })
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => {
+        if (cancelled) return;
+        setLoaded((p) => ({ ...p, [tab]: true }));
+      })
+      .finally(() => !cancelled && setLoading((p) => ({ ...p, [tab]: false })));
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "fragility" || ordersLoaded) return;
+    let cancelled = false;
+    api
+      .orders("open", 50)
+      .then((ords) => {
+        if (cancelled) return;
+        setPendingOrders(
+          (ords || []).filter((o) =>
+            ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
+          ),
+        );
+        setOrdersLoaded(true);
+      })
+      .catch(() => !cancelled && setOrdersLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, ordersLoaded]);
 
   return (
     <Panel
@@ -93,49 +116,117 @@ export default function IntelligencePanel() {
         </div>
       }
     >
-      {loading ? (
+      {loading[tab] && !loaded[tab] ? (
         <div className="text-terminal-muted">{t("p.intel.loading")}</div>
       ) : tab === "regime" ? (
-        <RegimeTab regime={regime} t={t} />
+        <RegimeTab regime={data.regime} t={t} />
       ) : tab === "fragility" ? (
-        <FragilityTab fragility={fragility} pendingOrders={pendingOrders} t={t} />
+        <FragilityTab fragility={data.fragility} pendingOrders={pendingOrders} t={t} />
       ) : tab === "flows" ? (
-        <FlowsTab flows={flows} t={t} />
+        <FlowsTab flows={data.flows} t={t} />
       ) : (
-        <RotationTab rotation={rotation} t={t} />
+        <RotationTab rotation={data.rotation} t={t} />
       )}
     </Panel>
   );
 }
 
+// Pretty labels + display rules for the raw regime indicators. Anything
+// not in this map falls through to a humanized version of the snake_case
+// key with a 3-decimal float as the value.
+const REGIME_INDICATORS = {
+  vix:           { label: "VIX",         unit: "",   digits: 2 },
+  ten_year:      { label: "10Y Yield",   unit: "%",  digits: 2 },
+  dxy:           { label: "DXY",         unit: "",   digits: 2 },
+  m2_yoy_pct:    { label: "M2 YoY",      unit: "%",  digits: 2 },
+  cpi_mom_pct:   { label: "CPI MoM",     unit: "%",  digits: 2 },
+  spy_30d_return:{ label: "SPY 30d",     unit: "%",  digits: 2, asPercent: true },
+  spy_return_30d:{ label: "SPY 30d",     unit: "%",  digits: 2, asPercent: true },
+  rsi:           { label: "RSI",         unit: "",   digits: 1 },
+  curve_2y10y:   { label: "2Y/10Y",      unit: "%",  digits: 2 },
+};
+
+function humanizeKey(k) {
+  return k
+    .replace(/_pct$/, " %")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatIndicator(k, v) {
+  if (v == null) return "—";
+  const meta = REGIME_INDICATORS[k];
+  const num = Number(v);
+  if (Number.isNaN(num)) return String(v);
+  if (meta) {
+    const display = meta.asPercent ? num * 100 : num;
+    return `${display.toFixed(meta.digits)}${meta.unit}`;
+  }
+  return num.toFixed(3);
+}
+
 function RegimeTab({ regime, t }) {
   if (!regime) return <div className="text-terminal-muted">{t("p.intel.regime.unavail")}</div>;
   const cls = REGIME_COLORS[regime.regime] || REGIME_COLORS.NEUTRAL;
+  const conf = regime.confidence ?? 0;
   return (
-    <div>
-      <div
-        className={`mb-3 inline-flex items-center gap-3 rounded border px-4 py-2 text-lg font-bold uppercase tracking-widest ${cls}`}
-      >
-        {regime.regime?.replaceAll("_", " ") || "—"}
-        <span className="text-xs opacity-70">{t("p.intel.regime.conf")} {pct(regime.confidence, 0)}</span>
-      </div>
-      <div className="mb-3 text-[10px] uppercase tracking-widest text-terminal-muted">
-        {t("p.intel.regime.contributing")}
-      </div>
-      <ul className="space-y-1 text-[12px]">
-        {(regime.contributing_factors || []).map((f, i) => (
-          <li key={i} className="text-terminal-text">
-            <span className="text-terminal-blue">›</span> {f}
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-terminal-muted">
-        {Object.entries(regime.raw || {}).map(([k, v]) => (
-          <div key={k} className="border border-terminal-border p-1">
-            <div className="text-[9px] uppercase tracking-widest">{k}</div>
-            <div className="text-terminal-text">{v == null ? "—" : Number(v).toFixed(3)}</div>
+    <div className="flex h-full flex-col gap-3">
+      {/* Headline badge: regime + confidence bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div
+          className={`inline-flex items-center rounded border px-4 py-2 text-lg font-bold uppercase tracking-widest ${cls}`}
+        >
+          {regime.regime?.replaceAll("_", " ") || "—"}
+        </div>
+        <div className="flex flex-1 min-w-[140px] flex-col gap-1">
+          <div className="flex items-baseline justify-between text-[10px] uppercase tracking-widest text-terminal-muted">
+            <span>{t("p.intel.regime.conf")}</span>
+            <span className="text-terminal-text tabular">{pct(conf, 0)}</span>
           </div>
-        ))}
+          <div className="h-1.5 w-full bg-terminal-border">
+            <div
+              className="h-1.5 bg-terminal-amber"
+              style={{ width: `${Math.max(0, Math.min(100, conf * 100))}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Contributing factors */}
+      <div>
+        <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+          {t("p.intel.regime.contributing")}
+        </div>
+        <ul className="space-y-0.5 text-[12px]">
+          {(regime.contributing_factors || []).map((f, i) => (
+            <li key={i} className="text-terminal-text">
+              <span className="text-terminal-blue">›</span> {f}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Indicator grid */}
+      <div>
+        <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+          Indicators
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 text-[11px] sm:grid-cols-3">
+          {Object.entries(regime.raw || {}).map(([k, v]) => {
+            const meta = REGIME_INDICATORS[k];
+            return (
+              <div
+                key={k}
+                className="flex flex-col rounded border border-terminal-border bg-terminal-panelAlt/40 px-2 py-1"
+              >
+                <span className="text-[9px] uppercase tracking-widest text-terminal-muted">
+                  {meta?.label ?? humanizeKey(k)}
+                </span>
+                <span className="tabular text-terminal-text">{formatIndicator(k, v)}</span>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -294,8 +385,14 @@ function FlowsTab({ flows, t }) {
 
 function RotationTab({ rotation, t }) {
   if (!rotation) return <div className="text-terminal-muted">{t("p.intel.rot.unavail")}</div>;
+  // Find the leading + lagging extremes for the bar visual.
+  const signals = rotation.signals || [];
+  const maxAbs = signals.reduce(
+    (m, s) => Math.max(m, Math.abs(s.relative_strength ?? 0)),
+    0.01,
+  );
   return (
-    <div>
+    <div className="flex h-full flex-col">
       <div className="mb-2 flex items-center gap-3">
         <span className="text-[10px] uppercase tracking-widest text-terminal-muted">
           {t("p.intel.rot.cycle_phase")}
@@ -307,30 +404,49 @@ function RotationTab({ rotation, t }) {
           {t("p.intel.rot.spy30", { ret: pct(rotation.spy_return_30d) })}
         </span>
       </div>
-      <table className="w-full text-[11px]">
-        <thead className="text-terminal-muted">
-          <tr>
-            <th className="text-left">{t("p.intel.rot.cols.etf")}</th>
-            <th className="text-left">{t("p.intel.rot.cols.sector")}</th>
-            <th className="text-right">{t("p.intel.rot.cols.r30")}</th>
-            <th className="text-right">{t("p.intel.rot.cols.rs")}</th>
-            <th className="text-left pl-2">{t("p.intel.rot.cols.status")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(rotation.signals || []).map((s) => (
-            <tr key={s.etf} className="border-b border-terminal-border/30">
-              <td className="text-terminal-text">{s.etf}</td>
-              <td className="text-terminal-muted">{s.sector}</td>
-              <td className="text-right text-terminal-blue">{pct(s.return_30d)}</td>
-              <td className={`text-right ${s.relative_strength >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
-                {pct(s.relative_strength)}
-              </td>
-              <td className={`pl-2 ${STATUS_COLOR[s.status] || ""}`}>{s.status}</td>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full text-[11px]">
+          <thead className="sticky top-0 bg-terminal-panel text-terminal-muted">
+            <tr>
+              <th className="text-left">{t("p.intel.rot.cols.etf")}</th>
+              <th className="text-left">{t("p.intel.rot.cols.sector")}</th>
+              <th className="text-right">{t("p.intel.rot.cols.r30")}</th>
+              <th className="text-right">{t("p.intel.rot.cols.rs")}</th>
+              <th className="text-left pl-2">{t("p.intel.rot.cols.status")}</th>
+              <th className="pl-2 w-[180px]">RS strength</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {signals.map((s) => {
+              const rs = s.relative_strength ?? 0;
+              const widthPct = Math.min(100, (Math.abs(rs) / maxAbs) * 100);
+              return (
+                <tr key={s.etf} className="border-b border-terminal-border/30">
+                  <td className="text-terminal-text">{s.etf}</td>
+                  <td className="text-terminal-muted">{s.sector}</td>
+                  <td className="text-right text-terminal-blue">{pct(s.return_30d)}</td>
+                  <td className={`text-right ${rs >= 0 ? "text-terminal-green" : "text-terminal-red"}`}>
+                    {pct(rs)}
+                  </td>
+                  <td className={`pl-2 ${STATUS_COLOR[s.status] || ""}`}>{s.status}</td>
+                  <td className="pl-2">
+                    <div className="relative h-2 w-full bg-terminal-border">
+                      <div
+                        className={`absolute top-0 h-2 ${rs >= 0 ? "bg-terminal-green" : "bg-terminal-red"}`}
+                        style={{
+                          width: `${widthPct / 2}%`,
+                          left: rs >= 0 ? "50%" : `${50 - widthPct / 2}%`,
+                        }}
+                      />
+                      <div className="absolute left-1/2 top-0 h-2 w-px bg-terminal-muted/40" />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

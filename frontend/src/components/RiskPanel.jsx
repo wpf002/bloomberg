@@ -40,52 +40,77 @@ function corrColor(v) {
   return `rgba(220, 60, 60, ${a.toFixed(2)})`;
 }
 
+// Per-tab lazy fetchers. Summary needs both VaR and drawdown so it's the
+// odd one out — we collapse those into a single "summary" key here.
+const TAB_FETCHERS = {
+  summary:     () => Promise.all([api.riskVar(), api.riskDrawdown()]).then(([v, d]) => ({ v, d })),
+  exposure:    () => api.riskExposure(),
+  correlation: () => api.riskCorrelation(),
+  drawdown:    () => api.riskDrawdown(),
+  stress:      () => api.riskStress(),
+};
+
 export default function RiskPanel() {
   const { t } = useTranslation();
   const [tab, setTab] = useState("summary");
-  const [exposure, setExposure] = useState(null);
-  const [correlation, setCorrelation] = useState(null);
-  const [drawdown, setDrawdown] = useState(null);
-  const [varData, setVarData] = useState(null);
-  const [stress, setStress] = useState(null);
+  const [data, setData] = useState({});
+  const [loaded, setLoaded] = useState({});
+  const [loading, setLoading] = useState({});
   const [pendingOrders, setPendingOrders] = useState([]);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
 
   useEffect(() => {
+    if (loaded[tab] || loading[tab]) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      api.riskExposure().catch(() => null),
-      api.riskCorrelation().catch(() => null),
-      api.riskDrawdown().catch(() => null),
-      api.riskVar().catch(() => null),
-      api.riskStress().catch(() => null),
-      api.orders("open", 50).catch(() => []),
-    ])
-      .then(([e, c, d, v, s, ords]) => {
+    setLoading((p) => ({ ...p, [tab]: true }));
+    TAB_FETCHERS[tab]()
+      .then((d) => {
         if (cancelled) return;
-        setExposure(e);
-        setCorrelation(c);
-        setDrawdown(d);
-        setVarData(v);
-        setStress(s);
-        setPendingOrders(
-          (ords || []).filter(
-            (o) => ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
-          ),
-        );
-        if (!e && !c && !d && !v && !s) {
-          setError(t("p.risk.all_failed"));
-        }
+        setData((p) => ({ ...p, [tab]: d }));
+        setLoaded((p) => ({ ...p, [tab]: true }));
       })
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => {
+        if (cancelled) return;
+        setLoaded((p) => ({ ...p, [tab]: true }));
+      })
+      .finally(() => !cancelled && setLoading((p) => ({ ...p, [tab]: false })));
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // The summary tab also needs to know about empty portfolios; pull the
+  // exposure call and pending orders in the background after first paint
+  // so the empty-state copy shows up if applicable.
+  useEffect(() => {
+    if (loaded.exposure || loading.exposure) return;
+    TAB_FETCHERS.exposure().then((d) => {
+      setData((p) => ({ ...p, exposure: d }));
+      setLoaded((p) => ({ ...p, exposure: true }));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (ordersLoaded) return;
+    api
+      .orders("open", 50)
+      .then((ords) => {
+        setPendingOrders(
+          (ords || []).filter((o) =>
+            ["accepted", "new", "pending_new", "partially_filled"].includes(o.status),
+          ),
+        );
+        setOrdersLoaded(true);
+      })
+      .catch(() => setOrdersLoaded(true));
+  }, [ordersLoaded]);
+
+  const summary = data.summary || {};
+  const exposure = data.exposure;
+  const varData = summary.v;
+  const drawdown = data.drawdown || summary.d;
 
   return (
     <Panel
@@ -111,28 +136,29 @@ export default function RiskPanel() {
         </div>
       }
     >
-      {loading ? (
+      {loading[tab] && !loaded[tab] ? (
         <div className="text-terminal-muted">{t("p.risk.loading")}</div>
-      ) : error ? (
-        <div className="text-terminal-red">{error}</div>
       ) : isPortfolioEmpty(exposure, varData) ? (
         <EmptyState pendingOrders={pendingOrders} t={t} />
       ) : tab === "summary" ? (
         <SummaryTab varData={varData} drawdown={drawdown} t={t} />
       ) : tab === "exposure" ? (
-        <ExposureTab exposure={exposure} t={t} />
+        <ExposureTab exposure={data.exposure} t={t} />
       ) : tab === "correlation" ? (
-        <CorrelationTab correlation={correlation} t={t} />
+        <CorrelationTab correlation={data.correlation} t={t} />
       ) : tab === "drawdown" ? (
-        <DrawdownTab drawdown={drawdown} t={t} />
+        <DrawdownTab drawdown={data.drawdown} t={t} />
       ) : (
-        <StressTab stress={stress} t={t} />
+        <StressTab stress={data.stress} t={t} />
       )}
     </Panel>
   );
 }
 
 function isPortfolioEmpty(exposure, varData) {
+  // Defer the empty check until exposure has actually loaded — otherwise we
+  // flash the empty state on every initial render.
+  if (exposure === undefined && varData === undefined) return false;
   const noExposure = !exposure || (exposure.total_value ?? 0) <= 0;
   const noObservations = !varData || (varData.observations ?? 0) === 0;
   return noExposure && noObservations;

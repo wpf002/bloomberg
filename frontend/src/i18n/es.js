@@ -150,7 +150,7 @@ export default {
     },
     news: {
       loading: "Cargando noticias…",
-      none: "Sin noticias. Configura ALPACA_API_KEY / ALPACA_API_SECRET.",
+      none: "Sin noticias recientes para este símbolo.",
     },
     markets: {
       loading: "Cargando mercados…",
@@ -202,8 +202,8 @@ export default {
     options: {
       title: "Opciones — {sym}",
       loading: "Cargando cadena…",
-      none_head: "Sin cadena de opciones para {sym}.",
-      none_msg: "Las opciones provienen de Yahoo Finance, que limita esta IP bajo carga. Suele resolverse en 10–30 min. Alpaca solo expone opciones en su nivel de datos pago.",
+      none_head: "Sin datos de opciones para {sym}.",
+      none_msg: "Inténtalo de nuevo en unos minutos — las cadenas de opciones no siempre están disponibles para todos los símbolos.",
       exp: "Venc.",
       spot: "Spot",
       counts: "Calls {calls} · Puts {puts}",
@@ -406,8 +406,9 @@ export default {
       contracts_meta: "{label} · {n} contratos",
       curve: "Curva:",
       loading: "Cargando curva…",
-      empty: "Sin contratos diferidos para {root} — yfinance suele saltarse vencimientos ilíquidos. Tira frontal arriba está actualizada.",
+      empty: "Mostrando el precio continuo del frontal. Los contratos diferidos no están disponibles para {root} en el nivel público de datos.",
       cols: { contract: "Contrato", expiration: "Vencimiento", price: "Precio", chg: "% Δ" },
+      spot_label: "spot",
       footer_pre: "Curva inclinándose ",
       footer_up: "arriba",
       footer_contango: " = contango (los meses diferidos más caros que el frontal, abundancia de oferta). Inclinándose ",

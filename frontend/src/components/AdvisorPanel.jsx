@@ -3,20 +3,18 @@ import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
 
-// 11 tabs: 5 from Module 4 + 6 added in Phase 9.2.
-const TAB_KEYS = [
-  "ask",
-  "review",
-  "picks",
-  "brief",
+// 11 tabs split into two visual tiers. Primary = quick generators users
+// reach for daily; secondary = form-driven / situation-specific runs.
+const TAB_PRIMARY = ["ask", "review", "picks", "brief", "open-brief"];
+const TAB_SECONDARY = [
   "validate-thesis",
   "simulate",
   "earnings-prep",
   "rebalance",
-  "open-brief",
   "post-mortem",
   "alert-analysis",
 ];
+const TAB_KEYS = [...TAB_PRIMARY, ...TAB_SECONDARY];
 
 // Map endpoint key -> i18n tab label key
 const TAB_LABEL = {
@@ -493,25 +491,46 @@ export default function AdvisorPanel({ symbol, watchlist }) {
     );
   };
 
+  // Single row renderer used by both tiers. Buttons are visually identical;
+  // the only thing differentiating tiers is which row they sit in.
+  const renderTabRow = (keys) => (
+    <div className="flex flex-wrap items-center text-[10px] uppercase tracking-widest">
+      {keys.map((key, i) => (
+        <span key={key} className="flex items-center">
+          {i > 0 ? (
+            <span className="px-2 text-terminal-border" aria-hidden>
+              ·
+            </span>
+          ) : null}
+          <button
+            onClick={() => switchTab(key)}
+            disabled={busy}
+            className={
+              (tab === key
+                ? "text-terminal-amber"
+                : "text-terminal-muted hover:text-terminal-text") +
+              " disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-terminal-muted"
+            }
+            title={busy ? "Wait for the current response to finish" : undefined}
+          >
+            {t(`p.advisor.tabs.${TAB_LABEL[key]}`)}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
   return (
     <Panel
       title={t("panels.advisor")}
       accent="amber"
       actions={
-        <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-widest">
-          {TAB_KEYS.map((key) => (
-            <button
-              key={key}
-              onClick={() => switchTab(key)}
-              className={tab === key ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
-            >
-              {t(`p.advisor.tabs.${TAB_LABEL[key]}`)}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          {renderTabRow(TAB_PRIMARY)}
           {tab === "ask" && askHistory.length > 0 ? (
             <button
               onClick={() => setAskHistory([])}
-              className="ml-2 border border-terminal-border px-2 text-terminal-muted hover:text-terminal-red"
+              className="ml-2 border border-terminal-border px-2 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-red"
               title={t("p.advisor.clear_title")}
             >
               {t("p.common.clear")}
@@ -520,53 +539,61 @@ export default function AdvisorPanel({ symbol, watchlist }) {
         </div>
       }
     >
-      {tab === "ask" ? (
-        renderAsk()
-      ) : tab === "review" ? (
-        renderStreamingArea("review", runBtn(onReview, t("aurora.advisor.generate"), "review"))
-      ) : tab === "picks" ? (
-        renderStreamingArea("picks", runBtn(onPicks, t("aurora.advisor.generate"), "picks"))
-      ) : tab === "brief" ? (
-        renderStreamingArea("brief", runBtn(onBrief, t("aurora.advisor.generate"), "brief"))
-      ) : tab === "validate-thesis" ? (
-        renderStreamingArea(
-          "validate-thesis",
-          runBtn(onValidate, t("p.advisor.validate.run"), "validate-thesis"),
-          validateForm_ui,
-        )
-      ) : tab === "simulate" ? (
-        renderStreamingArea(
-          "simulate",
-          runBtn(onSimulate, t("p.advisor.simulate.run"), "simulate"),
-          simulateForm_ui,
-        )
-      ) : tab === "earnings-prep" ? (
-        renderStreamingArea(
-          "earnings-prep",
-          runBtn(onEarnings, t("p.advisor.earnings.run"), "earnings-prep"),
-          earningsForm_ui,
-        )
-      ) : tab === "rebalance" ? (
-        renderStreamingArea(
-          "rebalance",
-          runBtn(onRebalance, t("p.advisor.rebalance.run"), "rebalance"),
-          rebalance_ui,
-        )
-      ) : tab === "open-brief" ? (
-        renderStreamingArea(
-          "open-brief",
-          runBtn(onOpenBrief, t("p.advisor.morning.run"), "open-brief"),
-          morning_ui,
-        )
-      ) : tab === "post-mortem" ? (
-        renderStreamingArea(
-          "post-mortem",
-          runBtn(onPostMortem, t("p.advisor.postmortem.run"), "post-mortem"),
-          postmortem_ui,
-        )
-      ) : (
-        renderStreamingArea("alert-analysis", runBtn(onAlert, t("aurora.advisor.generate"), "alert-analysis"))
-      )}
+      <div className="flex h-full flex-col">
+        <div className="mb-2 flex items-center gap-2 border-b border-terminal-border/40 pb-2 text-[10px] uppercase tracking-widest text-terminal-muted/70">
+          <span className="shrink-0 text-terminal-muted/60">More:</span>
+          {renderTabRow(TAB_SECONDARY)}
+        </div>
+        <div className="min-h-0 flex-1">
+          {tab === "ask" ? (
+            renderAsk()
+          ) : tab === "review" ? (
+            renderStreamingArea("review", runBtn(onReview, t("aurora.advisor.generate"), "review"))
+          ) : tab === "picks" ? (
+            renderStreamingArea("picks", runBtn(onPicks, t("aurora.advisor.generate"), "picks"))
+          ) : tab === "brief" ? (
+            renderStreamingArea("brief", runBtn(onBrief, t("aurora.advisor.generate"), "brief"))
+          ) : tab === "validate-thesis" ? (
+            renderStreamingArea(
+              "validate-thesis",
+              runBtn(onValidate, t("p.advisor.validate.run"), "validate-thesis"),
+              validateForm_ui,
+            )
+          ) : tab === "simulate" ? (
+            renderStreamingArea(
+              "simulate",
+              runBtn(onSimulate, t("p.advisor.simulate.run"), "simulate"),
+              simulateForm_ui,
+            )
+          ) : tab === "earnings-prep" ? (
+            renderStreamingArea(
+              "earnings-prep",
+              runBtn(onEarnings, t("p.advisor.earnings.run"), "earnings-prep"),
+              earningsForm_ui,
+            )
+          ) : tab === "rebalance" ? (
+            renderStreamingArea(
+              "rebalance",
+              runBtn(onRebalance, t("p.advisor.rebalance.run"), "rebalance"),
+              rebalance_ui,
+            )
+          ) : tab === "open-brief" ? (
+            renderStreamingArea(
+              "open-brief",
+              runBtn(onOpenBrief, t("p.advisor.morning.run"), "open-brief"),
+              morning_ui,
+            )
+          ) : tab === "post-mortem" ? (
+            renderStreamingArea(
+              "post-mortem",
+              runBtn(onPostMortem, t("p.advisor.postmortem.run"), "post-mortem"),
+              postmortem_ui,
+            )
+          ) : (
+            renderStreamingArea("alert-analysis", runBtn(onAlert, t("aurora.advisor.generate"), "alert-analysis"))
+          )}
+        </div>
+      </div>
     </Panel>
   );
 }

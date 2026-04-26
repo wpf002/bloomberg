@@ -56,11 +56,18 @@ def cached(
     namespace: str,
     ttl: int | None = None,
     model: type[BaseModel] | None = None,
+    strip_first_arg: bool = True,
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorate an async method with Redis-backed TTL caching.
 
     `model` is the pydantic model class the function returns (or the item
     type when it returns a list of models). Required for deserialization.
+
+    `strip_first_arg` (default True) drops args[0] from the cache key so
+    instance methods don't include `self` (which is process-unique). For
+    module-level cached functions (where args[0] is real input) pass
+    `strip_first_arg=False` — otherwise every call collides on the same
+    key and you'll get cross-input cache hits.
     """
 
     ttl_seconds = ttl if ttl is not None else settings.default_cache_ttl
@@ -72,7 +79,8 @@ def cached(
             if client is None:
                 return await func(*args, **kwargs)
 
-            signature = _hash_args(args[1:] if args else (), kwargs)  # strip self
+            sig_args = args[1:] if (strip_first_arg and args) else args
+            signature = _hash_args(sig_args, kwargs)
             key = f"bt:{namespace}:{signature}"
 
             try:

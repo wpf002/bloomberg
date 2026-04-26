@@ -150,7 +150,7 @@ export default {
     },
     news: {
       loading: "加载新闻中…",
-      none: "暂无新闻。请配置 ALPACA_API_KEY / ALPACA_API_SECRET。",
+      none: "暂无该代码的最新新闻。",
     },
     markets: {
       loading: "加载市场中…",
@@ -202,8 +202,8 @@ export default {
     options: {
       title: "期权 — {sym}",
       loading: "加载期权链中…",
-      none_head: "无 {sym} 的期权链。",
-      none_msg: "期权来自 Yahoo Finance,在高负载时会限制此 IP。通常 10–30 分钟内恢复。Alpaca 仅在付费数据等级提供期权。",
+      none_head: "无 {sym} 的期权数据。",
+      none_msg: "请稍后再试 — 并非所有代码都能获取期权链。",
       exp: "到期",
       spot: "现价",
       counts: "看涨 {calls} · 看跌 {puts}",
@@ -406,8 +406,9 @@ export default {
       contracts_meta: "{label} · {n} 份合约",
       curve: "曲线:",
       loading: "加载曲线中…",
-      empty: "{root} 未返回远月合约 — yfinance 经常跳过流动性差的到期。上方近月条带为最新。",
+      empty: "显示近月连续价格。{root} 的远月合约在公开数据级别不可用。",
       cols: { contract: "合约", expiration: "到期", price: "价格", chg: "% Δ" },
+      spot_label: "现货",
       footer_pre: "曲线",
       footer_up: "上倾",
       footer_contango: " = 期升(远月比近月贵,供应充足)。",

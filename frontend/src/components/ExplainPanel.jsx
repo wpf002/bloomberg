@@ -3,6 +3,19 @@ import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
 
+// The legacy explain prompt occasionally returns markdown bold (`**`) and
+// horizontal rules (`---`) even though we render as plain text. Strip them
+// client-side so the panel stays clean without re-running every cached entry.
+function cleanBody(body) {
+  if (!body) return body;
+  return body
+    .replace(/\*\*([^*]+)\*\*/g, "$1")  // **bold** → bold
+    .replace(/__([^_]+)__/g, "$1")       // __bold__ → bold
+    .replace(/^---+$/gm, "")              // horizontal rules
+    .replace(/`([^`]+)`/g, "$1")          // inline `code`
+    .replace(/\n{3,}/g, "\n\n");          // collapse runs of blanks
+}
+
 export default function ExplainPanel({ symbol }) {
   const { t } = useTranslation();
   const [state, setState] = useState({ loading: false, data: null, error: null });
@@ -59,7 +72,7 @@ export default function ExplainPanel({ symbol }) {
       ) : state.data ? (
         <div>
           <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-terminal-text">
-            {state.data.body}
+            {cleanBody(state.data.body)}
           </pre>
           <div className="mt-3 border-t border-terminal-border/60 pt-2 text-[10px] uppercase tracking-widest text-terminal-muted">
             {t("p.explain.meta", {

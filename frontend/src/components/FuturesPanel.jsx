@@ -160,7 +160,9 @@ export default function FuturesPanel() {
                 {points.map((p) => (
                   <tr key={p.contract} className="border-t border-terminal-border/40">
                     <td className="py-1 pr-2 font-bold text-terminal-amber">{p.contract}</td>
-                    <td className="py-1 pr-2 text-right">{p.expiration?.slice(0, 7)}</td>
+                    <td className="py-1 pr-2 text-right text-terminal-muted">
+                      {p.expiration ? p.expiration.slice(0, 7) : "—"}
+                    </td>
                     <td className="py-1 pr-2 text-right">{fmt(p.price)}</td>
                     <td className="py-1 text-right">
                       {(curve?.contracts || []).find((c) => c.contract_symbol === p.contract)

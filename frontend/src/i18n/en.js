@@ -159,7 +159,7 @@ export default {
     },
     news: {
       loading: "Loading news…",
-      none: "No news available. Configure ALPACA_API_KEY / ALPACA_API_SECRET.",
+      none: "No recent news for this symbol.",
     },
     markets: {
       loading: "Loading markets…",
@@ -211,8 +211,8 @@ export default {
     options: {
       title: "Options — {sym}",
       loading: "Loading chain…",
-      none_head: "No option chain available for {sym}.",
-      none_msg: "Options come from Yahoo Finance, which rate-limits this IP under load. Usually clears in 10–30 min. Alpaca only exposes options on its paid data tier.",
+      none_head: "No options data available for {sym}.",
+      none_msg: "Try again in a few minutes — option chains aren't always available for every symbol.",
       exp: "Exp",
       spot: "Spot",
       counts: "Calls {calls} · Puts {puts}",
@@ -415,8 +415,9 @@ export default {
       contracts_meta: "{label} · {n} contracts",
       curve: "Curve:",
       loading: "Loading curve…",
-      empty: "No back-month contracts returned for {root} — yfinance often skips illiquid expirations. Front-month strip above is current.",
+      empty: "Showing the front-month continuous price. Dated back-month contracts aren't available for {root} on the public data tier.",
       cols: { contract: "Contract", expiration: "Expiration", price: "Price", chg: "% Δ" },
+      spot_label: "spot",
       footer_pre: "Curve sloping ",
       footer_up: "up",
       footer_contango: " = contango (back-months pricier than front, supply abundance). Sloping ",
