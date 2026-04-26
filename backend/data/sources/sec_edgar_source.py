@@ -6,6 +6,7 @@ import httpx
 
 from ...core.cache_utils import cached
 from ...core.config import settings
+from ..normalizer import get_normalizer
 from ...models.schemas import FilingEntry
 
 logger = logging.getLogger(__name__)
@@ -87,4 +88,7 @@ class SecEdgarSource:
             )
             if len(out) >= limit:
                 break
+        normalizer = get_normalizer()
+        for entry in out:
+            normalizer.from_filing("sec_edgar", entry)
         return out

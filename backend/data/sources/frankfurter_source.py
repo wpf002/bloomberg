@@ -18,6 +18,7 @@ from typing import Any
 import httpx
 
 from ...core.cache_utils import cached
+from ..normalizer import get_normalizer
 from ...models.schemas import FxQuote
 
 logger = logging.getLogger(__name__)
@@ -56,7 +57,7 @@ class FrankfurterSource:
         rate = (data.get("rates") or {}).get(quote_ccy)
         if rate is None:
             return None
-        return FxQuote(
+        fxq = FxQuote(
             pair=f"{base}{quote_ccy}",
             base=base,
             quote=quote_ccy,
@@ -65,3 +66,5 @@ class FrankfurterSource:
             change_percent=0.0,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_fx_quote("frankfurter", fxq)
+        return fxq

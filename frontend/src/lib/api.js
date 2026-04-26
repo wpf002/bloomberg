@@ -160,6 +160,45 @@ export const api = {
   searchSymbols: (q, limit = 8) =>
     request(`/api/symbols/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 
+  // ── AURORA Module 1: data provenance ──────────────────────────────────
+  provenance: (symbol, { limit = 100, seriesId } = {}) => {
+    const q = new URLSearchParams({ symbol, limit: String(limit) });
+    if (seriesId) q.set("series_id", seriesId);
+    return request(`/api/provenance?${q.toString()}`);
+  },
+
+  // ── AURORA Module 2: risk engine ──────────────────────────────────────
+  riskExposure: () => request(`/api/risk/exposure`),
+  riskCorrelation: () => request(`/api/risk/correlation`),
+  riskDrawdown: () => request(`/api/risk/drawdown`),
+  riskVar: () => request(`/api/risk/var`),
+  riskStress: () => request(`/api/risk/stress`),
+
+  // ── AURORA Module 3: intelligence engine ──────────────────────────────
+  intelRegime: () => request(`/api/intelligence/regime`),
+  intelFragility: () => request(`/api/intelligence/fragility`),
+  intelFlows: () => request(`/api/intelligence/flows`),
+  intelRotation: () => request(`/api/intelligence/rotation`),
+
+  // ── AURORA Module 4: AI advisor (streaming) ───────────────────────────
+  advisorStream: (endpoint, body) =>
+    fetch(`${BASE}/api/advisor/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body || {}),
+    }),
+
+  // ── AURORA Module 5: audit log ────────────────────────────────────────
+  audit: (symbol, { from, to, limit = 100 } = {}) => {
+    const q = new URLSearchParams({ symbol, limit: String(limit) });
+    if (from) q.set("from", from);
+    if (to) q.set("to", to);
+    return request(`/api/audit?${q.toString()}`);
+  },
+  intelSnapshots: (kind, limit = 50) =>
+    request(`/api/audit/snapshots?kind=${encodeURIComponent(kind)}&limit=${limit}`),
+
   // Phase 8: ESG-only filings search (preset over the existing endpoint)
   filingsSearchEsg: (q, { symbol, limit = 20 } = {}) => {
     const params = new URLSearchParams({ q, limit: String(limit), category: "esg" });

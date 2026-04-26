@@ -25,6 +25,7 @@ import httpx
 
 from ...core.cache_utils import cached
 from ...core.config import settings
+from ..normalizer import get_normalizer
 from ...models.schemas import EarningsEvent, FxQuote, NewsItem, Quote
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,7 @@ class FinnhubSource:
         prev = _safe_float(data.get("pc")) or price
         change = _safe_float(data.get("d")) or (price - prev)
         change_pct = _safe_float(data.get("dp")) or ((change / prev * 100.0) if prev else 0.0)
-        return Quote(
+        quote = Quote(
             symbol=symbol.upper(),
             price=price,
             change=change,
@@ -157,6 +158,8 @@ class FinnhubSource:
             previous_close=prev,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_quote("finnhub", quote)
+        return quote
 
     # ── spot FX ──────────────────────────────────────────────────────────
 
@@ -180,7 +183,7 @@ class FinnhubSource:
         rate = _safe_float(rates.get(quote_ccy))
         if rate is None or rate <= 0:
             return None
-        return FxQuote(
+        fxq = FxQuote(
             pair=sym,
             base=base,
             quote=quote_ccy,
@@ -189,6 +192,8 @@ class FinnhubSource:
             change_percent=0.0,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_fx_quote("finnhub", fxq)
+        return fxq
 
     # ── per-symbol news ──────────────────────────────────────────────────
 

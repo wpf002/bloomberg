@@ -20,6 +20,7 @@ from .routes import (
     orders,
     overview,
     portfolio,
+    provenance,
     quotes,
     shared,
     sizing,
@@ -54,5 +55,6 @@ api_router.include_router(factors.router, prefix="/portfolio", tags=["portfolio"
 api_router.include_router(fixed_income.router, prefix="/fixed_income", tags=["fixed_income"])
 api_router.include_router(futures.router, prefix="/futures", tags=["futures"])
 api_router.include_router(symbols.router, prefix="/symbols", tags=["symbols"])
+api_router.include_router(provenance.router, prefix="/provenance", tags=["provenance"])
 
 __all__ = ["api_router"]

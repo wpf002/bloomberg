@@ -7,6 +7,7 @@ from fredapi import Fred
 
 from ...core.cache_utils import cached
 from ...core.config import settings
+from ..normalizer import get_normalizer
 from ...models.schemas import MacroSeries, MacroSeriesPoint
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,9 @@ class FredSource:
                 series_id, (series_id, None, None)
             )
             return MacroSeries(series_id=series_id, title=title, units=units, frequency=freq)
-        return await asyncio.to_thread(self._series_sync, series_id, limit)
+        series = await asyncio.to_thread(self._series_sync, series_id, limit)
+        get_normalizer().from_macro_series("fred", series)
+        return series
 
     def _series_sync(self, series_id: str, limit: int) -> MacroSeries:
         assert self._client is not None

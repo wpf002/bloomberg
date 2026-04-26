@@ -21,6 +21,10 @@ import OrderTicket from "../components/OrderTicket.jsx";
 import Panel from "../components/Panel.jsx";
 import PayoffPanel from "../components/PayoffPanel.jsx";
 import Portfolio from "../components/Portfolio.jsx";
+import ProvenancePanel from "../components/ProvenancePanel.jsx";
+import RiskPanel from "../components/RiskPanel.jsx";
+import IntelligencePanel from "../components/IntelligencePanel.jsx";
+import AdvisorPanel from "../components/AdvisorPanel.jsx";
 import ShareLayoutDialog from "../components/ShareLayoutDialog.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
 import SqlPanel from "../components/SqlPanel.jsx";
@@ -84,6 +88,10 @@ const INTENT_TO_PANEL = {
   factors: "factors",
   fixed: "fixed",
   futures: "futures",
+  provenance: "provenance",
+  risk: "risk",
+  intelligence: "intelligence",
+  advisor: "advisor",
   unknown: null,
 };
 
@@ -113,6 +121,10 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "futures",      x: 0,  y: 62, w: 12, h: 10, minW: 4, minH: 6 },
+    { i: "intelligence", x: 0,  y: 72, w: 8, h: 10, minW: 5, minH: 6 },
+    { i: "risk",         x: 8,  y: 72, w: 4, h: 10, minW: 3, minH: 6 },
+    { i: "advisor",      x: 0,  y: 82, w: 8, h: 12, minW: 5, minH: 6 },
+    { i: "provenance",   x: 8,  y: 82, w: 4, h: 12, minW: 3, minH: 6 },
   ],
   md: [
     { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
@@ -137,6 +149,10 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 94, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 101, w: 12, h: 7 },
     { i: "futures",      x: 0,  y: 108, w: 12, h: 10 },
+    { i: "intelligence", x: 0,  y: 118, w: 12, h: 10 },
+    { i: "risk",         x: 0,  y: 128, w: 12, h: 10 },
+    { i: "advisor",      x: 0,  y: 138, w: 12, h: 12 },
+    { i: "provenance",   x: 0,  y: 150, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -161,6 +177,10 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0, y: 138, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 145, w: 6, h: 7 },
     { i: "futures",      x: 0, y: 152, w: 6, h: 10 },
+    { i: "intelligence", x: 0, y: 162, w: 6, h: 10 },
+    { i: "risk",         x: 0, y: 172, w: 6, h: 10 },
+    { i: "advisor",      x: 0, y: 182, w: 6, h: 12 },
+    { i: "provenance",   x: 0, y: 194, w: 6, h: 10 },
   ],
 };
 
@@ -419,6 +439,10 @@ export default function Terminal() {
       { id: "factors",      render: () => <FactorAnalyticsPanel /> },
       { id: "fixed",        render: () => <FixedIncomePanel /> },
       { id: "futures",      render: () => <FuturesPanel /> },
+      { id: "intelligence", render: () => <IntelligencePanel /> },
+      { id: "risk",         render: () => <RiskPanel /> },
+      { id: "advisor",      render: () => <AdvisorPanel symbol={activeSymbol} /> },
+      { id: "provenance",   render: () => <ProvenancePanel symbol={activeSymbol} /> },
     ],
     [watchlist, activeSymbol, compareSymbols, handleSelect, handleRemove]
   );

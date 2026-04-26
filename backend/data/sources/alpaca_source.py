@@ -7,6 +7,7 @@ import httpx
 from ...core.bsm import bsm_greeks, year_fraction
 from ...core.cache_utils import cached
 from ...core.config import settings
+from ..normalizer import get_normalizer
 from ...models.schemas import (
     Account,
     NewsItem,
@@ -108,11 +109,13 @@ class AlpacaSource:
         bid = float(payload.get("bp") or 0.0)
         ask = float(payload.get("ap") or 0.0)
         mid = (bid + ask) / 2 if bid and ask else bid or ask
-        return Quote(
+        quote = Quote(
             symbol=symbol.upper(),
             price=mid,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_quote("alpaca", quote)
+        return quote
 
     async def news(self, symbols: List[str] | None = None, limit: int = 25) -> List[NewsItem]:
         if not self._enabled():
@@ -195,6 +198,7 @@ class AlpacaSource:
                 )
             except Exception as exc:
                 logger.debug("skipping malformed bar for %s: %s", symbol, exc)
+        get_normalizer().from_bars("alpaca", symbol.upper(), out)
         return out
 
     @cached("alpaca:crypto", ttl=15, model=Quote)
@@ -230,7 +234,7 @@ class AlpacaSource:
         change = price - prev_close if prev_close else 0.0
         change_pct = (change / prev_close * 100.0) if prev_close else 0.0
 
-        return Quote(
+        quote = Quote(
             symbol=symbol.upper(),
             price=price,
             change=change,
@@ -241,6 +245,8 @@ class AlpacaSource:
             previous_close=prev_close if prev_close else None,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_quote("alpaca", quote)
+        return quote
 
     @cached("alpaca:quote", ttl=10, model=Quote)
     async def get_stock_quote(self, symbol: str) -> Quote | None:
@@ -272,7 +278,7 @@ class AlpacaSource:
         change = price - prev_close if prev_close else 0.0
         change_pct = (change / prev_close * 100.0) if prev_close else 0.0
 
-        return Quote(
+        quote = Quote(
             symbol=symbol.upper(),
             price=price,
             change=change,
@@ -283,6 +289,8 @@ class AlpacaSource:
             previous_close=prev_close if prev_close else None,
             timestamp=datetime.now(timezone.utc),
         )
+        get_normalizer().from_quote("alpaca", quote)
+        return quote
 
     @cached("alpaca:assets_active", ttl=86400, model=None)
     async def list_active_assets(self) -> list[dict]:

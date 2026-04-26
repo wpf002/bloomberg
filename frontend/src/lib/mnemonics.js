@@ -51,6 +51,13 @@ export const MNEMONICS = {
   BAUC:    { intent: "fixed",     description: "Treasury auction calendar" },
   CRV:     { intent: "futures",   description: "Futures dashboard + term-structure curve" },
   CTM:     { intent: "futures",   description: "Commodities / futures monitor" },
+  PROV:        { intent: "provenance",   description: "AURORA — data provenance / audit log" },
+  PROVENANCE:  { intent: "provenance",   description: "AURORA — data provenance / audit log" },
+  RISK:        { intent: "risk",         description: "AURORA — risk engine (VaR / CVaR / stress / correlation)" },
+  INTEL:       { intent: "intelligence", description: "AURORA — intelligence engine (regime / fragility / flows / rotation)" },
+  REGIME:      { intent: "intelligence", description: "AURORA — current macro regime + contributing factors" },
+  ADVISOR:     { intent: "advisor",      description: "AURORA — Claude AI portfolio advisor" },
+  ASK:         { intent: "advisor",      description: "AURORA — ask the AI advisor a question" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 
