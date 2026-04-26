@@ -141,10 +141,9 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "futures",      x: 0,  y: 62, w: 12, h: 10, minW: 4, minH: 6 },
-    { i: "intelligence", x: 0,  y: 72, w: 8, h: 10, minW: 5, minH: 6 },
-    { i: "risk",         x: 8,  y: 72, w: 4, h: 10, minW: 3, minH: 6 },
-    { i: "advisor",      x: 0,  y: 82, w: 8, h: 12, minW: 5, minH: 6 },
-    { i: "provenance",   x: 8,  y: 82, w: 4, h: 12, minW: 3, minH: 6 },
+    // AURORA panels deliberately omitted from Terminal-mode layout —
+    // they live in INTELLIGENCE_LAYOUTS below. Including them here would
+    // reserve empty grid slots and leave a tall gap under Futures.
   ],
   md: [
     { i: "watchlist",    x: 0,  y: 0,  w: 4, h: 8 },
@@ -169,10 +168,6 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 94, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 101, w: 12, h: 7 },
     { i: "futures",      x: 0,  y: 108, w: 12, h: 10 },
-    { i: "intelligence", x: 0,  y: 118, w: 12, h: 10 },
-    { i: "risk",         x: 0,  y: 128, w: 12, h: 10 },
-    { i: "advisor",      x: 0,  y: 138, w: 12, h: 12 },
-    { i: "provenance",   x: 0,  y: 150, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -197,10 +192,6 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0, y: 138, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 145, w: 6, h: 7 },
     { i: "futures",      x: 0, y: 152, w: 6, h: 10 },
-    { i: "intelligence", x: 0, y: 162, w: 6, h: 10 },
-    { i: "risk",         x: 0, y: 172, w: 6, h: 10 },
-    { i: "advisor",      x: 0, y: 182, w: 6, h: 12 },
-    { i: "provenance",   x: 0, y: 194, w: 6, h: 10 },
   ],
 };
 
@@ -690,7 +681,7 @@ export default function Terminal() {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"
           onClick={() => setHelpOpen(false)}
         >
-          <div className="w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-5xl max-h-[85vh] flex" onClick={(e) => e.stopPropagation()}>
             <Panel
               title={t("panels.help")}
               accent="amber"
@@ -703,10 +694,12 @@ export default function Terminal() {
                 </button>
               }
             >
-              <MnemonicHelp />
-              <p className="mt-3 text-[11px] text-terminal-muted">
-                {t("command.helpFooter")}
-              </p>
+              <div className="overflow-auto">
+                <MnemonicHelp />
+                <p className="mt-3 text-[11px] text-terminal-muted">
+                  {t("command.helpFooter")}
+                </p>
+              </div>
             </Panel>
           </div>
         </div>

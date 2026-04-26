@@ -7,6 +7,12 @@ services:
     image: timescale/timescaledb:latest-pg15
     container_name: bt-postgres
     restart: unless-stopped
+    # Force `shared_preload_libraries=timescaledb` even on data volumes
+    # that were initialised under a vanilla Postgres image (the timescale
+    # entrypoint only edits postgresql.conf on a fresh data dir, so an
+    # in-place image swap leaves the setting commented out and CREATE
+    # EXTENSION timescaledb dies mid-statement).
+    command: ["postgres", "-c", "shared_preload_libraries=timescaledb"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bloomberg}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bloomberg}

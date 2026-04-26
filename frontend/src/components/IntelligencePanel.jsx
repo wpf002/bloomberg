@@ -134,6 +134,23 @@ function RegimeTab({ regime }) {
 
 function FragilityTab({ fragility }) {
   if (!fragility) return <div className="text-terminal-muted">Fragility data unavailable.</div>;
+  const positions = fragility.positions || [];
+  if (positions.length === 0) {
+    return (
+      <div className="flex flex-col gap-2 text-[12px]">
+        <div className="text-terminal-amber">No open positions.</div>
+        <div className="text-terminal-muted leading-relaxed">
+          Fragility is a per-position score blending volatility, drawdown, VIX
+          correlation, beta, and sector regime sensitivity. Open at least one
+          paper position via <span className="text-terminal-text">TRADE</span>{" "}
+          (mnemonic <span className="text-terminal-amber">TRADE</span> or{" "}
+          <span className="text-terminal-amber">BUY</span>) and the score
+          will populate. Current regime:{" "}
+          <span className="text-terminal-text">{fragility.regime || "—"}</span>.
+        </div>
+      </div>
+    );
+  }
   const score = fragility.portfolio_score ?? 0;
   return (
     <div>

@@ -133,13 +133,15 @@ function isPortfolioEmpty(exposure, varData) {
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
-      <div className="text-terminal-amber">No open positions.</div>
+      <div className="text-terminal-amber">Your Alpaca paper account holds 0 positions.</div>
       <div className="text-terminal-muted leading-relaxed">
-        Risk analytics need at least one holding to compute against. Open a
-        paper position from the <span className="text-terminal-text">TRADE</span>{" "}
-        panel (mnemonic <span className="text-terminal-amber">TRADE</span> or{" "}
-        <span className="text-terminal-amber">BUY</span>), then come back —
-        VaR, drawdown, correlation, and stress will populate automatically.
+        VaR, CVaR, drawdown, correlation, and stress tests are computed against
+        your live holdings. With 100% cash there's nothing to compute against —
+        this isn't an error, just an empty book.
+        {" "}Place a paper trade from the <span className="text-terminal-text">TRADE</span>
+        {" "}panel (mnemonic <span className="text-terminal-amber">TRADE</span> or
+        {" "}<span className="text-terminal-amber">BUY</span>) and these tabs
+        will populate automatically on the next refresh.
       </div>
     </div>
   );

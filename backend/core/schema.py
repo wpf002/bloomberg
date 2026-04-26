@@ -199,35 +199,56 @@ SELECT add_compression_policy('intelligence_snapshots', INTERVAL '30 days', if_n
 """
 
 
+async def _execute_isolated(sql: str, *, label: str) -> bool:
+    """Run a single SQL block on a fresh connection from the pool.
+
+    A failure inside `CREATE EXTENSION timescaledb` aborts the asyncpg
+    connection (the wire protocol gets out of sync), so any subsequent
+    `conn.execute(...)` on the same connection silently fails. Acquiring
+    a fresh connection per phase keeps later phases from being collateral
+    damage of an earlier failure.
+    """
+    if database.pool is None:
+        return False
+    try:
+        async with database.acquire() as conn:
+            await conn.execute(sql)
+        return True
+    except Exception as exc:
+        logger.warning("%s failed (non-fatal): %s", label, exc)
+        return False
+
+
 async def ensure_schema() -> None:
     if database.pool is None:
         logger.warning("ensure_schema: pool unavailable, skipping bootstrap")
         return
-    async with database.acquire() as conn:
-        # Try the TimescaleDB extension first. On a plain Postgres image
-        # this fails — log and continue so the Phase-6 base schema still
-        # bootstraps. Hypertables / compression policies are skipped in
-        # that case (the audit/snapshot routes degrade to no-ops).
-        timescale_available = False
-        try:
-            await conn.execute("CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;")
-            timescale_available = True
-        except Exception as exc:
-            logger.warning(
-                "TimescaleDB extension unavailable (%s) — running base schema only",
-                exc,
-            )
 
-        await conn.execute(BASE_SCHEMA_SQL)
-        await conn.execute(HYPERTABLE_DDL)
+    # 1. Try the TimescaleDB extension on a dedicated connection.
+    timescale_available = await _execute_isolated(
+        "CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;",
+        label="timescaledb extension",
+    )
+    if not timescale_available:
+        logger.warning(
+            "TimescaleDB extension unavailable — hypertable policies will be skipped"
+        )
 
-        if timescale_available:
-            try:
-                await conn.execute(HYPERTABLE_POLICIES)
-            except Exception as exc:
-                logger.warning("hypertable policies failed (non-fatal): %s", exc)
+    # 2. Phase-6 base schema (always runs).
+    await _execute_isolated(BASE_SCHEMA_SQL, label="base schema")
+
+    # 3. AURORA tables. These are plain CREATE TABLE statements that work
+    #    even without TimescaleDB — promotion to hypertable happens in
+    #    phase 4 only when the extension is available.
+    await _execute_isolated(HYPERTABLE_DDL, label="hypertable DDL")
+
+    # 4. Hypertable + compression policies. Skip when timescaledb wasn't
+    #    loaded; the regular tables from step 3 will still serve audit
+    #    log reads (just without time-series partitioning).
+    if timescale_available:
+        await _execute_isolated(HYPERTABLE_POLICIES, label="hypertable policies")
 
     logger.info(
-        "Postgres schema ready (base + hypertables%s)",
-        " + timescale" if timescale_available else "",
+        "Postgres schema ready (base + AURORA tables%s)",
+        " + timescale hypertables" if timescale_available else "",
     )
