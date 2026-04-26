@@ -77,10 +77,10 @@ export default function IntelligencePanel() {
       actions={
         <div className="flex gap-2 text-[10px] uppercase tracking-widest">
           {[
-            ["regime", "REGIME"],
-            ["fragility", "FRAG"],
-            ["flows", "FLOWS"],
-            ["rotation", "ROT"],
+            ["regime", t("p.intel.tabs.regime")],
+            ["fragility", t("p.intel.tabs.fragility")],
+            ["flows", t("p.intel.tabs.flows")],
+            ["rotation", t("p.intel.tabs.rotation")],
           ].map(([k, label]) => (
             <button
               key={k}
@@ -94,22 +94,22 @@ export default function IntelligencePanel() {
       }
     >
       {loading ? (
-        <div className="text-terminal-muted">Loading intelligence…</div>
+        <div className="text-terminal-muted">{t("p.intel.loading")}</div>
       ) : tab === "regime" ? (
-        <RegimeTab regime={regime} />
+        <RegimeTab regime={regime} t={t} />
       ) : tab === "fragility" ? (
-        <FragilityTab fragility={fragility} pendingOrders={pendingOrders} />
+        <FragilityTab fragility={fragility} pendingOrders={pendingOrders} t={t} />
       ) : tab === "flows" ? (
-        <FlowsTab flows={flows} />
+        <FlowsTab flows={flows} t={t} />
       ) : (
-        <RotationTab rotation={rotation} />
+        <RotationTab rotation={rotation} t={t} />
       )}
     </Panel>
   );
 }
 
-function RegimeTab({ regime }) {
-  if (!regime) return <div className="text-terminal-muted">Regime data unavailable.</div>;
+function RegimeTab({ regime, t }) {
+  if (!regime) return <div className="text-terminal-muted">{t("p.intel.regime.unavail")}</div>;
   const cls = REGIME_COLORS[regime.regime] || REGIME_COLORS.NEUTRAL;
   return (
     <div>
@@ -117,9 +117,11 @@ function RegimeTab({ regime }) {
         className={`mb-3 inline-flex items-center gap-3 rounded border px-4 py-2 text-lg font-bold uppercase tracking-widest ${cls}`}
       >
         {regime.regime?.replaceAll("_", " ") || "—"}
-        <span className="text-xs opacity-70">conf {pct(regime.confidence, 0)}</span>
+        <span className="text-xs opacity-70">{t("p.intel.regime.conf")} {pct(regime.confidence, 0)}</span>
       </div>
-      <div className="mb-3 text-[10px] uppercase tracking-widest text-terminal-muted">Contributing Factors</div>
+      <div className="mb-3 text-[10px] uppercase tracking-widest text-terminal-muted">
+        {t("p.intel.regime.contributing")}
+      </div>
       <ul className="space-y-1 text-[12px]">
         {(regime.contributing_factors || []).map((f, i) => (
           <li key={i} className="text-terminal-text">
@@ -139,21 +141,17 @@ function RegimeTab({ regime }) {
   );
 }
 
-function FragilityTab({ fragility, pendingOrders = [] }) {
-  if (!fragility) return <div className="text-terminal-muted">Fragility data unavailable.</div>;
+function FragilityTab({ fragility, pendingOrders = [], t }) {
+  if (!fragility) return <div className="text-terminal-muted">{t("p.intel.frag.unavail")}</div>;
   const positions = fragility.positions || [];
   if (positions.length === 0) {
     if (pendingOrders.length > 0) {
+      const key = pendingOrders.length === 1 ? "p.intel.frag.pending" : "p.intel.frag.pending_plural";
       return (
         <div className="flex flex-col gap-2 text-[12px]">
-          <div className="text-terminal-amber">
-            {pendingOrders.length} order{pendingOrders.length === 1 ? "" : "s"} pending fill.
-          </div>
+          <div className="text-terminal-amber">{t(key, { n: pendingOrders.length })}</div>
           <div className="text-terminal-muted leading-relaxed">
-            Orders submitted outside market hours stay <span className="text-terminal-text">accepted</span>
-            {" "}and fill at the next session open. Fragility scores will compute
-            against your filled positions automatically. Current regime:
-            {" "}<span className="text-terminal-text">{fragility.regime || "—"}</span>.
+            {t("p.intel.frag.pending_msg", { regime: fragility.regime || "—" })}
           </div>
           <ul className="mt-1 text-[11px] text-terminal-text">
             {pendingOrders.map((o) => (
@@ -167,15 +165,9 @@ function FragilityTab({ fragility, pendingOrders = [] }) {
     }
     return (
       <div className="flex flex-col gap-2 text-[12px]">
-        <div className="text-terminal-amber">No open positions.</div>
+        <div className="text-terminal-amber">{t("p.intel.frag.empty_head")}</div>
         <div className="text-terminal-muted leading-relaxed">
-          Fragility is a per-position score blending volatility, drawdown, VIX
-          correlation, beta, and sector regime sensitivity. Open at least one
-          paper position via <span className="text-terminal-text">TRADE</span>{" "}
-          (mnemonic <span className="text-terminal-amber">TRADE</span> or{" "}
-          <span className="text-terminal-amber">BUY</span>) and the score
-          will populate. Current regime:{" "}
-          <span className="text-terminal-text">{fragility.regime || "—"}</span>.
+          {t("p.intel.frag.empty_msg", { regime: fragility.regime || "—" })}
         </div>
       </div>
     );
@@ -184,12 +176,12 @@ function FragilityTab({ fragility, pendingOrders = [] }) {
   return (
     <div>
       <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-        Portfolio Fragility — current regime: {fragility.regime || "—"}
+        {t("p.intel.frag.portfolio_head", { regime: fragility.regime || "—" })}
       </div>
       <div className="mb-3">
         <div className="flex items-baseline gap-3">
           <span className="text-2xl font-bold text-terminal-amber">{score.toFixed(1)}</span>
-          <span className="text-[10px] text-terminal-muted">0 = robust · 100 = extremely fragile</span>
+          <span className="text-[10px] text-terminal-muted">{t("p.intel.frag.scale")}</span>
         </div>
         <div className="mt-1 h-2 w-full bg-terminal-border">
           <div
@@ -201,13 +193,13 @@ function FragilityTab({ fragility, pendingOrders = [] }) {
       <table className="w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">SYM</th>
-            <th className="text-right">SCORE</th>
-            <th className="text-right">VOL%ile</th>
-            <th className="text-right">DD</th>
-            <th className="text-right">βVIX</th>
-            <th className="text-right">β</th>
-            <th className="text-left pl-2">FLAG</th>
+            <th className="text-left">{t("p.intel.frag.cols.sym")}</th>
+            <th className="text-right">{t("p.intel.frag.cols.score")}</th>
+            <th className="text-right">{t("p.intel.frag.cols.vol")}</th>
+            <th className="text-right">{t("p.intel.frag.cols.dd")}</th>
+            <th className="text-right">{t("p.intel.frag.cols.bvix")}</th>
+            <th className="text-right">{t("p.intel.frag.cols.beta")}</th>
+            <th className="text-left pl-2">{t("p.intel.frag.cols.flag")}</th>
           </tr>
         </thead>
         <tbody>
@@ -230,7 +222,7 @@ function FragilityTab({ fragility, pendingOrders = [] }) {
                 {p.components?.beta != null ? p.components.beta.toFixed(2) : "—"}
               </td>
               <td className="pl-2">
-                {p.high_risk ? <span className="text-terminal-red">HIGH RISK</span> : <span className="text-terminal-muted">—</span>}
+                {p.high_risk ? <span className="text-terminal-red">{t("p.intel.frag.high_risk")}</span> : <span className="text-terminal-muted">—</span>}
               </td>
             </tr>
           ))}
@@ -240,11 +232,13 @@ function FragilityTab({ fragility, pendingOrders = [] }) {
   );
 }
 
-function FlowsTab({ flows }) {
-  if (!flows) return <div className="text-terminal-muted">Flows data unavailable.</div>;
+function FlowsTab({ flows, t }) {
+  if (!flows) return <div className="text-terminal-muted">{t("p.intel.flows.unavail")}</div>;
   return (
     <div>
-      <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">Sector Flows (3M relative to SPY)</div>
+      <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">
+        {t("p.intel.flows.sec_head")}
+      </div>
       <div className="grid grid-cols-2 gap-1 text-[11px]">
         {(flows.sector_flows || []).map((f) => {
           const intensity = Math.min(1, Math.abs(f.relative_to_spy) / 0.1);
@@ -270,14 +264,16 @@ function FlowsTab({ flows }) {
         })}
       </div>
 
-      <div className="mt-3 mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">Top 13F Filers</div>
+      <div className="mt-3 mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+        {t("p.intel.flows.filers_head")}
+      </div>
       <table className="w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">FILER</th>
-            <th className="text-left">CIK</th>
-            <th className="text-left">LATEST 13F</th>
-            <th className="text-right">QTRS</th>
+            <th className="text-left">{t("p.intel.flows.cols.filer")}</th>
+            <th className="text-left">{t("p.intel.flows.cols.cik")}</th>
+            <th className="text-left">{t("p.intel.flows.cols.latest")}</th>
+            <th className="text-right">{t("p.intel.flows.cols.quarters")}</th>
           </tr>
         </thead>
         <tbody>
@@ -296,25 +292,29 @@ function FlowsTab({ flows }) {
   );
 }
 
-function RotationTab({ rotation }) {
-  if (!rotation) return <div className="text-terminal-muted">Rotation data unavailable.</div>;
+function RotationTab({ rotation, t }) {
+  if (!rotation) return <div className="text-terminal-muted">{t("p.intel.rot.unavail")}</div>;
   return (
     <div>
       <div className="mb-2 flex items-center gap-3">
-        <span className="text-[10px] uppercase tracking-widest text-terminal-muted">Cycle Phase</span>
+        <span className="text-[10px] uppercase tracking-widest text-terminal-muted">
+          {t("p.intel.rot.cycle_phase")}
+        </span>
         <span className="rounded border border-terminal-amber px-2 py-0.5 text-[12px] font-bold uppercase tracking-widest text-terminal-amber">
           {rotation.phase}
         </span>
-        <span className="text-[10px] text-terminal-muted">SPY 30d {pct(rotation.spy_return_30d)}</span>
+        <span className="text-[10px] text-terminal-muted">
+          {t("p.intel.rot.spy30", { ret: pct(rotation.spy_return_30d) })}
+        </span>
       </div>
       <table className="w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">ETF</th>
-            <th className="text-left">SECTOR</th>
-            <th className="text-right">30D</th>
-            <th className="text-right">RS vs SPY</th>
-            <th className="text-left pl-2">STATUS</th>
+            <th className="text-left">{t("p.intel.rot.cols.etf")}</th>
+            <th className="text-left">{t("p.intel.rot.cols.sector")}</th>
+            <th className="text-right">{t("p.intel.rot.cols.r30")}</th>
+            <th className="text-right">{t("p.intel.rot.cols.rs")}</th>
+            <th className="text-left pl-2">{t("p.intel.rot.cols.status")}</th>
           </tr>
         </thead>
         <tbody>

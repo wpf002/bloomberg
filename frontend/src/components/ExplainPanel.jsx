@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 export default function ExplainPanel({ symbol }) {
+  const { t } = useTranslation();
   const [state, setState] = useState({ loading: false, data: null, error: null });
 
   const fetchBrief = useCallback(async () => {
@@ -27,7 +29,7 @@ export default function ExplainPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Explain — ${symbol ?? "—"}`}
+      title={t("p.explain.title", { sym: symbol ?? "—" })}
       accent="amber"
       actions={
         <button
@@ -35,50 +37,40 @@ export default function ExplainPanel({ symbol }) {
           disabled={!symbol || state.loading}
           className="border border-terminal-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
         >
-          {state.loading ? "…" : state.data ? "Refresh" : "Run briefing"}
+          {state.loading
+            ? t("p.explain.busy")
+            : state.data
+              ? t("p.common.refresh")
+              : t("p.explain.run")}
         </button>
       }
     >
       {credsMissing ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          <p className="mb-2 text-terminal-amber">LLM briefings need Anthropic.</p>
-          <p>
-            Add <code className="text-terminal-green">ANTHROPIC_API_KEY</code> to{" "}
-            <code className="text-terminal-green">.env</code> (get one at{" "}
-            <a
-              href="https://console.anthropic.com/settings/keys"
-              className="text-terminal-amber underline"
-              target="_blank"
-              rel="noreferrer"
-            >
-              console.anthropic.com
-            </a>
-            ) and restart the backend.
-          </p>
+          <p className="mb-2 text-terminal-amber">{t("p.explain.need_anthropic_head")}</p>
+          <p>{t("p.explain.need_anthropic_msg")}</p>
         </div>
       ) : state.error ? (
         <div className="text-terminal-red">
           {String(state.error.detail || state.error.message || state.error)}
         </div>
       ) : state.loading ? (
-        <div className="text-terminal-muted">
-          Synthesizing briefing from fundamentals, news, and filings…
-        </div>
+        <div className="text-terminal-muted">{t("p.explain.synth")}</div>
       ) : state.data ? (
         <div>
           <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-terminal-text">
             {state.data.body}
           </pre>
           <div className="mt-3 border-t border-terminal-border/60 pt-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-            Model: {state.data.model} · {new Date(state.data.as_of).toLocaleString()} · cached 30m
+            {t("p.explain.meta", {
+              model: state.data.model,
+              time: new Date(state.data.as_of).toLocaleString(),
+            })}
           </div>
         </div>
       ) : (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          Press <span className="text-terminal-amber">Run briefing</span> to generate
-          a terse analyst summary for{" "}
-          <span className="text-terminal-amber">{symbol ?? "—"}</span> from current
-          fundamentals, last-7-day news, and recent SEC filings.
+          {t("p.explain.hint", { sym: symbol ?? "—" })}
         </div>
       )}
     </Panel>

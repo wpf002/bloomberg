@@ -1,10 +1,8 @@
 import { useState } from "react";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
-// Render a Meilisearch _formatted highlight string (which includes <mark>
-// tags) as React nodes. We split on the marker rather than dangerouslySet
-// HTML so an attacker-shaped EDGAR filing can't inject script tags.
 function HighlightedText({ html, className }) {
   if (!html) return null;
   const parts = String(html).split(/(<mark>.*?<\/mark>)/g);
@@ -26,6 +24,7 @@ function HighlightedText({ html, className }) {
 }
 
 export default function FilingsSearchPanel({ symbol }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [filterToActive, setFilterToActive] = useState(false);
   const [esgOnly, setEsgOnly] = useState(false);
@@ -73,11 +72,11 @@ export default function FilingsSearchPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Filings Search — ${symbol ?? ""}`}
+      title={t("p.search.title", { sym: symbol ?? "" })}
       accent="blue"
       actions={
         <span className="text-terminal-muted">
-          {hits?.length != null ? `${hits.length} hits` : ""}
+          {hits?.length != null ? t("p.search.hits", { count: hits.length }) : ""}
         </span>
       }
     >
@@ -86,7 +85,7 @@ export default function FilingsSearchPanel({ symbol }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder='e.g. "supply chain risk", "regulatory action", "share repurchase"'
+            placeholder={t("p.search.placeholder")}
             className="flex-1 border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text focus:border-terminal-amber focus:outline-none"
           />
           <label className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-terminal-muted">
@@ -95,59 +94,55 @@ export default function FilingsSearchPanel({ symbol }) {
               checked={filterToActive}
               onChange={(e) => setFilterToActive(e.target.checked)}
             />
-            Limit to {symbol}
+            {t("p.search.limit_to", { sym: symbol })}
           </label>
           <label
             className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-terminal-muted"
-            title="Restrict to filings that typically carry ESG/climate disclosures (10-K, 8-K, DEF 14A, S-K)"
+            title={t("p.search.esg_title")}
           >
             <input
               type="checkbox"
               checked={esgOnly}
               onChange={(e) => setEsgOnly(e.target.checked)}
             />
-            ESG only
+            {t("p.search.esg_only")}
           </label>
           <button
             type="submit"
             disabled={loading || !query.trim()}
             className="border border-terminal-amber px-3 py-0.5 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
           >
-            {loading ? "Searching…" : "Search"}
+            {loading ? t("p.common.searching") : t("p.common.search")}
           </button>
         </form>
         <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-          <span>Index:</span>
+          <span>{t("p.search.index_label")}</span>
           <button
             onClick={() => reindex(false)}
             disabled={indexing || !symbol}
             className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
           >
-            {indexing ? "…" : `Metadata only (${symbol ?? "—"})`}
+            {indexing ? "…" : t("p.search.index_meta", { sym: symbol ?? "—" })}
           </button>
           <button
             onClick={() => reindex(true)}
             disabled={indexing || !symbol}
             className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
           >
-            {indexing ? "…" : `Full text (${symbol ?? "—"})`}
+            {indexing ? "…" : t("p.search.index_full", { sym: symbol ?? "—" })}
           </button>
           {indexResult ? (
             <span className="text-terminal-green">
-              indexed {indexResult.indexed} · bodies {indexResult.bodies_indexed}
+              {t("p.search.indexed", { indexed: indexResult.indexed, bodies: indexResult.bodies_indexed })}
             </span>
           ) : null}
           {error ? <span className="text-terminal-red">{error}</span> : null}
         </div>
         <div className="min-h-0 flex-1 overflow-auto border border-terminal-border bg-terminal-bg">
           {hits === null ? (
-            <div className="p-3 text-xs text-terminal-muted">
-              Index a symbol's filings, then search the corpus. Full-text mode
-              fetches the primary document from EDGAR (slower, per-filing) and
-              indexes the body so phrase searches work.
-            </div>
+            <div className="p-3 text-xs text-terminal-muted">{t("p.search.empty")}</div>
           ) : hits.length === 0 ? (
-            <div className="p-3 text-xs text-terminal-muted">No hits.</div>
+            <div className="p-3 text-xs text-terminal-muted">{t("p.search.none")}</div>
           ) : (
             <ul className="divide-y divide-terminal-border/60">
               {hits.map((h) => {

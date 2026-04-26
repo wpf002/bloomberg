@@ -4,6 +4,7 @@ import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import useStream from "../hooks/useStream.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 const FIELDS = ["price", "change_percent", "day_high", "day_low"];
 const OPS = [">", "<", ">=", "<=", "=="];
@@ -17,6 +18,7 @@ function fmt(value, digits = 2) {
 }
 
 export default function AlertsPanel({ symbol }) {
+  const { t } = useTranslation();
   const [field, setField] = useState("price");
   const [op, setOp] = useState(">");
   const [value, setValue] = useState("");
@@ -29,7 +31,6 @@ export default function AlertsPanel({ symbol }) {
   const rulesQ = usePolling(() => api.alertRules(), 0, [refreshKey]);
   const eventsQ = usePolling(() => api.alertEvents(50), 30_000, [refreshKey]);
 
-  // Live tail of fired events. Prepended to whatever was on the server.
   const stream = useStream("/api/ws/alerts", {
     onMessage: (msg) => {
       if (!msg || msg.type === "ready") return;
@@ -74,7 +75,6 @@ export default function AlertsPanel({ symbol }) {
 
   const rules = rulesQ.data || [];
   const persisted = eventsQ.data || [];
-  // Merge live + persisted, dedupe on rule_id+matched_at, newest first.
   const mergedEvents = [...liveEvents, ...persisted]
     .filter(
       (e, i, arr) =>
@@ -84,11 +84,11 @@ export default function AlertsPanel({ symbol }) {
 
   return (
     <Panel
-      title="Alerts"
+      title={t("p.alerts.title")}
       accent="amber"
       actions={
         <span className="tabular text-terminal-muted">
-          WS:{" "}
+          {t("p.alerts.ws")}{" "}
           <span
             className={
               stream.status === "open"
@@ -100,13 +100,13 @@ export default function AlertsPanel({ symbol }) {
           >
             {stream.status}
           </span>{" "}
-          · {rules.length} rules
+          · {t("p.alerts.rules_count", { count: rules.length })}
         </span>
       }
     >
       <form onSubmit={submit} className="grid grid-cols-12 gap-1 text-xs">
         <div className="col-span-12 text-[10px] uppercase tracking-widest text-terminal-muted">
-          New rule for {symbol ?? "—"}
+          {t("p.alerts.new_for", { sym: symbol ?? "—" })}
         </div>
         <select
           value={field}
@@ -133,14 +133,14 @@ export default function AlertsPanel({ symbol }) {
         <input
           type="number"
           step="0.0001"
-          placeholder="value"
+          placeholder={t("p.alerts.placeholder_value")}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           required
           className="col-span-3 border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
         />
         <input
-          placeholder="label"
+          placeholder={t("p.alerts.placeholder_label")}
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="col-span-3 border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
@@ -150,7 +150,7 @@ export default function AlertsPanel({ symbol }) {
           disabled={creating || !symbol || value === ""}
           className="col-span-12 mt-1 border border-terminal-amber px-2 py-1 uppercase tracking-wider text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
         >
-          {creating ? "Creating…" : `Add rule for ${symbol ?? "—"}`}
+          {creating ? t("p.common.creating") : t("p.alerts.add_for", { sym: symbol ?? "—" })}
         </button>
       </form>
       {createErr && (
@@ -159,10 +159,10 @@ export default function AlertsPanel({ symbol }) {
 
       <div className="mt-3">
         <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
-          Active rules
+          {t("p.alerts.active_rules")}
         </div>
         {rules.length === 0 ? (
-          <div className="text-xs text-terminal-muted">No rules yet.</div>
+          <div className="text-xs text-terminal-muted">{t("p.alerts.none_yet")}</div>
         ) : (
           <ul className="space-y-1">
             {rules.map((r) => (
@@ -191,10 +191,10 @@ export default function AlertsPanel({ symbol }) {
 
       <div className="mt-3">
         <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
-          Recent fires
+          {t("p.alerts.recent")}
         </div>
         {mergedEvents.length === 0 ? (
-          <div className="text-xs text-terminal-muted">Nothing fired yet.</div>
+          <div className="text-xs text-terminal-muted">{t("p.alerts.none_fired")}</div>
         ) : (
           <ul className="space-y-1">
             {mergedEvents.slice(0, 12).map((e) => (

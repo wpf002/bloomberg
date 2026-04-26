@@ -2,6 +2,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -18,31 +19,18 @@ function signed(value, digits = 2) {
 }
 
 function EmptyState() {
+  const { t } = useTranslation();
   return (
     <div className="text-xs leading-relaxed text-terminal-muted">
-      <p className="mb-2 text-terminal-amber">No Alpaca paper account connected.</p>
-      <p className="mb-2">
-        Add <code className="text-terminal-green">ALPACA_API_KEY</code> and{" "}
-        <code className="text-terminal-green">ALPACA_API_SECRET</code> to{" "}
-        <code className="text-terminal-green">.env</code> and restart the
-        backend to see live positions.
-      </p>
-      <p>
-        Free paper account:{" "}
-        <a
-          href="https://alpaca.markets/signup"
-          className="text-terminal-amber underline"
-          target="_blank"
-          rel="noreferrer"
-        >
-          alpaca.markets/signup
-        </a>
-      </p>
+      <p className="mb-2 text-terminal-amber">{t("p.portfolio.no_alpaca_head")}</p>
+      <p className="mb-2">{t("p.portfolio.no_alpaca_msg")}</p>
+      <p>{t("p.portfolio.free_paper")}</p>
     </div>
   );
 }
 
 export default function Portfolio() {
+  const { t } = useTranslation();
   const accountQ = usePolling(() => api.portfolioAccount(), 15_000, []);
   const positionsQ = usePolling(() => api.portfolioPositions(), 15_000, []);
 
@@ -68,7 +56,7 @@ export default function Portfolio() {
 
   return (
     <Panel
-      title="Portfolio"
+      title={t("p.portfolio.title")}
       accent="amber"
       actions={
         account ? (
@@ -88,7 +76,7 @@ export default function Portfolio() {
       {credsMissing ? (
         <EmptyState />
       ) : loading ? (
-        <div className="text-terminal-muted">Loading positions…</div>
+        <div className="text-terminal-muted">{t("p.portfolio.loading")}</div>
       ) : otherError ? (
         <div className="text-terminal-red">
           {String(otherError.detail || otherError.message || otherError)}
@@ -97,12 +85,16 @@ export default function Portfolio() {
         <div className="space-y-3">
           {account && (
             <div className="grid grid-cols-2 gap-2 text-xs tabular">
-              <Stat label="CASH" value={fmt(account.cash)} />
-              <Stat label="BUY PWR" value={fmt(account.buying_power)} title="Buying power" />
-              <Stat label="EQUITY" value={fmt(account.equity)} />
+              <Stat label={t("p.portfolio.stats.cash")} value={fmt(account.cash)} />
               <Stat
-                label="DAY TR"
-                title="Day trades (pattern day trader if 4+ in 5 biz days)"
+                label={t("p.portfolio.stats.buy_pwr")}
+                value={fmt(account.buying_power)}
+                title={t("p.portfolio.buy_pwr_title")}
+              />
+              <Stat label={t("p.portfolio.stats.equity")} value={fmt(account.equity)} />
+              <Stat
+                label={t("p.portfolio.stats.day_tr")}
+                title={t("p.portfolio.day_tr_title")}
                 value={`${account.daytrade_count}${
                   account.pattern_day_trader ? " PDT" : ""
                 }`}
@@ -111,20 +103,20 @@ export default function Portfolio() {
           )}
           {positions.length === 0 ? (
             <div className="text-terminal-muted text-xs">
-              No open positions.
+              {t("p.portfolio.none")}
             </div>
           ) : (
             <div className="-mx-3 overflow-x-auto px-3">
               <table className="w-full min-w-[480px] text-xs tabular">
                 <thead>
                   <tr className="text-left text-terminal-muted">
-                    <th className="py-1 pr-2 whitespace-nowrap">SYM</th>
-                    <th className="py-1 pr-2 text-right whitespace-nowrap">QTY</th>
-                    <th className="py-1 pr-2 text-right whitespace-nowrap">AVG</th>
-                    <th className="py-1 pr-2 text-right whitespace-nowrap">LAST</th>
-                    <th className="py-1 pr-2 text-right whitespace-nowrap">MKT VAL</th>
-                    <th className="py-1 pr-2 text-right whitespace-nowrap">DAY</th>
-                    <th className="py-1 text-right whitespace-nowrap">UNR P/L</th>
+                    <th className="py-1 pr-2 whitespace-nowrap">{t("p.portfolio.cols.sym")}</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">{t("p.portfolio.cols.qty")}</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">{t("p.portfolio.cols.avg")}</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">{t("p.portfolio.cols.last")}</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">{t("p.portfolio.cols.mkt_val")}</th>
+                    <th className="py-1 pr-2 text-right whitespace-nowrap">{t("p.portfolio.cols.day")}</th>
+                    <th className="py-1 text-right whitespace-nowrap">{t("p.portfolio.cols.unr_pl")}</th>
                   </tr>
                 </thead>
                 <tbody>

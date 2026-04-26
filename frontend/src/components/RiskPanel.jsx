@@ -77,13 +77,14 @@ export default function RiskPanel() {
           ),
         );
         if (!e && !c && !d && !v && !s) {
-          setError("All risk endpoints failed — Alpaca credentials may be missing.");
+          setError(t("p.risk.all_failed"));
         }
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -93,11 +94,11 @@ export default function RiskPanel() {
       actions={
         <div className="flex gap-2 text-[10px] uppercase tracking-widest">
           {[
-            ["summary", "VaR/CVaR"],
-            ["exposure", "EXPO"],
-            ["correlation", "CORR"],
-            ["drawdown", "DD"],
-            ["stress", "STRESS"],
+            ["summary", t("p.risk.tabs.summary")],
+            ["exposure", t("p.risk.tabs.exposure")],
+            ["correlation", t("p.risk.tabs.correlation")],
+            ["drawdown", t("p.risk.tabs.drawdown")],
+            ["stress", t("p.risk.tabs.stress")],
           ].map(([k, label]) => (
             <button
               key={k}
@@ -111,21 +112,21 @@ export default function RiskPanel() {
       }
     >
       {loading ? (
-        <div className="text-terminal-muted">Loading risk analytics…</div>
+        <div className="text-terminal-muted">{t("p.risk.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{error}</div>
       ) : isPortfolioEmpty(exposure, varData) ? (
-        <EmptyState pendingOrders={pendingOrders} />
+        <EmptyState pendingOrders={pendingOrders} t={t} />
       ) : tab === "summary" ? (
-        <SummaryTab varData={varData} drawdown={drawdown} />
+        <SummaryTab varData={varData} drawdown={drawdown} t={t} />
       ) : tab === "exposure" ? (
-        <ExposureTab exposure={exposure} />
+        <ExposureTab exposure={exposure} t={t} />
       ) : tab === "correlation" ? (
-        <CorrelationTab correlation={correlation} />
+        <CorrelationTab correlation={correlation} t={t} />
       ) : tab === "drawdown" ? (
-        <DrawdownTab drawdown={drawdown} />
+        <DrawdownTab drawdown={drawdown} t={t} />
       ) : (
-        <StressTab stress={stress} />
+        <StressTab stress={stress} t={t} />
       )}
     </Panel>
   );
@@ -137,27 +138,24 @@ function isPortfolioEmpty(exposure, varData) {
   return noExposure && noObservations;
 }
 
-function EmptyState({ pendingOrders = [] }) {
+function EmptyState({ pendingOrders = [], t }) {
   if (pendingOrders.length > 0) {
+    const key = pendingOrders.length === 1 ? "p.risk.empty_pending" : "p.risk.empty_pending_plural";
     return (
       <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
-        <div className="text-terminal-amber">
-          {pendingOrders.length} order{pendingOrders.length === 1 ? "" : "s"} pending fill.
-        </div>
+        <div className="text-terminal-amber">{t(key, { n: pendingOrders.length })}</div>
         <div className="text-terminal-muted leading-relaxed">
-          Orders submitted outside market hours stay in <span className="text-terminal-text">accepted</span>
-          {" "}status and fill at the next session open (Mon–Fri 09:30 ET for regular hours).
-          Risk metrics will populate automatically once your fills land. Pending:
+          {t("p.risk.empty_pending_msg")}
         </div>
         <table className="w-full text-[11px] mt-1">
           <thead className="text-terminal-muted">
             <tr>
-              <th className="text-left">SYM</th>
-              <th className="text-left">SIDE</th>
-              <th className="text-right">QTY</th>
-              <th className="text-left pl-2">TYPE</th>
-              <th className="text-left pl-2">SUBMITTED</th>
-              <th className="text-left pl-2">STATUS</th>
+              <th className="text-left">{t("p.risk.cols_pending.sym")}</th>
+              <th className="text-left">{t("p.risk.cols_pending.side")}</th>
+              <th className="text-right">{t("p.risk.cols_pending.qty")}</th>
+              <th className="text-left pl-2">{t("p.risk.cols_pending.type")}</th>
+              <th className="text-left pl-2">{t("p.risk.cols_pending.submitted")}</th>
+              <th className="text-left pl-2">{t("p.risk.cols_pending.status")}</th>
             </tr>
           </thead>
           <tbody>
@@ -182,67 +180,60 @@ function EmptyState({ pendingOrders = [] }) {
   }
   return (
     <div className="flex h-full flex-col items-start justify-start gap-2 text-[12px]">
-      <div className="text-terminal-amber">Your Alpaca paper account holds 0 positions.</div>
-      <div className="text-terminal-muted leading-relaxed">
-        VaR, CVaR, drawdown, correlation, and stress tests are computed against
-        your live holdings. With 100% cash there's nothing to compute against —
-        this isn't an error, just an empty book.
-        {" "}Place a paper trade from the <span className="text-terminal-text">TRADE</span>
-        {" "}panel (mnemonic <span className="text-terminal-amber">TRADE</span> or
-        {" "}<span className="text-terminal-amber">BUY</span>) and these tabs
-        will populate automatically on the next refresh.
-      </div>
+      <div className="text-terminal-amber">{t("p.risk.empty_head")}</div>
+      <div className="text-terminal-muted leading-relaxed">{t("p.risk.empty_msg")}</div>
     </div>
   );
 }
 
-function SummaryTab({ varData, drawdown }) {
+function SummaryTab({ varData, drawdown, t }) {
   const v = varData || {};
   const port = drawdown?.portfolio || {};
   return (
     <div className="grid grid-cols-2 gap-3 text-[12px]">
       <div className="border border-terminal-border bg-terminal-panelAlt p-2">
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">VaR 95%</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">{t("p.risk.summary.var95")}</div>
         <div className="text-terminal-red text-lg">{pct(v.var_95)}</div>
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted mt-1">CVaR 95%</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted mt-1">{t("p.risk.summary.cvar95")}</div>
         <div className="text-terminal-red">{pct(v.cvar_95)}</div>
       </div>
       <div className="border border-terminal-border bg-terminal-panelAlt p-2">
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">VaR 99%</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">{t("p.risk.summary.var99")}</div>
         <div className="text-terminal-red text-lg">{pct(v.var_99)}</div>
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted mt-1">CVaR 99%</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted mt-1">{t("p.risk.summary.cvar99")}</div>
         <div className="text-terminal-red">{pct(v.cvar_99)}</div>
       </div>
       <div className="border border-terminal-border bg-terminal-panelAlt p-2">
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">Max Drawdown</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">{t("p.risk.summary.max_dd")}</div>
         <div className="text-terminal-red text-lg">{pct(port.max_drawdown)}</div>
       </div>
       <div className="border border-terminal-border bg-terminal-panelAlt p-2">
-        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">Current Drawdown</div>
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">{t("p.risk.summary.curr_dd")}</div>
         <div className="text-terminal-amber text-lg">{pct(port.current_drawdown)}</div>
-        <div className="text-[10px] text-terminal-muted">Duration: {port.duration_days ?? "—"} d</div>
+        <div className="text-[10px] text-terminal-muted">
+          {t("p.risk.summary.duration", { n: port.duration_days ?? "—" })}
+        </div>
       </div>
       <div className="col-span-2 text-[10px] text-terminal-muted">
-        Method: historical simulation, observations: {v.observations ?? 0} trading days · daily portfolio
-        return σ {pct(v.stdev_daily_return, 3)}
+        {t("p.risk.summary.method", { n: v.observations ?? 0, sigma: pct(v.stdev_daily_return, 3) })}
       </div>
     </div>
   );
 }
 
-function ExposureTab({ exposure }) {
-  if (!exposure || !exposure.sectors?.length) return <div className="text-terminal-muted">No positions or sector data.</div>;
+function ExposureTab({ exposure, t }) {
+  if (!exposure || !exposure.sectors?.length) return <div className="text-terminal-muted">{t("p.risk.expo.none")}</div>;
   return (
     <div>
       <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-        Total: {dollars(exposure.total_value)}
+        {t("p.risk.expo.total", { value: dollars(exposure.total_value) })}
       </div>
       <table className="w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">SECTOR</th>
-            <th className="text-right">VALUE</th>
-            <th className="text-right">WEIGHT</th>
+            <th className="text-left">{t("p.risk.expo.cols.sector")}</th>
+            <th className="text-right">{t("p.risk.expo.cols.value")}</th>
+            <th className="text-right">{t("p.risk.expo.cols.weight")}</th>
           </tr>
         </thead>
         <tbody>
@@ -259,9 +250,9 @@ function ExposureTab({ exposure }) {
   );
 }
 
-function CorrelationTab({ correlation }) {
+function CorrelationTab({ correlation, t }) {
   if (!correlation || !correlation.symbols?.length) {
-    return <div className="text-terminal-muted">Need ≥2 holdings with overlapping history.</div>;
+    return <div className="text-terminal-muted">{t("p.risk.corr.need")}</div>;
   }
   const { symbols, matrix } = correlation;
   return (
@@ -297,18 +288,18 @@ function CorrelationTab({ correlation }) {
         </tbody>
       </table>
       <div className="mt-2 text-[10px] text-terminal-muted">
-        90-day daily-return correlation · {correlation.observations} obs.
+        {t("p.risk.corr.footer", { n: correlation.observations })}
       </div>
     </div>
   );
 }
 
-function DrawdownTab({ drawdown }) {
-  if (!drawdown) return <div className="text-terminal-muted">No drawdown data.</div>;
+function DrawdownTab({ drawdown, t }) {
+  if (!drawdown) return <div className="text-terminal-muted">{t("p.risk.dd.none")}</div>;
   const port = drawdown.portfolio || {};
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-widest text-terminal-muted">Portfolio NAV vs drawdown</div>
+      <div className="text-[10px] uppercase tracking-widest text-terminal-muted">{t("p.risk.dd.head")}</div>
       <div style={{ height: 140 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={port.nav || []}>
@@ -337,10 +328,10 @@ function DrawdownTab({ drawdown }) {
       <table className="mt-2 w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">SYM</th>
-            <th className="text-right">MAX DD</th>
-            <th className="text-right">CURR DD</th>
-            <th className="text-right">DAYS</th>
+            <th className="text-left">{t("p.risk.dd.cols.sym")}</th>
+            <th className="text-right">{t("p.risk.dd.cols.max_dd")}</th>
+            <th className="text-right">{t("p.risk.dd.cols.curr_dd")}</th>
+            <th className="text-right">{t("p.risk.dd.cols.days")}</th>
           </tr>
         </thead>
         <tbody>
@@ -358,21 +349,21 @@ function DrawdownTab({ drawdown }) {
   );
 }
 
-function StressTab({ stress }) {
+function StressTab({ stress, t }) {
   if (!stress || !stress.scenarios?.length)
-    return <div className="text-terminal-muted">No stress data.</div>;
+    return <div className="text-terminal-muted">{t("p.risk.stress.none")}</div>;
   return (
     <div>
       <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-        Current portfolio: {dollars(stress.current_value)}
+        {t("p.risk.stress.head", { value: dollars(stress.current_value) })}
       </div>
       <table className="w-full text-[11px]">
         <thead className="text-terminal-muted">
           <tr>
-            <th className="text-left">SCENARIO</th>
-            <th className="text-right">SPY</th>
-            <th className="text-right">PORT %</th>
-            <th className="text-right">PORT P/L</th>
+            <th className="text-left">{t("p.risk.stress.cols.scenario")}</th>
+            <th className="text-right">{t("p.risk.stress.cols.spy")}</th>
+            <th className="text-right">{t("p.risk.stress.cols.port_pct")}</th>
+            <th className="text-right">{t("p.risk.stress.cols.port_pl")}</th>
           </tr>
         </thead>
         <tbody>
@@ -394,9 +385,7 @@ function StressTab({ stress }) {
           ))}
         </tbody>
       </table>
-      <div className="mt-2 text-[10px] text-terminal-muted">
-        Stress = SPY historical path × position β · betas computed from 1y daily returns.
-      </div>
+      <div className="mt-2 text-[10px] text-terminal-muted">{t("p.risk.stress.footer")}</div>
     </div>
   );
 }

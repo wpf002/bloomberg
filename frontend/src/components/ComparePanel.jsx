@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
-// LLM responses occasionally arrive wrapped in ```json … ``` even when the
-// prompt forbids fences. Strip them defensively before parsing.
 function stripFences(s) {
   if (!s) return s;
   return s
@@ -25,11 +24,8 @@ function tryParse(body) {
 }
 
 export default function ComparePanel({ symbols }) {
+  const { t } = useTranslation();
   const a = symbols?.[0];
-  // B is owned locally so the user can change the comparison target
-  // inside the panel without going through the command bar. Initialised
-  // from the parent prop and re-synced when the parent changes it (so
-  // `AAPL NVDA COMPARE` from the command bar still works).
   const [b, setB] = useState(symbols?.[1] || "");
   const [bDraft, setBDraft] = useState(b);
   useEffect(() => {
@@ -43,9 +39,6 @@ export default function ComparePanel({ symbols }) {
   const [state, setState] = useState({ loading: false, data: null, error: null });
 
   const fetchCompare = useCallback(async () => {
-    // Pull the live input draft so users don't have to press Enter to "set"
-    // before clicking Run. The draft is committed to b before fetching so
-    // the title + cache key match what was actually compared.
     const target = (bDraft || b || "").trim().toUpperCase();
     if (!a || !target) return;
     if (target !== b) {
@@ -61,7 +54,6 @@ export default function ComparePanel({ symbols }) {
     }
   }, [a, b, bDraft]);
 
-  // Reset when the symbol pair changes; do not auto-fetch (LLM cost).
   useEffect(() => {
     setState({ loading: false, data: null, error: null });
   }, [a, b]);
@@ -84,7 +76,7 @@ export default function ComparePanel({ symbols }) {
 
   return (
     <Panel
-      title={`Compare — ${a ?? "?"} vs ${b || "?"}`}
+      title={t("p.compare.title", { a: a ?? "?", b: b || "?" })}
       accent="amber"
       actions={
         ready ? (
@@ -93,17 +85,13 @@ export default function ComparePanel({ symbols }) {
             disabled={state.loading}
             className="border border-terminal-border px-2 py-0.5 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
           >
-            {state.loading ? "…" : state.data ? "Refresh" : "Run comparison"}
+            {state.loading ? "…" : state.data ? t("p.common.refresh") : t("p.compare.run")}
           </button>
         ) : null
       }
     >
       {!a ? (
-        <div className="text-xs leading-relaxed text-terminal-muted">
-          Active symbol unset. Pick a stock from the watchlist or type{" "}
-          <span className="text-terminal-amber">{`<SYMBOL>`}</span> in the
-          command bar.
-        </div>
+        <div className="text-xs leading-relaxed text-terminal-muted">{t("p.compare.no_active")}</div>
       ) : (
         <>
           <form
@@ -113,7 +101,7 @@ export default function ComparePanel({ symbols }) {
             }}
             className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-widest text-terminal-muted"
           >
-            <span>vs</span>
+            <span>{t("p.compare.vs")}</span>
             <input
               value={bDraft}
               onChange={(e) => setBDraft(e.target.value.toUpperCase())}
@@ -124,25 +112,22 @@ export default function ComparePanel({ symbols }) {
               placeholder="SPY"
             />
             <span className="text-terminal-muted/70 normal-case tracking-normal text-[10px]">
-              press Enter to set, then Run comparison
+              {t("p.compare.enter_hint")}
             </span>
           </form>
         </>
       )}
       {ready && credsMissing ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          <p className="mb-2 text-terminal-amber">LLM comparison needs Anthropic.</p>
-          <p>
-            Add <code className="text-terminal-green">ANTHROPIC_API_KEY</code> to{" "}
-            <code className="text-terminal-green">.env</code> and restart.
-          </p>
+          <p className="mb-2 text-terminal-amber">{t("p.compare.need_anthropic_head")}</p>
+          <p>{t("p.compare.need_anthropic_msg")}</p>
         </div>
       ) : ready && state.error ? (
         <div className="text-terminal-red">
           {String(state.error.detail || state.error.message || state.error)}
         </div>
       ) : ready && state.loading ? (
-        <div className="text-terminal-muted">Synthesizing comparison…</div>
+        <div className="text-terminal-muted">{t("p.compare.synth")}</div>
       ) : ready && state.data ? (
         <div className="space-y-3">
           {parsed ? (
@@ -150,7 +135,7 @@ export default function ComparePanel({ symbols }) {
               <table className="w-full text-xs tabular">
                 <thead>
                   <tr className="border-b border-terminal-border/60 text-left text-[10px] uppercase tracking-widest text-terminal-muted">
-                    <th className="py-1 pr-2">Metric</th>
+                    <th className="py-1 pr-2">{t("p.compare.cols.metric")}</th>
                     <th className="py-1 pr-2 text-right text-terminal-amber">{a}</th>
                     <th className="py-1 text-right text-terminal-amber">{b}</th>
                   </tr>
@@ -173,29 +158,27 @@ export default function ComparePanel({ symbols }) {
               {parsed.qualitative && (
                 <div className="text-xs leading-relaxed text-terminal-text">
                   <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-muted">
-                    Read
+                    {t("p.compare.read")}
                   </div>
                   {parsed.qualitative}
                 </div>
               )}
             </>
           ) : (
-            // Legacy / unparseable response: render the cleaned body. Old
-            // cached entries from before the JSON contract land here.
             <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-terminal-text">
               {fallbackText}
             </pre>
           )}
           <div className="border-t border-terminal-border/60 pt-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-            Model: {state.data.model} · {new Date(state.data.as_of).toLocaleString()} · cached 30m
+            {t("p.compare.meta", {
+              model: state.data.model,
+              time: new Date(state.data.as_of).toLocaleString(),
+            })}
           </div>
         </div>
       ) : ready ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          Press <span className="text-terminal-amber">Run comparison</span> for
-          a side-by-side numeric + qualitative breakdown of{" "}
-          <span className="text-terminal-amber">{a}</span> vs{" "}
-          <span className="text-terminal-amber">{b}</span>.
+          {t("p.compare.hint", { a, b })}
         </div>
       ) : null}
     </Panel>

@@ -93,7 +93,7 @@ export default function ProvenancePanel({ symbol }) {
 
   return (
     <Panel
-      title={t("panels.provenance") || "Provenance"}
+      title={t("panels.provenance")}
       accent="blue"
       actions={
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest">
@@ -106,29 +106,29 @@ export default function ProvenancePanel({ symbol }) {
             onClick={() => setTab("records")}
             className={tab === "records" ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
           >
-            REC
+            {t("p.provenance.tabs.records")}
           </button>
           <button
             onClick={() => setTab("audit")}
             className={tab === "audit" ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
           >
-            AUDIT
+            {t("p.provenance.tabs.audit")}
           </button>
           <button
             onClick={() => setTab("snapshots")}
             className={tab === "snapshots" ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
           >
-            SNAP
+            {t("p.provenance.tabs.snap")}
           </button>
         </div>
       }
     >
       <div className="mb-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-        Symbol: <span className="text-terminal-amber">{symbol || "—"}</span>
+        {t("p.provenance.symbol")} <span className="text-terminal-amber">{symbol || "—"}</span>
         {tab === "records" ? (
           <>
-            {" · "}records: {meta.count}
-            {" · "}sources:{" "}
+            {" · "}{t("p.provenance.records", { n: meta.count })}
+            {" · "}{t("p.provenance.sources")}{" "}
             {Object.entries(meta.sources).map(([s, c]) => (
               <span key={s} className="ml-1 text-terminal-blue">
                 {s}({c})
@@ -139,25 +139,25 @@ export default function ProvenancePanel({ symbol }) {
       </div>
 
       {loading && tab === "records" ? (
-        <div className="text-terminal-muted">Loading…</div>
+        <div className="text-terminal-muted">{t("p.common.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{error}</div>
       ) : tab === "records" ? (
         <table className="w-full text-[11px] leading-tight">
           <thead className="text-terminal-muted">
             <tr>
-              <th className="text-left">SOURCE</th>
-              <th className="text-left">SERIES</th>
-              <th className="text-right">VALUE</th>
-              <th className="text-left pl-2">TIMESTAMP</th>
-              <th className="text-left pl-2">INGESTED</th>
+              <th className="text-left">{t("p.provenance.cols_r.source")}</th>
+              <th className="text-left">{t("p.provenance.cols_r.series")}</th>
+              <th className="text-right">{t("p.provenance.cols_r.value")}</th>
+              <th className="text-left pl-2">{t("p.provenance.cols_r.ts")}</th>
+              <th className="text-left pl-2">{t("p.provenance.cols_r.ingested")}</th>
             </tr>
           </thead>
           <tbody>
             {records.length === 0 ? (
               <tr>
                 <td colSpan="5" className="py-2 text-terminal-muted">
-                  No normalized records yet — interact with another panel for this symbol.
+                  {t("p.provenance.records_empty")}
                 </td>
               </tr>
             ) : (
@@ -181,18 +181,18 @@ export default function ProvenancePanel({ symbol }) {
           <table className="w-full text-[11px] leading-tight">
             <thead className="text-terminal-muted">
               <tr>
-                <th className="text-left">SOURCE</th>
-                <th className="text-left">SYMBOL</th>
-                <th className="text-left">ENDPOINT</th>
-                <th className="text-left pl-2">USER</th>
-                <th className="text-left pl-2">INGESTED</th>
+                <th className="text-left">{t("p.provenance.cols_a.source")}</th>
+                <th className="text-left">{t("p.provenance.cols_a.symbol")}</th>
+                <th className="text-left">{t("p.provenance.cols_a.endpoint")}</th>
+                <th className="text-left pl-2">{t("p.provenance.cols_a.user")}</th>
+                <th className="text-left pl-2">{t("p.provenance.cols_a.ingested")}</th>
               </tr>
             </thead>
             <tbody>
               {audit.rows.length === 0 ? (
                 <tr>
                   <td colSpan="5" className="py-2 text-terminal-muted">
-                    No audit events. TimescaleDB audit log is empty or unavailable.
+                    {t("p.provenance.audit_empty")}
                   </td>
                 </tr>
               ) : (
@@ -225,16 +225,16 @@ export default function ProvenancePanel({ symbol }) {
           <table className="w-full text-[11px] leading-tight">
             <thead className="text-terminal-muted">
               <tr>
-                <th className="text-left">CAPTURED</th>
-                <th className="text-left pl-2">OUTPUT</th>
-                <th className="text-left pl-2">INPUTS HASH</th>
+                <th className="text-left">{t("p.provenance.cols_s.captured")}</th>
+                <th className="text-left pl-2">{t("p.provenance.cols_s.output")}</th>
+                <th className="text-left pl-2">{t("p.provenance.cols_s.inputs_hash")}</th>
               </tr>
             </thead>
             <tbody>
               {snapshots.length === 0 ? (
                 <tr>
                   <td colSpan="3" className="py-2 text-terminal-muted">
-                    No intelligence snapshots persisted yet.
+                    {t("p.provenance.snap_empty")}
                   </td>
                 </tr>
               ) : (

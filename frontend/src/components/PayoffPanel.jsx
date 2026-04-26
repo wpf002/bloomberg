@@ -4,7 +4,6 @@ import {
   Line,
   LineChart,
   ReferenceLine,
-  ReferenceArea,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,6 +12,7 @@ import {
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -22,28 +22,30 @@ function fmt(value, digits = 2) {
   });
 }
 
-const STRATEGIES = {
-  "Long Call": (px) => [
+const STRAT_KEYS = ["long_call", "long_put", "covered_call", "bull_call", "iron_condor", "straddle"];
+
+const STRATEGY_BUILDERS = {
+  long_call: (px) => [
     { type: "call", side: "long", strike: round(px), premium: 2.5, qty: 1 },
   ],
-  "Long Put": (px) => [
+  long_put: (px) => [
     { type: "put", side: "long", strike: round(px), premium: 2.5, qty: 1 },
   ],
-  "Covered Call": (px) => [
+  covered_call: (px) => [
     { type: "stock", side: "long", strike: 0, premium: round(px), qty: 100 },
     { type: "call", side: "short", strike: round(px * 1.05), premium: 1.5, qty: 1 },
   ],
-  "Bull Call Spread": (px) => [
+  bull_call: (px) => [
     { type: "call", side: "long", strike: round(px), premium: 3.0, qty: 1 },
     { type: "call", side: "short", strike: round(px * 1.05), premium: 1.2, qty: 1 },
   ],
-  "Iron Condor": (px) => [
+  iron_condor: (px) => [
     { type: "put", side: "long", strike: round(px * 0.9), premium: 0.8, qty: 1 },
     { type: "put", side: "short", strike: round(px * 0.95), premium: 1.6, qty: 1 },
     { type: "call", side: "short", strike: round(px * 1.05), premium: 1.6, qty: 1 },
     { type: "call", side: "long", strike: round(px * 1.1), premium: 0.8, qty: 1 },
   ],
-  Straddle: (px) => [
+  straddle: (px) => [
     { type: "call", side: "long", strike: round(px), premium: 2.5, qty: 1 },
     { type: "put", side: "long", strike: round(px), premium: 2.5, qty: 1 },
   ],
@@ -57,16 +59,14 @@ const SIDES = ["long", "short"];
 const TYPES = ["call", "put", "stock"];
 
 export default function PayoffPanel({ symbol }) {
+  const { t } = useTranslation();
   const [legs, setLegs] = useState([]);
   const [underlying, setUnderlying] = useState("");
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [strategyName, setStrategyName] = useState("");
+  const [strategyKey, setStrategyKey] = useState("");
 
-  // Whenever the symbol changes, fetch a fresh quote so the strategy
-  // presets centre on a sensible price. Don't pre-build legs — let the
-  // user pick a strategy explicitly so the panel stays predictable.
   useEffect(() => {
     let cancelled = false;
     setError(null);
@@ -83,12 +83,12 @@ export default function PayoffPanel({ symbol }) {
     };
   }, [symbol]);
 
-  const applyStrategy = (name) => {
+  const applyStrategy = (key) => {
     const px = Number(underlying) || 100;
-    const builder = STRATEGIES[name];
+    const builder = STRATEGY_BUILDERS[key];
     if (!builder) return;
     setLegs(builder(px));
-    setStrategyName(name);
+    setStrategyKey(key);
   };
 
   const updateLeg = (i, patch) =>
@@ -136,45 +136,51 @@ export default function PayoffPanel({ symbol }) {
     return (data?.points ?? []).map((p) => ({ spot: p.spot, pnl: p.pnl }));
   }, [data]);
 
+  const stratLabel = strategyKey ? t(`p.payoff.strats.${strategyKey}`) : "";
+  const title = stratLabel
+    ? t("p.payoff.title_with_strat", { sym: symbol ?? "—", strat: stratLabel })
+    : t("p.payoff.title", { sym: symbol ?? "—" });
+
   return (
     <Panel
-      title={`Payoff — ${symbol ?? "—"}${strategyName ? ` · ${strategyName}` : ""}`}
+      title={title}
       accent="amber"
       actions={
         data ? (
           <span className="tabular text-terminal-muted">
-            spot {fmt(data.underlying_price)} · net{" "}
+            {t("p.payoff.spot").toLowerCase()} {fmt(data.underlying_price)} · net{" "}
             <span
               className={
                 data.net_premium >= 0 ? "text-terminal-green" : "text-terminal-red"
               }
             >
-              {data.net_premium >= 0 ? "credit" : "debit"} {fmt(Math.abs(data.net_premium))}
+              {data.net_premium >= 0 ? t("p.payoff.net_credit") : t("p.payoff.net_debit")}{" "}
+              {fmt(Math.abs(data.net_premium))}
             </span>
           </span>
         ) : null
       }
     >
       <div className="mb-2 flex flex-wrap gap-1 text-xs">
-        {Object.keys(STRATEGIES).map((name) => (
+        {STRAT_KEYS.map((key) => (
           <button
-            key={name}
-            onClick={() => applyStrategy(name)}
+            key={key}
+            onClick={() => applyStrategy(key)}
             className={clsx(
               "border px-2 py-0.5",
-              strategyName === name
+              strategyKey === key
                 ? "border-terminal-amber bg-terminal-amber/10 text-terminal-amber"
                 : "border-terminal-border/60 text-terminal-muted hover:border-terminal-amber hover:text-terminal-amber"
             )}
           >
-            {name}
+            {t(`p.payoff.strats.${key}`)}
           </button>
         ))}
       </div>
 
       <div className="mb-2 flex items-center gap-2 text-xs">
         <label className="flex items-center gap-1">
-          <span className="text-terminal-muted">Spot</span>
+          <span className="text-terminal-muted">{t("p.payoff.spot")}</span>
           <input
             type="number"
             step="0.01"
@@ -187,14 +193,14 @@ export default function PayoffPanel({ symbol }) {
           onClick={addLeg}
           className="border border-terminal-border px-2 py-0.5 text-terminal-muted hover:border-terminal-amber hover:text-terminal-amber"
         >
-          + leg
+          {t("p.payoff.add_leg")}
         </button>
         <button
           onClick={compute}
           disabled={loading || legs.length === 0}
           className="border border-terminal-amber px-2 py-0.5 text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
         >
-          {loading ? "Computing…" : "Plot"}
+          {loading ? t("p.common.computing") : t("p.payoff.plot")}
         </button>
       </div>
 
@@ -202,11 +208,11 @@ export default function PayoffPanel({ symbol }) {
         <table className="mb-3 w-full text-xs tabular">
           <thead>
             <tr className="text-left text-terminal-muted">
-              <th className="py-1 pr-2">SIDE</th>
-              <th className="py-1 pr-2">TYPE</th>
-              <th className="py-1 pr-2 text-right">STRIKE</th>
-              <th className="py-1 pr-2 text-right">PREMIUM</th>
-              <th className="py-1 pr-2 text-right">QTY</th>
+              <th className="py-1 pr-2">{t("p.payoff.cols.side")}</th>
+              <th className="py-1 pr-2">{t("p.payoff.cols.type")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.payoff.cols.strike")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.payoff.cols.premium")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.payoff.cols.qty")}</th>
               <th className="py-1"></th>
             </tr>
           </thead>
@@ -232,9 +238,9 @@ export default function PayoffPanel({ symbol }) {
                     onChange={(e) => updateLeg(i, { type: e.target.value })}
                     className="border border-terminal-border bg-terminal-bg px-1 text-terminal-text focus:outline-none focus:border-terminal-amber"
                   >
-                    {TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
+                    {TYPES.map((t2) => (
+                      <option key={t2} value={t2}>
+                        {t2}
                       </option>
                     ))}
                   </select>
@@ -329,17 +335,17 @@ export default function PayoffPanel({ symbol }) {
       {data && (
         <div className="mt-2 grid grid-cols-3 gap-2 text-xs tabular">
           <Stat
-            label="MAX PROFIT"
-            value={data.max_profit == null ? "unbounded" : `$${fmt(data.max_profit)}`}
+            label={t("p.payoff.max_profit")}
+            value={data.max_profit == null ? t("p.payoff.unbounded") : `$${fmt(data.max_profit)}`}
             color={data.max_profit == null ? "amber" : "green"}
           />
           <Stat
-            label="MAX LOSS"
-            value={data.max_loss == null ? "unbounded" : `$${fmt(data.max_loss)}`}
+            label={t("p.payoff.max_loss")}
+            value={data.max_loss == null ? t("p.payoff.unbounded") : `$${fmt(data.max_loss)}`}
             color={data.max_loss == null ? "amber" : "red"}
           />
           <Stat
-            label="BREAKEVENS"
+            label={t("p.payoff.breakevens")}
             value={
               data.breakevens?.length
                 ? data.breakevens.map((b) => fmt(b)).join(" / ")
@@ -351,10 +357,7 @@ export default function PayoffPanel({ symbol }) {
       )}
 
       {!data && legs.length === 0 && (
-        <div className="text-xs text-terminal-muted">
-          Pick a strategy preset above, then press <span className="text-terminal-amber">Plot</span>.
-          P/L is at expiration; multiplier 100 (US equity options).
-        </div>
+        <div className="text-xs text-terminal-muted">{t("p.payoff.hint")}</div>
       )}
     </Panel>
   );

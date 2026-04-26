@@ -11,6 +11,7 @@ import {
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 const PERIODS = [
   ["1D", "1d", "5m"],
@@ -22,6 +23,7 @@ const PERIODS = [
 ];
 
 export default function Chart({ symbol }) {
+  const { t } = useTranslation();
   const [selected, setSelected] = useState(PERIODS[2]);
   const [, period, interval] = selected;
 
@@ -48,7 +50,7 @@ export default function Chart({ symbol }) {
 
   return (
     <Panel
-      title={`Chart — ${symbol}`}
+      title={t("p.chart.title", { sym: symbol })}
       accent="blue"
       actions={
         <div className="flex items-center gap-1">
@@ -69,14 +71,11 @@ export default function Chart({ symbol }) {
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading history…</div>
+        <div className="text-terminal-muted">{t("p.chart.loading")}</div>
       ) : error ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
-          No chart data available for{" "}
-          <span className="text-terminal-amber">{symbol}</span>.
-          {error.status === 404 ? (
-            <> Pick a different symbol from the watchlist.</>
-          ) : null}
+          {t("p.chart.none", { sym: symbol })}
+          {error.status === 404 ? <>{t("p.chart.pick_diff")}</> : null}
         </div>
       ) : (
         <div className="flex h-full flex-col">
@@ -94,7 +93,7 @@ export default function Chart({ symbol }) {
               {deltaPct.toFixed(2)}%)
             </span>
             <span className="ml-auto text-xs text-terminal-muted">
-              {series.length} points · {interval}
+              {t("p.chart.points", { count: series.length, interval })}
             </span>
           </div>
           <div className="flex-1 min-h-0">

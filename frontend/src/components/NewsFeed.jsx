@@ -1,6 +1,7 @@
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function relativeTime(iso) {
   const delta = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -11,6 +12,7 @@ function relativeTime(iso) {
 }
 
 export default function NewsFeed({ symbols }) {
+  const { t } = useTranslation();
   const { data, error, loading } = usePolling(
     () => api.news(symbols, 30),
     60_000,
@@ -19,18 +21,16 @@ export default function NewsFeed({ symbols }) {
 
   return (
     <Panel
-      title="News"
+      title={t("panels.news")}
       accent="amber"
       actions={<span className="text-terminal-muted">{symbols.join(" · ")}</span>}
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading news…</div>
+        <div className="text-terminal-muted">{t("p.news.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (data || []).length === 0 ? (
-        <div className="text-terminal-muted">
-          No news available. Configure <code>ALPACA_API_KEY</code> / <code>ALPACA_API_SECRET</code>.
-        </div>
+        <div className="text-terminal-muted">{t("p.news.none")}</div>
       ) : (
         <ul className="divide-y divide-terminal-border/60">
           {data.map((item) => (

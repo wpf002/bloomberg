@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -37,6 +38,7 @@ function Row({ label, children, tone }) {
 }
 
 export default function FundamentalsPanel({ symbol }) {
+  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -64,7 +66,7 @@ export default function FundamentalsPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Fundamentals — ${symbol}`}
+      title={t("p.fundamentals.title", { sym: symbol })}
       accent="green"
       actions={
         data?.sector ? (
@@ -75,22 +77,17 @@ export default function FundamentalsPanel({ symbol }) {
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading fundamentals…</div>
+        <div className="text-terminal-muted">{t("p.fundamentals.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : !data ? (
-        <div className="text-terminal-muted">No data.</div>
+        <div className="text-terminal-muted">{t("p.fundamentals.none")}</div>
       ) : !data.name && data.market_cap == null && data.pe_ratio == null ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
           <p className="mb-1 text-terminal-amber">
-            No fundamentals returned for this ticker.
+            {t("p.fundamentals.empty_head")}
           </p>
-          <p>
-            Both providers (Financial Modeling Prep primary, Yahoo Finance
-            fallback) came back empty. Most common causes: ticker isn't a US
-            common stock (ETFs, ADRs, OTC tickers often miss), or both
-            services are rate-limiting this IP. Usually clears in 10–30 min.
-          </p>
+          <p>{t("p.fundamentals.empty_msg")}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -113,57 +110,57 @@ export default function FundamentalsPanel({ symbol }) {
 
           <section>
             <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-amber">
-              Valuation
+              {t("p.fundamentals.sec_val")}
             </div>
-            <Row label="Market cap">{fmtMoney(data.market_cap)}</Row>
-            <Row label="Enterprise value">{fmtMoney(data.enterprise_value)}</Row>
-            <Row label="P/E (trailing)">{fmt(data.pe_ratio)}</Row>
-            <Row label="P/E (forward)">{fmt(data.forward_pe)}</Row>
-            <Row label="PEG">{fmt(data.peg_ratio)}</Row>
-            <Row label="P/B">{fmt(data.price_to_book)}</Row>
-            <Row label="P/S">{fmt(data.price_to_sales)}</Row>
-            <Row label="EV/EBITDA">{fmt(data.ev_to_ebitda)}</Row>
+            <Row label={t("p.fundamentals.r.market_cap")}>{fmtMoney(data.market_cap)}</Row>
+            <Row label={t("p.fundamentals.r.ev")}>{fmtMoney(data.enterprise_value)}</Row>
+            <Row label={t("p.fundamentals.r.pe_trailing")}>{fmt(data.pe_ratio)}</Row>
+            <Row label={t("p.fundamentals.r.pe_forward")}>{fmt(data.forward_pe)}</Row>
+            <Row label={t("p.fundamentals.r.peg")}>{fmt(data.peg_ratio)}</Row>
+            <Row label={t("p.fundamentals.r.pb")}>{fmt(data.price_to_book)}</Row>
+            <Row label={t("p.fundamentals.r.ps")}>{fmt(data.price_to_sales)}</Row>
+            <Row label={t("p.fundamentals.r.ev_ebitda")}>{fmt(data.ev_to_ebitda)}</Row>
           </section>
 
           <section>
             <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-amber">
-              Performance
+              {t("p.fundamentals.sec_perf")}
             </div>
-            <Row label="Revenue (TTM)">{fmtMoney(data.revenue_ttm)}</Row>
-            <Row label="Revenue growth YoY" tone={tone(data.revenue_growth_yoy)}>
+            <Row label={t("p.fundamentals.r.revenue_ttm")}>{fmtMoney(data.revenue_ttm)}</Row>
+            <Row label={t("p.fundamentals.r.rev_growth")} tone={tone(data.revenue_growth_yoy)}>
               {fmtPct(data.revenue_growth_yoy)}
             </Row>
-            <Row label="Net income (TTM)">{fmtMoney(data.net_income_ttm)}</Row>
-            <Row label="Earnings growth YoY" tone={tone(data.earnings_growth_yoy)}>
+            <Row label={t("p.fundamentals.r.net_income_ttm")}>{fmtMoney(data.net_income_ttm)}</Row>
+            <Row label={t("p.fundamentals.r.earn_growth")} tone={tone(data.earnings_growth_yoy)}>
               {fmtPct(data.earnings_growth_yoy)}
             </Row>
-            <Row label="EPS (TTM)">{fmt(data.eps_ttm)}</Row>
-            <Row label="FCF (TTM)">{fmtMoney(data.free_cash_flow_ttm)}</Row>
+            <Row label={t("p.fundamentals.r.eps_ttm")}>{fmt(data.eps_ttm)}</Row>
+            <Row label={t("p.fundamentals.r.fcf_ttm")}>{fmtMoney(data.free_cash_flow_ttm)}</Row>
           </section>
 
           <section>
             <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-amber">
-              Margins & Returns
+              {t("p.fundamentals.sec_margins")}
             </div>
-            <Row label="Gross margin">{fmtPct(data.gross_margin)}</Row>
-            <Row label="Operating margin">{fmtPct(data.operating_margin)}</Row>
-            <Row label="Profit margin">{fmtPct(data.profit_margin)}</Row>
-            <Row label="Return on equity">{fmtPct(data.return_on_equity)}</Row>
-            <Row label="Return on assets">{fmtPct(data.return_on_assets)}</Row>
-            <Row label="Debt / equity">{fmt(data.debt_to_equity)}</Row>
+            <Row label={t("p.fundamentals.r.gross_margin")}>{fmtPct(data.gross_margin)}</Row>
+            <Row label={t("p.fundamentals.r.op_margin")}>{fmtPct(data.operating_margin)}</Row>
+            <Row label={t("p.fundamentals.r.profit_margin")}>{fmtPct(data.profit_margin)}</Row>
+            <Row label={t("p.fundamentals.r.roe")}>{fmtPct(data.return_on_equity)}</Row>
+            <Row label={t("p.fundamentals.r.roa")}>{fmtPct(data.return_on_assets)}</Row>
+            <Row label={t("p.fundamentals.r.de")}>{fmt(data.debt_to_equity)}</Row>
           </section>
 
           <section>
             <div className="mb-1 text-[10px] uppercase tracking-widest text-terminal-amber">
-              Market
+              {t("p.fundamentals.sec_market")}
             </div>
-            <Row label="52-wk high">{fmt(data.fifty_two_week_high)}</Row>
-            <Row label="52-wk low">{fmt(data.fifty_two_week_low)}</Row>
-            <Row label="Beta">{fmt(data.beta)}</Row>
-            <Row label="Dividend yield">{fmtPct(data.dividend_yield)}</Row>
-            <Row label="Payout ratio">{fmtPct(data.payout_ratio)}</Row>
-            <Row label="Analyst target">{fmt(data.analyst_target)}</Row>
-            <Row label="Analyst reco">{data.analyst_recommendation || "--"}</Row>
+            <Row label={t("p.fundamentals.r.hi52")}>{fmt(data.fifty_two_week_high)}</Row>
+            <Row label={t("p.fundamentals.r.lo52")}>{fmt(data.fifty_two_week_low)}</Row>
+            <Row label={t("p.fundamentals.r.beta")}>{fmt(data.beta)}</Row>
+            <Row label={t("p.fundamentals.r.div_yield")}>{fmtPct(data.dividend_yield)}</Row>
+            <Row label={t("p.fundamentals.r.payout")}>{fmtPct(data.payout_ratio)}</Row>
+            <Row label={t("p.fundamentals.r.analyst_target")}>{fmt(data.analyst_target)}</Row>
+            <Row label={t("p.fundamentals.r.analyst_reco")}>{data.analyst_recommendation || "--"}</Row>
           </section>
         </div>
       )}

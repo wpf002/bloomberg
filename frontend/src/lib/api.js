@@ -151,6 +151,9 @@ export const api = {
     if (cusip) q.set("cusip", cusip);
     return request(`/api/fixed_income/trace?${q.toString()}`);
   },
+  // Phase 9.2: cubic-spline yield curve + Agency MBS / credit spreads
+  yieldCurve: () => request(`/api/fixed_income/curve`),
+  agencyMbs: () => request(`/api/fixed_income/mbs`),
 
   // ── Phase 8: futures dashboard + per-root term structure ─────────────
   futuresDashboard: () => request(`/api/futures/dashboard`),
@@ -181,6 +184,9 @@ export const api = {
   intelRotation: () => request(`/api/intelligence/rotation`),
 
   // ── AURORA Module 4: AI advisor (streaming) ───────────────────────────
+  // Endpoints: review, picks, ask, brief, alert-analysis (Module 4) +
+  // validate-thesis, simulate, earnings-prep, rebalance, open-brief,
+  // post-mortem (Phase 9.2). All return a streaming text/plain Response.
   advisorStream: (endpoint, body) =>
     fetch(`${BASE}/api/advisor/${endpoint}`, {
       method: "POST",

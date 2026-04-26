@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -27,6 +28,7 @@ function pct(value) {
 }
 
 export default function OptionsPanel({ symbol }) {
+  const { t } = useTranslation();
   const [expiration, setExpiration] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -91,11 +93,11 @@ export default function OptionsPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Options — ${symbol}`}
+      title={t("p.options.title", { sym: symbol })}
       accent="blue"
       actions={
         <div className="flex items-center gap-2">
-          <span className="text-terminal-muted">Exp</span>
+          <span className="text-terminal-muted">{t("p.options.exp")}</span>
           <select
             value={expiration || ""}
             onChange={(e) => setExpiration(e.target.value)}
@@ -111,28 +113,24 @@ export default function OptionsPanel({ symbol }) {
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading chain…</div>
+        <div className="text-terminal-muted">{t("p.options.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : !data || (!data.calls.length && !data.puts.length) ? (
         <div className="text-xs leading-relaxed text-terminal-muted">
           <p className="mb-1 text-terminal-amber">
-            No option chain available for {symbol}.
+            {t("p.options.none_head", { sym: symbol })}
           </p>
-          <p>
-            Options come from Yahoo Finance, which rate-limits this IP under
-            load. Usually clears in 10–30 min. Alpaca only exposes options on
-            its paid data tier.
-          </p>
+          <p>{t("p.options.none_msg")}</p>
         </div>
       ) : (
         <div className="flex h-full flex-col gap-2">
           <div className="flex items-baseline justify-between text-xs">
             <span>
-              Spot <span className="text-terminal-amber tabular">{fmt(spot)}</span>
+              {t("p.options.spot")} <span className="text-terminal-amber tabular">{fmt(spot)}</span>
             </span>
             <span className="text-terminal-muted">
-              Calls {data.calls.length} · Puts {data.puts.length}
+              {t("p.options.counts", { calls: data.calls.length, puts: data.puts.length })}
             </span>
           </div>
 
@@ -192,20 +190,20 @@ export default function OptionsPanel({ symbol }) {
             <table className="w-full text-[11px] tabular">
               <thead className="sticky top-0 bg-terminal-panel text-terminal-muted">
                 <tr>
-                  <th className="py-1 text-right" colSpan={4}>CALLS</th>
-                  <th className="py-1 text-center">STRIKE</th>
-                  <th className="py-1 text-left" colSpan={4}>PUTS</th>
+                  <th className="py-1 text-right" colSpan={4}>{t("p.options.h_calls")}</th>
+                  <th className="py-1 text-center">{t("p.options.h_strike")}</th>
+                  <th className="py-1 text-left" colSpan={4}>{t("p.options.h_puts")}</th>
                 </tr>
                 <tr className="text-terminal-muted">
-                  <th className="py-1 pr-2 text-right">IV</th>
+                  <th className="py-1 pr-2 text-right">{t("p.options.h_iv")}</th>
                   <th className="py-1 pr-2 text-right">Δ</th>
-                  <th className="py-1 pr-2 text-right">BID</th>
-                  <th className="py-1 pr-2 text-right">ASK</th>
+                  <th className="py-1 pr-2 text-right">{t("p.options.h_bid")}</th>
+                  <th className="py-1 pr-2 text-right">{t("p.options.h_ask")}</th>
                   <th className="py-1 text-center">K</th>
-                  <th className="py-1 pl-2 text-left">BID</th>
-                  <th className="py-1 pl-2 text-left">ASK</th>
+                  <th className="py-1 pl-2 text-left">{t("p.options.h_bid")}</th>
+                  <th className="py-1 pl-2 text-left">{t("p.options.h_ask")}</th>
                   <th className="py-1 pl-2 text-left">Δ</th>
-                  <th className="py-1 pl-2 text-left">IV</th>
+                  <th className="py-1 pl-2 text-left">{t("p.options.h_iv")}</th>
                 </tr>
               </thead>
               <tbody>

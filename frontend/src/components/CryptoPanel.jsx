@@ -2,6 +2,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 const SYMBOLS = ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "ADA-USD"];
 
@@ -14,6 +15,7 @@ function fmt(value, digits = 2) {
 }
 
 export default function CryptoPanel() {
+  const { t } = useTranslation();
   const { data, error, loading } = usePolling(
     () => api.crypto(SYMBOLS),
     20_000,
@@ -21,18 +23,18 @@ export default function CryptoPanel() {
   );
 
   return (
-    <Panel title="Crypto" accent="blue">
+    <Panel title={t("panels.crypto")} accent="blue">
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading…</div>
+        <div className="text-terminal-muted">{t("p.crypto.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (
         <table className="w-full text-xs tabular">
           <thead>
             <tr className="text-left text-terminal-muted">
-              <th className="py-1 pr-2">PAIR</th>
-              <th className="py-1 pr-2 text-right">PRICE</th>
-              <th className="py-1 text-right">24H %</th>
+              <th className="py-1 pr-2">{t("p.crypto.cols.pair")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.crypto.cols.price")}</th>
+              <th className="py-1 text-right">{t("p.crypto.cols.chg24h")}</th>
             </tr>
           </thead>
           <tbody>

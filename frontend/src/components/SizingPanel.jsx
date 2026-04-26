@@ -3,6 +3,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -13,6 +14,7 @@ function fmt(value, digits = 2) {
 }
 
 export default function SizingPanel({ symbol }) {
+  const { t } = useTranslation();
   const [stopPct, setStopPct] = useState(5);
   const { data, error, loading } = usePolling(
     () => (symbol ? api.sizing(symbol, stopPct) : Promise.resolve(null)),
@@ -24,19 +26,19 @@ export default function SizingPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Sizing — ${symbol ?? "—"}`}
+      title={t("p.sizing.title", { sym: symbol ?? "—" })}
       accent="amber"
       actions={
         data ? (
           <span className="tabular text-terminal-muted">
-            PX {fmt(data.price)} · EQUITY {fmt(data.equity)}
+            {t("p.sizing.px_eq", { price: fmt(data.price), equity: fmt(data.equity) })}
           </span>
         ) : null
       }
     >
       <div className="mb-3 flex items-baseline gap-3 text-xs">
         <label className="flex items-center gap-2">
-          <span className="text-terminal-muted">Stop %</span>
+          <span className="text-terminal-muted">{t("p.sizing.stop")}</span>
           <input
             type="number"
             min="0.5"
@@ -48,27 +50,24 @@ export default function SizingPanel({ symbol }) {
           />
         </label>
         <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-          distance from entry you'd exit a losing trade
+          {t("p.sizing.stop_hint")}
         </span>
       </div>
       {credsMissing ? (
-        <div className="text-xs text-terminal-muted">
-          Sizing needs live equity — connect Alpaca in{" "}
-          <code className="text-terminal-green">.env</code> first (see Portfolio panel).
-        </div>
+        <div className="text-xs text-terminal-muted">{t("p.sizing.need_alpaca")}</div>
       ) : loading && !data ? (
-        <div className="text-terminal-muted">Loading…</div>
+        <div className="text-terminal-muted">{t("p.common.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.detail || error.message || error)}</div>
       ) : data ? (
         <table className="w-full text-xs tabular">
           <thead>
             <tr className="text-left text-terminal-muted">
-              <th className="py-1 pr-2">RISK</th>
-              <th className="py-1 pr-2 text-right">MAX $ LOSS</th>
-              <th className="py-1 pr-2 text-right">SHARES</th>
-              <th className="py-1 pr-2 text-right">NOTIONAL $</th>
-              <th className="py-1 text-right">% OF EQUITY</th>
+              <th className="py-1 pr-2">{t("p.sizing.cols.risk")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.sizing.cols.max_loss")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.sizing.cols.shares")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.sizing.cols.notional")}</th>
+              <th className="py-1 text-right">{t("p.sizing.cols.pct_eq")}</th>
             </tr>
           </thead>
           <tbody>
@@ -93,13 +92,11 @@ export default function SizingPanel({ symbol }) {
           </tbody>
         </table>
       ) : (
-        <div className="text-terminal-muted">Enter a symbol.</div>
+        <div className="text-terminal-muted">{t("p.sizing.enter_sym")}</div>
       )}
       {data && (
         <p className="mt-2 text-[10px] leading-relaxed text-terminal-muted/80">
-          Rule: <span className="text-terminal-text">shares = (equity × risk%) ÷ (price × stop%)</span>.
-          Rows where notional exceeds equity mean the stop is tight enough that
-          the full position would require margin.
+          {t("p.sizing.formula")}
         </p>
       )}
     </Panel>

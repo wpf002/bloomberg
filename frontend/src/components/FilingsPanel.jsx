@@ -1,6 +1,7 @@
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 const FORM_STYLE = {
   "10-K": "text-terminal-amber",
@@ -15,6 +16,7 @@ function styleFor(form) {
 }
 
 export default function FilingsPanel({ symbol }) {
+  const { t } = useTranslation();
   const { data, error, loading } = usePolling(
     () => api.filings(symbol),
     5 * 60_000,
@@ -23,20 +25,20 @@ export default function FilingsPanel({ symbol }) {
 
   return (
     <Panel
-      title={`Filings — ${symbol}`}
+      title={t("p.filings.title", { sym: symbol })}
       accent="amber"
       actions={
         <span className="text-terminal-muted">
-          {data?.length ? `${data.length} filings` : ""}
+          {data?.length ? t("p.filings.count", { count: data.length }) : ""}
         </span>
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading EDGAR…</div>
+        <div className="text-terminal-muted">{t("p.filings.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (data || []).length === 0 ? (
-        <div className="text-terminal-muted">No recent filings.</div>
+        <div className="text-terminal-muted">{t("p.filings.none")}</div>
       ) : (
         <ul className="divide-y divide-terminal-border/60">
           {data.map((f) => (

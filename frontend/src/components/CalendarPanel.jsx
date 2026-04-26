@@ -2,6 +2,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -11,15 +12,16 @@ function fmt(value, digits = 2) {
   });
 }
 
-function daysFromNow(dateStr) {
+function daysFromNow(dateStr, t) {
   const d = new Date(`${dateStr}T00:00:00`);
   const delta = (d - new Date()) / (24 * 3600 * 1000);
-  if (delta < -1) return `${Math.floor(-delta)}d ago`;
-  if (delta < 1) return "today";
-  return `in ${Math.ceil(delta)}d`;
+  if (delta < -1) return t("p.calendar.ago", { n: Math.floor(-delta) });
+  if (delta < 1) return t("p.calendar.today");
+  return t("p.calendar.in_d", { n: Math.ceil(delta) });
 }
 
 export default function CalendarPanel({ symbols }) {
+  const { t } = useTranslation();
   const { data, loading, error } = usePolling(
     () => api.earningsCalendar(symbols, 4),
     // 1h: matches the backend Finnhub cache TTL so polling doesn't burn
@@ -30,37 +32,33 @@ export default function CalendarPanel({ symbols }) {
 
   return (
     <Panel
-      title="Earnings Calendar"
+      title={t("p.calendar.title")}
       accent="blue"
       actions={
         <span className="text-terminal-muted">
-          {symbols.length} syms
+          {t("p.common.symbols_count", { count: symbols.length })}
         </span>
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading calendar…</div>
+        <div className="text-terminal-muted">{t("p.calendar.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (data || []).length === 0 ? (
         <div className="space-y-1 text-xs leading-relaxed text-terminal-muted">
-          <p className="text-terminal-amber">No upcoming earnings dates in the next 120 days.</p>
-          <p>
-            Calendar comes from Finnhub (market-wide consensus) with Yahoo as
-            a fallback. Tickers with no upcoming events typically just reported
-            and won't have a next date until guidance is updated.
-          </p>
+          <p className="text-terminal-amber">{t("p.calendar.none_head")}</p>
+          <p>{t("p.calendar.none_msg")}</p>
         </div>
       ) : (
         <table className="w-full text-[11px] tabular">
           <thead>
             <tr className="text-left text-terminal-muted">
-              <th className="py-1 pr-2">DATE</th>
-              <th className="py-1 pr-2">SYM</th>
-              <th className="py-1 pr-2">IN</th>
-              <th className="py-1 pr-2 text-right">EST</th>
-              <th className="py-1 pr-2 text-right">ACT</th>
-              <th className="py-1 text-right">SURP</th>
+              <th className="py-1 pr-2">{t("p.calendar.cols.date")}</th>
+              <th className="py-1 pr-2">{t("p.calendar.cols.sym")}</th>
+              <th className="py-1 pr-2">{t("p.calendar.cols.in")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.calendar.cols.est")}</th>
+              <th className="py-1 pr-2 text-right">{t("p.calendar.cols.act")}</th>
+              <th className="py-1 text-right">{t("p.calendar.cols.surp")}</th>
             </tr>
           </thead>
           <tbody>
@@ -76,7 +74,7 @@ export default function CalendarPanel({ symbols }) {
                     {e.symbol}
                   </td>
                   <td className="py-0.5 pr-2 text-terminal-muted">
-                    {daysFromNow(e.event_date)}
+                    {daysFromNow(e.event_date, t)}
                   </td>
                   <td className="py-0.5 pr-2 text-right">{fmt(e.eps_estimate)}</td>
                   <td className="py-0.5 pr-2 text-right">{fmt(e.eps_actual)}</td>

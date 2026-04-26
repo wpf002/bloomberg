@@ -12,6 +12,7 @@ import {
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 const DEFAULTS = ["DGS10", "FEDFUNDS", "CPIAUCSL", "UNRATE", "VIXCLS"];
 
@@ -23,9 +24,6 @@ const PERCENT_SERIES = new Set([
   "T10Y2Y",
 ]);
 
-// Per-series fetch length. Daily series get ~2y of trading days; monthly get
-// ~5y; quarterly get ~15y. Without this, monthly/quarterly series tail() far
-// too many points and the chart visually flattens into a near-straight line.
 const SERIES_LIMIT = {
   DGS10: 504,
   DGS2: 504,
@@ -69,6 +67,7 @@ function formatDateTick(ts, range) {
 }
 
 export default function MacroPanel() {
+  const { t } = useTranslation();
   const [series, setSeries] = useState(DEFAULTS);
   const [active, setActive] = useState(DEFAULTS[0]);
   const [data, setData] = useState(null);
@@ -132,7 +131,7 @@ export default function MacroPanel() {
 
   return (
     <Panel
-      title="Macro"
+      title={t("panels.macro")}
       accent="green"
       actions={
         <select
@@ -149,7 +148,7 @@ export default function MacroPanel() {
       }
     >
       {loading && !data ? (
-        <div className="text-terminal-muted">Loading series…</div>
+        <div className="text-terminal-muted">{t("p.macro.loading")}</div>
       ) : error ? (
         <div className="text-terminal-red">{String(error.message || error)}</div>
       ) : (
@@ -180,7 +179,7 @@ export default function MacroPanel() {
                     : ""}
                 </div>
                 <div className="text-[10px] text-terminal-muted">
-                  as of {new Date(summary.last.t).toLocaleDateString()}
+                  {t("p.macro.as_of")} {new Date(summary.last.t).toLocaleDateString()}
                 </div>
               </div>
             ) : null}
@@ -189,7 +188,7 @@ export default function MacroPanel() {
           <div className="flex-1 min-h-0">
             {points.length === 0 ? (
               <div className="text-terminal-muted text-xs">
-                No observations. Set <code>FRED_API_KEY</code> in .env.
+                {t("p.macro.none")}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">

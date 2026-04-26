@@ -3,6 +3,7 @@ import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -14,16 +15,9 @@ function fmt(value, digits = 2) {
 
 const TYPES = ["market", "limit", "stop", "stop_limit"];
 const TIFS = ["day", "gtc", "ioc", "fok", "opg", "cls"];
-// `simple` matches Alpaca's default; the others wrap the entry leg with
-// take-profit / stop-loss children in a single submission.
-const ORDER_CLASSES = [
-  { value: "simple",  label: "simple",  hint: "single-leg order" },
-  { value: "bracket", label: "bracket", hint: "entry + TP + SL" },
-  { value: "oco",     label: "oco",     hint: "two paired exits (no entry)" },
-  { value: "oto",     label: "oto",     hint: "entry + TP or SL" },
-];
 
 export default function OrderTicket({ symbol }) {
+  const { t } = useTranslation();
   const [side, setSide] = useState("buy");
   const [qty, setQty] = useState("1");
   const [type, setType] = useState("market");
@@ -40,6 +34,13 @@ export default function OrderTicket({ symbol }) {
   const [lastSubmitted, setLastSubmitted] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const ORDER_CLASSES = [
+    { value: "simple",  label: t("p.trade.cls_simple"),  hint: t("p.trade.cls_simple_hint") },
+    { value: "bracket", label: t("p.trade.cls_bracket"), hint: t("p.trade.cls_bracket_hint") },
+    { value: "oco",     label: t("p.trade.cls_oco"),     hint: t("p.trade.cls_oco_hint") },
+    { value: "oto",     label: t("p.trade.cls_oto"),     hint: t("p.trade.cls_oto_hint") },
+  ];
+
   const ordersQ = usePolling(() => api.orders("all", 25), 8_000, [refreshKey]);
   const credsMissing = ordersQ.error?.status === 503;
 
@@ -47,11 +48,11 @@ export default function OrderTicket({ symbol }) {
     setSubmitErr(null);
   }, [symbol, type, side, orderClass]);
 
-  // Bracket orders need a TIF the broker accepts; quietly nudge the user.
   useEffect(() => {
     if (orderClass === "bracket" && tif !== "day" && tif !== "gtc") {
       setTif("day");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderClass]);
 
   const wantTakeProfit = ["bracket", "oco", "oto"].includes(orderClass);
@@ -100,19 +101,16 @@ export default function OrderTicket({ symbol }) {
 
   return (
     <Panel
-      title={`EMS — ${symbol ?? "—"}`}
+      title={t("p.trade.title", { sym: symbol ?? "—" })}
       accent="amber"
       actions={
         <span className="tabular text-terminal-muted">
-          PAPER · {credsMissing ? "no creds" : `${orders.length} orders`}
+          {t("p.trade.paper")} · {credsMissing ? t("p.trade.no_creds") : t("p.trade.orders_count", { n: orders.length })}
         </span>
       }
     >
       {credsMissing ? (
-        <div className="text-xs text-terminal-muted">
-          Connect Alpaca in <code className="text-terminal-green">.env</code> to
-          submit paper orders (see Portfolio panel).
-        </div>
+        <div className="text-xs text-terminal-muted">{t("p.trade.need_alpaca")}</div>
       ) : (
         <>
           <form onSubmit={submit} className="grid grid-cols-2 gap-2 text-xs">
@@ -127,7 +125,7 @@ export default function OrderTicket({ symbol }) {
                     : "border-terminal-border text-terminal-muted"
                 )}
               >
-                Buy
+                {t("p.trade.side_buy")}
               </button>
               <button
                 type="button"
@@ -139,10 +137,10 @@ export default function OrderTicket({ symbol }) {
                     : "border-terminal-border text-terminal-muted"
                 )}
               >
-                Sell
+                {t("p.trade.side_sell")}
               </button>
             </div>
-            <Field label="Qty">
+            <Field label={t("p.trade.f.qty")}>
               <input
                 type="number"
                 min="0.0001"
@@ -152,33 +150,33 @@ export default function OrderTicket({ symbol }) {
                 className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
               />
             </Field>
-            <Field label="Type">
+            <Field label={t("p.trade.f.type")}>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
                 className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
               >
-                {TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {TYPES.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {tp}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="TIF">
+            <Field label={t("p.trade.f.tif")}>
               <select
                 value={tif}
                 onChange={(e) => setTif(e.target.value)}
                 className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
               >
-                {TIFS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {TIFS.map((tp) => (
+                  <option key={tp} value={tp}>
+                    {tp}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Class">
+            <Field label={t("p.trade.f.cls")}>
               <select
                 value={orderClass}
                 onChange={(e) => setOrderClass(e.target.value)}
@@ -198,10 +196,10 @@ export default function OrderTicket({ symbol }) {
                 checked={extended}
                 onChange={(e) => setExtended(e.target.checked)}
               />
-              Extended hours
+              {t("p.trade.ext")}
             </label>
             {(type === "limit" || type === "stop_limit") && (
-              <Field label="Limit $">
+              <Field label={t("p.trade.f.limit")}>
                 <input
                   type="number"
                   step="0.01"
@@ -212,7 +210,7 @@ export default function OrderTicket({ symbol }) {
               </Field>
             )}
             {(type === "stop" || type === "stop_limit") && (
-              <Field label="Stop $">
+              <Field label={t("p.trade.f.stop")}>
                 <input
                   type="number"
                   step="0.01"
@@ -223,46 +221,46 @@ export default function OrderTicket({ symbol }) {
               </Field>
             )}
             {wantTakeProfit && (
-              <Field label="Take-profit $">
+              <Field label={t("p.trade.f.tp")}>
                 <input
                   type="number"
                   step="0.01"
                   value={tpLimit}
                   onChange={(e) => setTpLimit(e.target.value)}
-                  placeholder="limit"
+                  placeholder={t("p.trade.tp_placeholder")}
                   className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
                 />
               </Field>
             )}
             {wantStopLoss && (
-              <Field label="Stop-loss $">
+              <Field label={t("p.trade.f.sl")}>
                 <input
                   type="number"
                   step="0.01"
                   value={slStop}
                   onChange={(e) => setSlStop(e.target.value)}
-                  placeholder="stop"
+                  placeholder={t("p.trade.sl_placeholder")}
                   className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
                 />
               </Field>
             )}
             {wantStopLoss && (
-              <Field label="SL limit $ (opt)">
+              <Field label={t("p.trade.f.sl_lim")}>
                 <input
                   type="number"
                   step="0.01"
                   value={slLimit}
                   onChange={(e) => setSlLimit(e.target.value)}
-                  placeholder="optional"
+                  placeholder={t("p.trade.sl_lim_placeholder")}
                   className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
                 />
               </Field>
             )}
             {orderClass !== "simple" && (
               <p className="col-span-2 text-[10px] leading-relaxed text-terminal-muted">
-                {orderClass === "bracket" && "Bracket: entry fills, then take-profit and stop-loss go live as paired exits."}
-                {orderClass === "oco" && "OCO: two exit legs only — when one fills, the other cancels. Use on an existing position."}
-                {orderClass === "oto" && "OTO: entry plus a single attached exit (TP or SL)."}
+                {orderClass === "bracket" && t("p.trade.bracket_hint")}
+                {orderClass === "oco" && t("p.trade.oco_hint")}
+                {orderClass === "oto" && t("p.trade.oto_hint")}
               </p>
             )}
             <button
@@ -275,7 +273,20 @@ export default function OrderTicket({ symbol }) {
                   : "border-terminal-red text-terminal-red hover:bg-terminal-red/10"
               )}
             >
-              {submitting ? "Sending…" : `Submit ${side.toUpperCase()} ${qty} ${symbol ?? ""}${orderClass !== "simple" ? ` (${orderClass})` : ""}`}
+              {submitting
+                ? t("p.trade.sending")
+                : orderClass !== "simple"
+                  ? t("p.trade.submit_with_class", {
+                      side: side.toUpperCase(),
+                      qty,
+                      sym: symbol ?? "",
+                      cls: orderClass,
+                    })
+                  : t("p.trade.submit", {
+                      side: side.toUpperCase(),
+                      qty,
+                      sym: symbol ?? "",
+                    })}
             </button>
           </form>
           {submitErr && (
@@ -285,27 +296,35 @@ export default function OrderTicket({ symbol }) {
           )}
           {lastSubmitted && !submitErr && (
             <div className="mt-2 border border-terminal-green/50 bg-terminal-green/5 px-2 py-1 text-[11px] text-terminal-green">
-              Submitted · {lastSubmitted.id?.slice(0, 8)} · {lastSubmitted.status}
-              {lastSubmitted.legs?.length ? ` · ${lastSubmitted.legs.length} legs` : ""}
+              {lastSubmitted.legs?.length
+                ? t("p.trade.submitted_legs", {
+                    id: lastSubmitted.id?.slice(0, 8),
+                    status: lastSubmitted.status,
+                    n: lastSubmitted.legs.length,
+                  })
+                : t("p.trade.submitted", {
+                    id: lastSubmitted.id?.slice(0, 8),
+                    status: lastSubmitted.status,
+                  })}
             </div>
           )}
 
           <div className="mt-3 text-[10px] uppercase tracking-widest text-terminal-muted">
-            Recent orders
+            {t("p.trade.recent")}
           </div>
           {orders.length === 0 ? (
-            <div className="text-xs text-terminal-muted">No orders yet.</div>
+            <div className="text-xs text-terminal-muted">{t("p.trade.none")}</div>
           ) : (
             <table className="w-full text-xs tabular">
               <thead>
                 <tr className="text-left text-terminal-muted">
-                  <th className="py-1 pr-2">SYM</th>
-                  <th className="py-1 pr-2">SIDE</th>
-                  <th className="py-1 pr-2 text-right">QTY</th>
-                  <th className="py-1 pr-2 text-right">TYPE</th>
-                  <th className="py-1 pr-2 text-right">CLASS</th>
-                  <th className="py-1 pr-2 text-right">FILL</th>
-                  <th className="py-1 pr-2">STATUS</th>
+                  <th className="py-1 pr-2">{t("p.trade.cols.sym")}</th>
+                  <th className="py-1 pr-2">{t("p.trade.cols.side")}</th>
+                  <th className="py-1 pr-2 text-right">{t("p.trade.cols.qty")}</th>
+                  <th className="py-1 pr-2 text-right">{t("p.trade.cols.type")}</th>
+                  <th className="py-1 pr-2 text-right">{t("p.trade.cols.cls")}</th>
+                  <th className="py-1 pr-2 text-right">{t("p.trade.cols.fill")}</th>
+                  <th className="py-1 pr-2">{t("p.trade.cols.status")}</th>
                   <th className="py-1"></th>
                 </tr>
               </thead>
@@ -352,16 +371,7 @@ export default function OrderTicket({ symbol }) {
             </table>
           )}
           <p className="mt-2 text-[10px] leading-relaxed text-terminal-muted/80">
-            Submits to Alpaca paper trading. Orders are visible at{" "}
-            <a
-              href="https://paper-api.alpaca.markets"
-              className="underline"
-              target="_blank"
-              rel="noreferrer"
-            >
-              paper-api.alpaca.markets
-            </a>
-            .
+            {t("p.trade.footer")}
           </p>
         </>
       )}

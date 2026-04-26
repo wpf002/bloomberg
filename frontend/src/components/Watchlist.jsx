@@ -145,7 +145,7 @@ export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove })
                           onRemove(q.symbol);
                         }}
                         className="text-terminal-muted opacity-0 group-hover:opacity-100 hover:text-terminal-red"
-                        title={`Remove ${q.symbol}`}
+                        title={t("p.watchlist.remove_title", { sym: q.symbol })}
                       >
                         ✕
                       </button>
@@ -164,14 +164,14 @@ export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove })
                 <tr key={`missing-${sym}`} className="border-t border-terminal-border/60">
                   <td className="py-1 pr-2 font-bold text-terminal-muted line-through">{sym}</td>
                   <td colSpan={4} className="py-1 pr-2 text-right text-[11px] text-terminal-muted/80">
-                    no data
+                    {t("p.watchlist.no_data_label")}
                   </td>
                   <td className="py-1 text-right">
                     {onRemove ? (
                       <button
                         onClick={() => onRemove(sym)}
                         className="text-terminal-red hover:underline"
-                        title={`Remove ${sym}`}
+                        title={t("p.watchlist.remove_title", { sym })}
                       >
                         ✕
                       </button>

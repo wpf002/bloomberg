@@ -2,15 +2,9 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
+import { useTranslation } from "../i18n/index.jsx";
 
-const FACTOR_LABELS = {
-  mkt_rf: "Market (Mkt-RF)",
-  smb:    "Size (SMB)",
-  hml:    "Value (HML)",
-  rmw:    "Profitability (RMW)",
-  cma:    "Investment (CMA)",
-  mom:    "Momentum (UMD)",
-};
+const FACTOR_KEYS = ["mkt_rf", "smb", "hml", "rmw", "cma", "mom"];
 
 function fmtPct(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
@@ -26,6 +20,7 @@ function fmtNum(value, digits = 3) {
 }
 
 export default function FactorAnalyticsPanel() {
+  const { t } = useTranslation();
   const [lookback, setLookback] = useState(252);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -46,7 +41,6 @@ export default function FactorAnalyticsPanel() {
   };
 
   useEffect(() => {
-    // Run automatically on first mount; user re-runs manually after that.
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -55,7 +49,7 @@ export default function FactorAnalyticsPanel() {
 
   return (
     <Panel
-      title="Portfolio Factor Analysis (MARS)"
+      title={t("p.factors.title")}
       accent="amber"
       actions={
         <span className="flex items-center gap-2 tabular text-terminal-muted">
@@ -75,50 +69,52 @@ export default function FactorAnalyticsPanel() {
             disabled={loading}
             className="border border-terminal-amber px-2 py-0.5 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
           >
-            {loading ? "…" : data ? "Refresh" : "Run"}
+            {loading ? "…" : data ? t("p.common.refresh") : t("p.common.run")}
           </button>
         </span>
       }
     >
       {credsMissing ? (
         <div className="text-xs text-terminal-muted">
-          <p className="mb-2 text-terminal-amber">Need Alpaca paper credentials.</p>
-          <p>
-            Add <code className="text-terminal-green">ALPACA_API_KEY</code> +{" "}
-            <code className="text-terminal-green">ALPACA_API_SECRET</code> to{" "}
-            <code className="text-terminal-green">.env</code> and restart.
-          </p>
+          <p className="mb-2 text-terminal-amber">{t("p.factors.need_alpaca_head")}</p>
+          <p>{t("p.factors.need_alpaca_msg")}</p>
         </div>
       ) : error ? (
         <div className="text-xs text-terminal-red">{error}</div>
       ) : loading && !data ? (
-        <div className="text-xs text-terminal-muted">Pulling Ken French factors + bars…</div>
+        <div className="text-xs text-terminal-muted">{t("p.factors.pulling")}</div>
       ) : !data || data.insufficient_data ? (
         <div className="text-xs text-terminal-muted">
-          {data?.message || "Run to compute factor exposures from your live Alpaca paper portfolio."}
+          {data?.message || t("p.factors.hint")}
         </div>
       ) : (
         <div className="space-y-3 text-xs">
           <div className="grid grid-cols-3 gap-2 border border-terminal-border bg-terminal-panelAlt p-2">
-            <Stat label="Alpha (annual)" value={fmtPct(data.alpha_annual, 2)} accent={data.alpha_annual > 0 ? "green" : "red"} />
-            <Stat label="R²" value={fmtNum(data.r_squared, 3)} />
-            <Stat label="Days" value={String(data.observations)} />
+            <Stat
+              label={t("p.factors.stats.alpha")}
+              value={fmtPct(data.alpha_annual, 2)}
+              accent={data.alpha_annual > 0 ? "green" : "red"}
+            />
+            <Stat label={t("p.factors.stats.r2")} value={fmtNum(data.r_squared, 3)} />
+            <Stat label={t("p.factors.stats.days")} value={String(data.observations)} />
           </div>
           <table className="w-full tabular">
             <thead>
               <tr className="text-left text-[10px] uppercase tracking-widest text-terminal-muted">
-                <th className="py-1 pr-2">Factor</th>
-                <th className="py-1 pr-2 text-right">Beta</th>
-                <th className="py-1 pr-2">Reading</th>
+                <th className="py-1 pr-2">{t("p.factors.cols.factor")}</th>
+                <th className="py-1 pr-2 text-right">{t("p.factors.cols.beta")}</th>
+                <th className="py-1 pr-2">{t("p.factors.cols.reading")}</th>
               </tr>
             </thead>
             <tbody>
-              {Object.entries(FACTOR_LABELS).map(([key, label]) => {
+              {FACTOR_KEYS.map((key) => {
                 const beta = data.factors?.[key];
-                const reading = readBeta(key, beta);
+                const reading = readBeta(key, beta, t);
                 return (
                   <tr key={key} className="border-t border-terminal-border/40">
-                    <td className="py-1 pr-2 text-terminal-text">{label}</td>
+                    <td className="py-1 pr-2 text-terminal-text">
+                      {t(`p.factors.labels.${key}`)}
+                    </td>
                     <td className={clsx(
                       "py-1 pr-2 text-right",
                       beta > 0 ? "text-terminal-green" : beta < 0 ? "text-terminal-red" : "text-terminal-muted"
@@ -132,16 +128,18 @@ export default function FactorAnalyticsPanel() {
           {data.weights ? (
             <details className="text-[11px] text-terminal-muted">
               <summary className="cursor-pointer hover:text-terminal-amber">
-                Weights ({Object.keys(data.weights).length} positions)
+                {t("p.factors.weights_count", { count: Object.keys(data.weights).length })}
               </summary>
               <table className="mt-1 w-full tabular">
                 <tbody>
-                  {Object.entries(data.weights).sort((a, b) => b[1] - a[1]).map(([sym, w]) => (
-                    <tr key={sym} className="border-t border-terminal-border/40">
-                      <td className="py-0.5 pr-2 font-bold text-terminal-amber">{sym}</td>
-                      <td className="py-0.5 text-right">{fmtPct(w)}</td>
-                    </tr>
-                  ))}
+                  {Object.entries(data.weights)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([sym, w]) => (
+                      <tr key={sym} className="border-t border-terminal-border/40">
+                        <td className="py-0.5 pr-2 font-bold text-terminal-amber">{sym}</td>
+                        <td className="py-0.5 text-right">{fmtPct(w)}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </details>
@@ -152,10 +150,7 @@ export default function FactorAnalyticsPanel() {
             </div>
           ) : null}
           <p className="text-[10px] leading-relaxed text-terminal-muted">
-            Fama-French 5 (Mkt-RF / SMB / HML / RMW / CMA) + Carhart momentum
-            regressed on your current portfolio's hypothetical static-weight
-            daily returns. Alpha is the residual annualized × 252. Factors
-            from Ken French data library, refreshed daily.
+            {t("p.factors.footer")}
           </p>
         </div>
       )}
@@ -176,8 +171,9 @@ function Stat({ label, value, accent }) {
   );
 }
 
-// Simple plain-English read on each beta. Designed for non-technical
-// users — "0.4 SMB" doesn't mean anything to most retail.
+// Plain-English readings stay in English — they're a numeric narration that
+// downstream advisor prompts also consume verbatim. Translating these would
+// also require translating the regex hooks downstream.
 function readBeta(key, beta) {
   if (beta == null) return "";
   const abs = Math.abs(beta);
