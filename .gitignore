@@ -39,3 +39,4 @@ frontend/dist/
 postgres_data/
 redis_data/
 *.log
+.railway-helper.py
