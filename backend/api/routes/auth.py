@@ -40,6 +40,20 @@ def _oauth_configured() -> bool:
     return bool(settings.github_client_id and settings.github_client_secret)
 
 
+def _cookie_security() -> tuple[str, bool]:
+    """Pick (samesite, secure) for our auth cookies.
+
+    Local dev (frontend on http://localhost:5173) needs `lax + insecure`
+    so cookies get set without HTTPS. Production (frontend on a different
+    Railway subdomain than the backend) needs `none + secure` so the
+    browser sends the session cookie on cross-origin XHRs from the SPA.
+    Heuristic: if FRONTEND_URL is HTTPS, assume cross-origin production.
+    """
+    if settings.frontend_url.startswith("https://"):
+        return "none", True
+    return "lax", False
+
+
 @router.get("/github/login")
 async def github_login(request: Request) -> Response:
     if not _oauth_configured():
@@ -61,13 +75,14 @@ async def github_login(request: Request) -> Response:
     }
     target = f"{GITHUB_AUTHORIZE_URL}?{urlencode(params)}"
     response = RedirectResponse(target, status_code=302)
+    samesite, secure = _cookie_security()
     response.set_cookie(
         OAUTH_STATE_COOKIE,
         state,
         max_age=600,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=samesite,
+        secure=secure,
     )
     return response
 
@@ -127,13 +142,14 @@ async def github_callback(request: Request, code: str | None = None, state: str 
     user = await upsert_github_user(profile)
     session = issue_session(user.id)
     redirect = RedirectResponse(settings.frontend_url, status_code=302)
+    samesite, secure = _cookie_security()
     redirect.set_cookie(
         settings.session_cookie_name,
         session,
         max_age=settings.jwt_ttl_hours * 3600,
         httponly=True,
-        samesite="lax",
-        secure=False,
+        samesite=samesite,
+        secure=secure,
         path="/",
     )
     redirect.delete_cookie(OAUTH_STATE_COOKIE, path="/")

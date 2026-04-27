@@ -38,13 +38,16 @@ _dev_secret: str | None = None
 
 def _signing_secret() -> str:
     global _dev_secret
-    if settings.jwt_secret:
-        return settings.jwt_secret
+    # Accept either SECRET_KEY (Railway-friendly name) or JWT_SECRET. The
+    # `signing_secret` property folds both into one value.
+    configured = settings.signing_secret
+    if configured:
+        return configured
     if _dev_secret is None:
         _dev_secret = secrets.token_urlsafe(48)
         logger.warning(
-            "JWT_SECRET unset — generated an ephemeral signing key. "
-            "Sessions will invalidate on backend restart. Set JWT_SECRET in .env."
+            "SECRET_KEY/JWT_SECRET unset — generated an ephemeral signing key. "
+            "Sessions will invalidate on backend restart. Set SECRET_KEY in env."
         )
     return _dev_secret
 

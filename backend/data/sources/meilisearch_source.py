@@ -46,8 +46,10 @@ def _strip_html(html: str) -> str:
 class MeilisearchSource:
     def __init__(self) -> None:
         self._base = settings.meilisearch_url.rstrip("/")
+        # `meilisearch_secret` resolves either MEILISEARCH_KEY (Railway) or
+        # MEILISEARCH_MASTER_KEY (local docker-compose).
         self._headers = {
-            "Authorization": f"Bearer {settings.meilisearch_master_key}",
+            "Authorization": f"Bearer {settings.meilisearch_secret}",
             "Content-Type": "application/json",
         }
 

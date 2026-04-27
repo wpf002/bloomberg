@@ -108,6 +108,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      # Stop at the build stage so node_modules is present and `vite` is
+      # on PATH; we override CMD below to run the dev server with HMR.
+      target: build
     container_name: bt-frontend
     restart: unless-stopped
     depends_on:
@@ -119,6 +122,10 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    # Override the production CMD (`npm run start` / vite preview on the
+    # built dist) with the dev server so docker-compose still gives us
+    # hot-module reload.
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
 
 volumes:
   postgres_data:

@@ -1,0 +1,21 @@
+# Nixpacks build hint for the Railway frontend service. Pinning Node 20
+# so future Railway default-version drifts don't break the Vite build
+# (Vite 5 dropped Node 16, and Node 22 has changed esbuild behaviour we
+# haven't tested against).
+#
+# This file is only consulted when the frontend service is built via
+# nixpacks. The default deploy uses frontend/Dockerfile (multi-stage
+# build: install + build → preview server). If you switch the Railway
+# service to nixpacks, this file takes over.
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npm run start"

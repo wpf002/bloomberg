@@ -1,0 +1,96 @@
+# Railway deployment manifest for Bloomberg Terminal + AURORA Intelligence Layer.
+#
+# Railway's `railway.toml` describes per-service build/start/healthcheck
+# behaviour for services tracked in this repo. Plugins (managed Postgres /
+# Redis) and image-only services (Meilisearch) are created in the Railway
+# dashboard — see RAILWAY_DEPLOY.md for the exact clicks.
+#
+# Service inventory:
+#   backend     — FastAPI / Python 3.11 (Dockerfile: backend/Dockerfile)
+#   frontend    — React 18 / Vite (Dockerfile: frontend/Dockerfile)
+#   timescaledb — Railway managed Postgres plugin + `CREATE EXTENSION timescaledb`
+#   redis       — Railway managed Redis plugin
+#   meilisearch — getmeili/meilisearch:v1.7 docker image (Railway "Deploy from
+#                 image" template)
+#
+# Both repo-tracked services use Dockerfiles rather than nixpacks so the build
+# context stays the repo root — the existing Dockerfiles already COPY the
+# right subdirectories. The `rootDirectory` for both services must be `/`
+# (the repo root) in the Railway dashboard so the Dockerfiles' relative
+# paths resolve.
+
+[build]
+builder = "DOCKERFILE"
+
+[deploy]
+restartPolicyType = "ALWAYS"
+restartPolicyMaxRetries = 10
+
+# ── backend ────────────────────────────────────────────────────────────────
+[[services]]
+name = "backend"
+
+  [services.build]
+  builder = "DOCKERFILE"
+  dockerfilePath = "backend/Dockerfile"
+
+  [services.deploy]
+  startCommand = "python -m uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+  healthcheckPath = "/healthz"
+  healthcheckTimeout = 30
+  restartPolicyType = "ALWAYS"
+  restartPolicyMaxRetries = 10
+
+# ── frontend ───────────────────────────────────────────────────────────────
+[[services]]
+name = "frontend"
+
+  [services.build]
+  builder = "DOCKERFILE"
+  dockerfilePath = "frontend/Dockerfile"
+
+  [services.deploy]
+  startCommand = "npm run start"
+  healthcheckPath = "/"
+  healthcheckTimeout = 30
+  restartPolicyType = "ALWAYS"
+  restartPolicyMaxRetries = 10
+
+# ── timescaledb (managed Postgres plugin) ──────────────────────────────────
+# Provisioned from the Railway dashboard as a Postgres plugin. After the
+# plugin is up, run once in the Railway Postgres shell:
+#   CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE;
+# The backend's startup migration is idempotent and re-issues the same
+# statement, so a fresh database after a region move or reset auto-heals.
+[[services]]
+name = "timescaledb"
+plugin = "postgresql"
+
+  [services.deploy]
+  restartPolicyType = "ALWAYS"
+
+# ── redis (managed plugin) ─────────────────────────────────────────────────
+[[services]]
+name = "redis"
+plugin = "redis"
+
+  [services.deploy]
+  restartPolicyType = "ALWAYS"
+
+# ── meilisearch (docker image service) ─────────────────────────────────────
+# Deployed as a Railway "Deploy from image" service using
+# `getmeili/meilisearch:v1.7`. Required env vars:
+#   MEILI_MASTER_KEY=<long-random-secret>
+#   MEILI_NO_ANALYTICS=true
+#   MEILI_ENV=production
+# Meilisearch listens on $PORT by default. The backend reads
+# MEILISEARCH_URL + MEILISEARCH_MASTER_KEY from its own env and treats
+# Meilisearch as best-effort — if it's down, the SRCH (filings full-text)
+# panel degrades but the rest of the app keeps running.
+[[services]]
+name = "meilisearch"
+image = "getmeili/meilisearch:v1.7"
+
+  [services.deploy]
+  healthcheckPath = "/health"
+  restartPolicyType = "ALWAYS"

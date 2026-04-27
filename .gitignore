@@ -27,6 +27,7 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+!.env.railway.example
 
 # --- Editors ---
 .vscode/

@@ -16,17 +16,25 @@ class Database:
     async def connect(self) -> None:
         if self.pool is not None:
             return
+        # `parsed_postgres` honours DATABASE_URL (Railway/Heroku) when set,
+        # otherwise falls back to the per-component POSTGRES_* env vars
+        # used by docker-compose.
+        params = settings.parsed_postgres
+        # Railway managed Postgres requires SSL — auto-enable when the
+        # DATABASE_URL host isn't a local address.
+        ssl = None
+        if settings.database_url:
+            host = params.get("host") or ""
+            if host and host not in {"localhost", "127.0.0.1", "postgres"}:
+                ssl = "require"
         self.pool = await asyncpg.create_pool(
-            user=settings.postgres_user,
-            password=settings.postgres_password,
-            database=settings.postgres_db,
-            host=settings.postgres_host,
-            port=settings.postgres_port,
+            **params,
+            ssl=ssl,
             min_size=1,
             max_size=10,
             command_timeout=30,
         )
-        logger.info("PostgreSQL pool ready: %s:%s", settings.postgres_host, settings.postgres_port)
+        logger.info("PostgreSQL pool ready: %s:%s", params["host"], params["port"])
 
     async def disconnect(self) -> None:
         if self.pool is not None:
@@ -54,7 +62,7 @@ class Cache:
             decode_responses=True,
         )
         await self.client.ping()
-        logger.info("Redis connected: %s:%s", settings.redis_host, settings.redis_port)
+        logger.info("Redis connected: %s", settings.redis_url.split("@")[-1])
 
     async def disconnect(self) -> None:
         if self.client is not None:

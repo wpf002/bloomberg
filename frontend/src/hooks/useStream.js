@@ -41,7 +41,18 @@ export default function useStream(path, { onMessage, enabled = true } = {}) {
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
-          if (data?.type === "ping") return;
+          if (data?.type === "ping") {
+            // Reply with a pong so the server's liveness watchdog stays
+            // satisfied. Railway's WS proxy idles silent connections at
+            // 90s, so the server pings every 30s and expects a pong
+            // within 10s — see backend/api/routes/streams.py.
+            try {
+              ws.send(JSON.stringify({ type: "pong" }));
+            } catch {
+              // socket already closing; harmless
+            }
+            return;
+          }
           setLast(data);
           onMessageRef.current?.(data);
         } catch {
