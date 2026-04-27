@@ -44,13 +44,16 @@ async def _pump(ws: WebSocket, queues: list[asyncio.Queue]) -> None:
       - one timer scheduling the next ping
       - one `ws.receive_text()` so we can observe pong frames (and any
         client-initiated frame, which counts as proof of liveness)
-    Whenever the client sends *anything*, we update `last_client_msg`.
-    A ping that goes >10s without any client traffic afterwards trips
-    the pong watchdog and we close the socket.
+
+    Watchdog is anchored to *when the last ping was sent*, not to the
+    last client message — otherwise a brand-new connection (which has
+    never received a client frame) would fail the very first
+    `awaiting_pong` window. Process completed tasks BEFORE evaluating
+    liveness so an in-the-same-tick pong correctly clears the flag.
     """
     pending: set[asyncio.Task] = set()
-    last_client_msg = time.monotonic()
     awaiting_pong = False
+    last_ping_sent_at: float | None = None
 
     def schedule_get(q: asyncio.Queue) -> asyncio.Task:
         task = asyncio.create_task(q.get())
@@ -81,17 +84,8 @@ async def _pump(ws: WebSocket, queues: list[asyncio.Queue]) -> None:
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
-            # Liveness: if we asked for a pong > PONG_TIMEOUT_SECONDS ago
-            # and nothing has come back from the client (no pong, no other
-            # frame), close. This catches Railway / corp-proxy half-open
-            # sockets where send still works but the peer is gone.
-            if awaiting_pong and (time.monotonic() - last_client_msg) > PONG_TIMEOUT_SECONDS:
-                logger.debug("ws closing: no pong within %.1fs", PONG_TIMEOUT_SECONDS)
-                try:
-                    await ws.close(code=1011)
-                finally:
-                    return
-
+            # Process completed tasks first so an arriving pong clears
+            # awaiting_pong before the liveness check below evaluates it.
             for task in done:
                 kind = getattr(task, "_kind", None)
                 if kind == "ping":
@@ -100,23 +94,15 @@ async def _pump(ws: WebSocket, queues: list[asyncio.Queue]) -> None:
                     except Exception:
                         return
                     awaiting_pong = True
+                    last_ping_sent_at = time.monotonic()
                     pending.add(schedule_ping())
                     continue
                 if kind == "recv":
                     # An exception (disconnect) propagates the WebSocketDisconnect
-                    # up to the route handler.
-                    raw = task.result()
-                    last_client_msg = time.monotonic()
+                    # up to the route handler. Any frame from the client —
+                    # explicit pong or otherwise — counts as proof of liveness.
+                    task.result()
                     awaiting_pong = False
-                    # We don't actually need the message body — the fact
-                    # that the client could send proves liveness. Still,
-                    # skip our own ping echoes if the client mirrors them.
-                    try:
-                        parsed = json.loads(raw)
-                        if isinstance(parsed, dict) and parsed.get("type") == "pong":
-                            pass
-                    except Exception:
-                        pass
                     pending.add(schedule_recv())
                     continue
                 # queue task: fan-out a real message
@@ -127,6 +113,20 @@ async def _pump(ws: WebSocket, queues: list[asyncio.Queue]) -> None:
                     return
                 origin = task._origin_queue  # type: ignore[attr-defined]
                 pending.add(schedule_get(origin))
+
+            # Liveness: if a ping has been outstanding > PONG_TIMEOUT_SECONDS,
+            # close. This catches Railway / corp-proxy half-open sockets
+            # where send still works but the peer is gone.
+            if (
+                awaiting_pong
+                and last_ping_sent_at is not None
+                and (time.monotonic() - last_ping_sent_at) > PONG_TIMEOUT_SECONDS
+            ):
+                logger.debug("ws closing: no pong within %.1fs", PONG_TIMEOUT_SECONDS)
+                try:
+                    await ws.close(code=1011)
+                finally:
+                    return
     finally:
         for task in pending:
             task.cancel()
