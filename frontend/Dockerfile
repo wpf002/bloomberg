@@ -15,6 +15,14 @@ RUN npm install
 
 COPY frontend ./
 
+# Vite reads `import.meta.env.VITE_API_URL` at build time and inlines the
+# string into the bundle. Railway exposes service variables to the build
+# *only* when they're declared as ARGs; without this Vite gets an empty
+# value and the SPA falls back to same-origin — which breaks WebSockets,
+# since Vite preview's HTTP proxy doesn't pass `Upgrade: websocket`.
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
 # Cross-platform NODE_ENV=production so Tailwind purges and Vite minifies.
 ENV NODE_ENV=production
 RUN npm run build
