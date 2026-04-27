@@ -28,6 +28,24 @@ ALPACA_CRYPTO_BASE = "https://data.alpaca.markets/v1beta3/crypto/us"
 ALPACA_OPTIONS_BASE = "https://data.alpaca.markets/v1beta1/options"
 
 
+def _pick_default_expiration(expirations: list[str]) -> str:
+    """First expiration ≥ 7 days out. Zero/near-zero DTE chains have no
+    meaningful IV (the indicative feed reports 0%) and the smile chart
+    flat-lines, which is what the OPT panel was rendering when it
+    defaulted to today's expiry. Falls back to the soonest expiration if
+    the symbol only carries weeklies that are all close-in."""
+    today = datetime.now(timezone.utc).date()
+    cutoff = today + timedelta(days=7)
+    for exp in expirations:
+        try:
+            d = datetime.strptime(exp, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if d >= cutoff:
+            return exp
+    return expirations[0]
+
+
 def _parse_occ_symbol(symbol: str) -> tuple[str, str, float] | None:
     """Decode an OCC-style option symbol like AAPL250117C00150000 into
     (expiration ISO, type, strike). Returns None on malformed input.
@@ -557,7 +575,7 @@ class AlpacaSource:
             expirations = []
         if not expirations:
             return OptionChain(symbol=sym)
-        target = expiration if expiration in expirations else expirations[0]
+        target = expiration if expiration in expirations else _pick_default_expiration(expirations)
 
         # Pull the underlying spot for moneyness/Greeks (fast — already cached
         # by get_stock_quote).

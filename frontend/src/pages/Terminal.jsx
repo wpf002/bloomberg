@@ -465,6 +465,16 @@ export default function Terminal() {
     [triggerFlash]
   );
 
+  // BLOOMBERG TERMINAL header click → return to the canonical home view:
+  // Terminal mode + first watchlist symbol active + scroll to top.
+  const handleHome = useCallback(() => {
+    setMode("terminal");
+    setActiveSymbol(watchlist[0] ?? DEFAULT_WATCHLIST[0]);
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [watchlist]);
+
   const handleRemove = useCallback(
     (symbol) => {
       setWatchlist((prev) => {
@@ -536,6 +546,7 @@ export default function Terminal() {
         lastCommand={lastCommand}
         mode={mode}
         onModeChange={setMode}
+        onHome={handleHome}
       />
       {sharedView ? (
         <div className="flex flex-wrap items-center gap-3 border-b border-terminal-amber/60 bg-terminal-amber/10 px-4 py-1.5 text-[11px] uppercase tracking-widest text-terminal-amber">

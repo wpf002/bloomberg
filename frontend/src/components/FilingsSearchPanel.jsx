@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
@@ -33,6 +33,18 @@ export default function FilingsSearchPanel({ symbol }) {
   const [error, setError] = useState(null);
   const [indexing, setIndexing] = useState(false);
   const [indexResult, setIndexResult] = useState(null);
+
+  // Reset every panel-local piece of state when the active symbol
+  // changes, so leftover hits / errors / index results from the
+  // previous symbol don't bleed into the new view.
+  useEffect(() => {
+    setQuery("");
+    setHits(null);
+    setError(null);
+    setIndexResult(null);
+    setLoading(false);
+    setIndexing(false);
+  }, [symbol]);
 
   const runSearch = async (e) => {
     e?.preventDefault();

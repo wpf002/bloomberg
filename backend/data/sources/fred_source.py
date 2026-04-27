@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import List
 
@@ -11,6 +12,12 @@ from ..normalizer import get_normalizer
 from ...models.schemas import MacroSeries, MacroSeriesPoint
 
 logger = logging.getLogger(__name__)
+
+# FRED occasionally returns 5xx for ~1s during their backend cluster
+# rotations. Two retries with short backoff (~750ms total) is enough to
+# absorb those without making a healthy call wait noticeably longer.
+_FRED_MAX_ATTEMPTS = 3
+_FRED_BACKOFF_BASE = 0.25
 
 DEFAULT_SERIES_METADATA = {
     "GDP": ("Gross Domestic Product", "Billions of Dollars", "Quarterly"),
@@ -47,7 +54,22 @@ class FredSource:
 
     def _series_sync(self, series_id: str, limit: int) -> MacroSeries:
         assert self._client is not None
-        series = self._client.get_series(series_id)
+        # FRED returns the occasional 5xx during backend rollovers — retry
+        # the actual observation fetch, which is the call that makes the
+        # endpoint return 502 to the user.
+        last_exc: Exception | None = None
+        series = None
+        for attempt in range(_FRED_MAX_ATTEMPTS):
+            try:
+                series = self._client.get_series(series_id)
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt < _FRED_MAX_ATTEMPTS - 1:
+                    time.sleep(_FRED_BACKOFF_BASE * (2 ** attempt))
+                    continue
+        if series is None:
+            raise last_exc or RuntimeError(f"FRED get_series returned no data for {series_id}")
         observations: List[MacroSeriesPoint] = []
         for ts, value in series.dropna().tail(limit).items():
             observations.append(

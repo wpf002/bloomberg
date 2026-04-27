@@ -35,7 +35,7 @@ function splitTail(input) {
   return { head: up.slice(0, lastSpace + 1), tail: up.slice(lastSpace + 1) };
 }
 
-export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode, onModeChange }) {
+export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode, onModeChange, onHome }) {
   const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [clock, setClock] = useState(() => new Date());
@@ -205,7 +205,12 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
   return (
     <header className="flex flex-col border-b border-terminal-border bg-terminal-panelAlt">
       <div className="flex items-center gap-4 px-4 py-2">
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onHome}
+          title="Go to terminal home"
+          className="flex items-center gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-terminal-amber/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-terminal-amber"
+        >
           <span className="h-2 w-2 rounded-full bg-terminal-amber shadow-[0_0_8px_#ff9f1c]" />
           <span className="text-sm font-bold tracking-widest text-terminal-amber">
             {t("app.title").toUpperCase()}
@@ -213,7 +218,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
           <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
             v0.1 · {t("app.edition")}
           </span>
-        </div>
+        </button>
         {onModeChange ? (
           <div className="flex items-center border border-terminal-border bg-terminal-bg">
             <button
