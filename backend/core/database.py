@@ -20,12 +20,16 @@ class Database:
         # otherwise falls back to the per-component POSTGRES_* env vars
         # used by docker-compose.
         params = settings.parsed_postgres
-        # Railway managed Postgres requires SSL — auto-enable when the
-        # DATABASE_URL host isn't a local address.
+        # Some managed Postgres providers require SSL on the wire (Heroku,
+        # Supabase, Neon). Railway's TimescaleDB image on the private
+        # network does NOT support SSL — auto-enable only when the host
+        # is a public hostname *and* not a Railway internal host.
         ssl = None
         if settings.database_url:
             host = params.get("host") or ""
-            if host and host not in {"localhost", "127.0.0.1", "postgres"}:
+            internal = host.endswith(".railway.internal") or host == "postgres"
+            local = host in {"localhost", "127.0.0.1"}
+            if host and not internal and not local:
                 ssl = "require"
         self.pool = await asyncpg.create_pool(
             **params,
