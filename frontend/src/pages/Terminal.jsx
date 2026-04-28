@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import clsx from "clsx";
 import AlertsPanel from "../components/AlertsPanel.jsx";
 import CalendarPanel from "../components/CalendarPanel.jsx";
 import Chart from "../components/Chart.jsx";
@@ -33,17 +34,6 @@ import useAuth from "../hooks/useAuth.js";
 import useTheme from "../hooks/useTheme.js";
 import { useTranslation } from "../i18n/index.jsx";
 import { api } from "../lib/api.js";
-
-// Panels considered "essential" on mobile/xs viewports. Others stay
-// hidden behind a "+ MORE PANELS" toggle so a phone user isn't dropped
-// into a 19-tile vertical wall on first open.
-const MOBILE_PRIORITY_PANELS = new Set([
-  "watchlist",
-  "chart",
-  "news",
-  "markets",
-  "portfolio",
-]);
 
 // AURORA: panels exclusive to "intelligence" mode. The mode toggle next to
 // the command bar swaps between Terminal panels (everything else) and these.
@@ -224,23 +214,6 @@ export default function Terminal() {
   const { theme, cycle: cycleTheme, themes } = useTheme();
   const { t, locale, setLocale, locales } = useTranslation();
 
-  // Mobile breakpoint: collapse to a priority-only panel set on screens
-  // narrower than ~720px. The user can flip it off via the "+ MORE PANELS"
-  // button to see the full layout if they really want.
-  const [mobilePriorityOnly, setMobilePriorityOnly] = useState(() => {
-    try {
-      return window.matchMedia("(max-width: 720px)").matches;
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const mq = window.matchMedia("(max-width: 720px)");
-    const handler = (e) => setMobilePriorityOnly(e.matches);
-    mq.addEventListener?.("change", handler);
-    return () => mq.removeEventListener?.("change", handler);
-  }, []);
   const cycleLocale = useCallback(() => {
     const idx = locales.findIndex((l) => l.code === locale);
     setLocale(locales[(idx + 1) % locales.length].code);
@@ -522,24 +495,20 @@ export default function Terminal() {
     [watchlist, activeSymbol, compareSymbols, handleSelect, handleRemove]
   );
 
-  // AURORA: filter panel set by mode first.
+  // AURORA: filter panel set by mode.
   //   - "intelligence" mode: only the 4 AURORA panels (large 2×2 grid).
   //   - "terminal" mode: everything except the 4 AURORA panels.
-  // The mobile-priority filter still applies on top in terminal mode.
   const renderedPanels = useMemo(() => {
     if (mode === "intelligence") {
       return panels.filter((p) => INTELLIGENCE_PANELS.has(p.id));
     }
-    const terminalSet = panels.filter((p) => !INTELLIGENCE_PANELS.has(p.id));
-    return mobilePriorityOnly
-      ? terminalSet.filter((p) => MOBILE_PRIORITY_PANELS.has(p.id))
-      : terminalSet;
-  }, [panels, mode, mobilePriorityOnly]);
+    return panels.filter((p) => !INTELLIGENCE_PANELS.has(p.id));
+  }, [panels, mode]);
 
   const activeLayouts = mode === "intelligence" ? INTELLIGENCE_LAYOUTS : DEFAULT_LAYOUTS;
 
   return (
-    <div className="flex h-screen flex-col bg-terminal-bg text-terminal-text">
+    <div className="flex h-[100dvh] flex-col bg-terminal-bg text-terminal-text">
       <CommandBar
         onCommand={onCommand}
         activeSymbol={activeSymbol}
@@ -580,7 +549,7 @@ export default function Terminal() {
           )}
         </div>
       ) : null}
-      <main className="flex-1 min-h-0 overflow-auto">
+      <main className="flex-1 min-h-0 overflow-auto pb-4">
         <Launchpad
           // AURORA: keying on mode forces a clean remount when the user
           // toggles modes, so layouts don't bleed across them.
@@ -626,7 +595,7 @@ export default function Terminal() {
           onShare={user && !sharedView ? () => setShareOpen(true) : undefined}
         />
       </main>
-      <footer className="relative border-t border-terminal-border bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+      <footer className="relative z-10 border-t-2 border-terminal-amber/40 bg-terminal-panelAlt px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted shadow-[0_-8px_20px_-4px_rgba(0,0,0,0.85)]">
         <span className="absolute left-4 top-1/2 -translate-y-1/2 hidden md:inline">
           {t("footer.active")} <span className="text-terminal-amber">{activeSymbol}</span>
           {user ? (
@@ -635,51 +604,51 @@ export default function Terminal() {
             </span>
           ) : null}
         </span>
-        <span className="mx-auto flex max-w-3xl items-center justify-between gap-2">
+        <span className="mx-auto flex max-w-3xl flex-nowrap items-center justify-between gap-2 overflow-x-auto whitespace-nowrap">
           <button
             onClick={() => setEditMode((p) => !p)}
-            className={editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
+            className={clsx("shrink-0", editMode ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text")}
           >
             {editMode ? t("footer.layoutOn") : t("footer.layoutOff")}
           </button>
-          <span>·</span>
+          <span className="shrink-0">·</span>
           <button
             onClick={() => setResetKey((k) => k + 1)}
-            className="text-terminal-muted hover:text-terminal-text"
+            className="shrink-0 text-terminal-muted hover:text-terminal-text"
           >
             {t("footer.reset")}
           </button>
-          <span>·</span>
-          <button onClick={() => setHelpOpen(true)} className="text-terminal-amber">
+          <span className="shrink-0">·</span>
+          <button onClick={() => setHelpOpen(true)} className="shrink-0 text-terminal-amber">
             {t("footer.help")}
           </button>
-          <span>·</span>
+          <span className="shrink-0">·</span>
           <button
             onClick={cycleTheme}
-            className="text-terminal-muted hover:text-terminal-text"
+            className="shrink-0 text-terminal-muted hover:text-terminal-text"
             title={themes.map((tt) => tt.label).join(" / ")}
           >
             {t("theme.label")} {(themes.find((tt) => tt.slug === theme) || themes[0]).label}
           </button>
-          <span>·</span>
+          <span className="shrink-0">·</span>
           <button
             onClick={cycleLocale}
-            className="text-terminal-muted hover:text-terminal-text"
+            className="shrink-0 text-terminal-muted hover:text-terminal-text"
             title={locales.map((l) => l.label).join(" / ")}
           >
             {t("language.label")} {(locales.find((l) => l.code === locale) || locales[0]).label}
           </button>
-          <span>·</span>
+          <span className="shrink-0">·</span>
           {user ? (
-            <button onClick={logout} className="text-terminal-muted hover:text-terminal-text">
+            <button onClick={logout} className="shrink-0 text-terminal-muted hover:text-terminal-text">
               {t("footer.logout")}
             </button>
           ) : oauthConfigured ? (
-            <button onClick={login} className="text-terminal-amber hover:underline">
+            <button onClick={login} className="shrink-0 text-terminal-amber hover:underline">
               {t("footer.login")}
             </button>
           ) : (
-            <span title={t("footer.loginNaTitle")}>
+            <span className="shrink-0" title={t("footer.loginNaTitle")}>
               {t("footer.loginNa")}
             </span>
           )}

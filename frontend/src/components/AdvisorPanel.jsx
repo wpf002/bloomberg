@@ -494,9 +494,9 @@ export default function AdvisorPanel({ symbol, watchlist }) {
   // Single row renderer used by both tiers. Buttons are visually identical;
   // the only thing differentiating tiers is which row they sit in.
   const renderTabRow = (keys) => (
-    <div className="flex flex-wrap items-center text-[10px] uppercase tracking-widest">
+    <div className="flex flex-nowrap items-center overflow-x-auto whitespace-nowrap text-[10px] uppercase tracking-widest">
       {keys.map((key, i) => (
-        <span key={key} className="flex items-center">
+        <span key={key} className="flex shrink-0 items-center">
           {i > 0 ? (
             <span className="px-2 text-terminal-border" aria-hidden>
               ·

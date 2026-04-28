@@ -203,24 +203,21 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
     : "<SYMBOL> <MNEMONIC>  e.g.  AAPL DES · AAPL GP · AAPL N · AAPL OMON · HELP";
 
   return (
-    <header className="flex flex-col border-b border-terminal-border bg-terminal-panelAlt">
-      <div className="flex items-center gap-4 px-4 py-2">
+    <header className="z-10 flex flex-col border-b-2 border-terminal-amber/40 bg-terminal-panelAlt shadow-[0_8px_20px_-4px_rgba(0,0,0,0.85)]">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 md:flex-nowrap md:gap-4">
         <button
           type="button"
           onClick={onHome}
           title="Go to terminal home"
-          className="flex items-center gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-terminal-amber/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-terminal-amber"
+          className="order-1 flex items-center gap-2 rounded-sm px-1 py-0.5 text-left transition-colors hover:bg-terminal-amber/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-terminal-amber"
         >
           <span className="h-2 w-2 rounded-full bg-terminal-amber shadow-[0_0_8px_#ff9f1c]" />
-          <span className="text-sm font-bold tracking-widest text-terminal-amber">
+          <span className="text-sm font-bold tracking-widest text-terminal-amber whitespace-nowrap">
             {t("app.title").toUpperCase()}
-          </span>
-          <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-            v0.1 · {t("app.edition")}
           </span>
         </button>
         {onModeChange ? (
-          <div className="flex items-center border border-terminal-border bg-terminal-bg">
+          <div className="order-3 flex items-center border border-terminal-border bg-terminal-bg md:order-2">
             <button
               type="button"
               onClick={() => onModeChange("terminal")}
@@ -249,10 +246,10 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
             </button>
           </div>
         ) : null}
-        <form onSubmit={submit} className="relative flex-1">
-          <div className="flex items-center border border-terminal-border bg-terminal-bg px-2 py-1">
-            <span className="pr-2 text-terminal-amber">›</span>
-            <div className="relative flex-1">
+        <form onSubmit={submit} className="relative order-4 w-full md:order-3 md:w-auto md:flex-1">
+          <div className="flex items-center gap-2 border border-terminal-border bg-terminal-bg px-2 py-1">
+            <span className="shrink-0 text-terminal-amber">›</span>
+            <div className="relative min-w-0 flex-1 overflow-hidden">
               <input
                 ref={inputRef}
                 value={value}
@@ -261,7 +258,11 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
                   setHistoryIdx(-1);
                 }}
                 onKeyDown={onKeyDown}
-                placeholder={t("command.placeholder", { symbol: activeSymbol ?? t("command.placeholderEmpty") })}
+                placeholder={
+                  activeSymbol
+                    ? t("command.placeholderShort", { symbol: activeSymbol })
+                    : t("command.placeholderShortEmpty")
+                }
                 className="relative z-10 w-full bg-transparent text-sm uppercase tracking-wider text-terminal-text placeholder:text-terminal-muted/60 focus:outline-none"
                 spellCheck={false}
                 autoComplete="off"
@@ -276,7 +277,7 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
                 </span>
               )}
             </div>
-            <span className="text-[10px] uppercase tracking-widest text-terminal-muted">
+            <span className="hidden shrink-0 text-[10px] uppercase tracking-widest text-terminal-muted sm:inline">
               {showSuggestions ? t("command.tab") : t("command.enter")}
             </span>
           </div>
@@ -335,8 +336,13 @@ export default function CommandBar({ onCommand, activeSymbol, lastCommand, mode,
             </ul>
           )}
         </form>
-        <div className="tabular text-xs text-terminal-muted">
-          {clock.toUTCString().split(" ").slice(0, 5).join(" ")} UTC
+        <div className="order-2 ml-auto whitespace-nowrap text-right tabular text-[10px] leading-tight text-terminal-muted md:order-4 md:ml-0 md:text-xs md:leading-normal">
+          <span className="block md:inline">
+            {clock.toUTCString().split(" ").slice(0, 4).join(" ")}
+          </span>
+          <span className="block md:ml-1 md:inline">
+            {clock.toUTCString().split(" ")[4]} UTC
+          </span>
         </div>
       </div>
       <div className="flex items-center gap-2 overflow-x-auto border-t border-terminal-border/60 px-4 py-1 text-[10px] uppercase tracking-widest text-terminal-muted">

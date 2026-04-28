@@ -5,11 +5,19 @@ import "react-resizable/css/styles.css";
 import "./launchpad.css";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
-const STORAGE_KEY = "bt.launchpad.layouts.v1";
-const HIDDEN_KEY = "bt.launchpad.hidden.v1";
+// Bumped to v2 after mobile layout reflow — old saved layouts had positions
+// computed against the prior cols.xs=4 grid, which leaves panels rendering at
+// 150% width on phones. Bumping the key discards stale local layouts on first
+// load.
+const STORAGE_KEY = "bt.launchpad.layouts.v2";
+const HIDDEN_KEY = "bt.launchpad.hidden.v2";
 
+// Below `sm` we still want a 6-col grid so the saved `sm` layout (w:6 = full
+// row) fits — switching to a narrower col count was leaving panels rendered
+// at >100% width on phones, with their action chrome bleeding off the right
+// edge of the viewport.
 const BREAKPOINTS = { lg: 1280, md: 960, sm: 720, xs: 480 };
-const COLS = { lg: 12, md: 12, sm: 6, xs: 4 };
+const COLS = { lg: 12, md: 12, sm: 6, xs: 6 };
 
 function readJson(key) {
   try {

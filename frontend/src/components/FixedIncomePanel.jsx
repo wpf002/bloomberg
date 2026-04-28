@@ -99,13 +99,13 @@ export default function FixedIncomePanel() {
         </span>
       }
     >
-      <div className="flex gap-1 border-b border-terminal-border/60 pb-1">
+      <div className="flex flex-nowrap gap-1 overflow-x-auto whitespace-nowrap border-b border-terminal-border/60 pb-1">
         {TAB_KEYS.map((key) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={clsx(
-              "border px-2 py-0.5 text-[10px] uppercase tracking-widest",
+              "shrink-0 border px-2 py-0.5 text-[10px] uppercase tracking-widest",
               tab === key
                 ? "border-terminal-amber text-terminal-amber"
                 : "border-transparent text-terminal-muted hover:text-terminal-text"
@@ -165,7 +165,8 @@ function AuctionTable({ rows, kind, t }) {
     );
   }
   return (
-    <table className="mt-2 w-full text-xs tabular">
+    <div className="mt-2 overflow-x-auto">
+    <table className="w-full min-w-[640px] text-xs tabular">
       <thead>
         <tr className="text-left text-[10px] uppercase tracking-widest text-terminal-muted">
           <th className="py-1 pr-2">{t("p.fixed.cols_a.type")}</th>
@@ -191,6 +192,7 @@ function AuctionTable({ rows, kind, t }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 
@@ -200,7 +202,8 @@ function TreasuryAggTable({ rows, t }) {
     return <div className="mt-2 text-xs text-terminal-muted">{t("p.fixed.no_trace")}</div>;
   }
   return (
-    <table className="mt-2 w-full text-xs tabular">
+    <div className="mt-2 overflow-x-auto">
+    <table className="w-full min-w-[680px] text-xs tabular">
       <thead>
         <tr className="text-left text-[10px] uppercase tracking-widest text-terminal-muted">
           <th className="py-1 pr-2">{t("p.fixed.cols_t.period")}</th>
@@ -232,6 +235,7 @@ function TreasuryAggTable({ rows, t }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

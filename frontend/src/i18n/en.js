@@ -9,6 +9,8 @@ export default {
   command: {
     placeholder: "Active: {symbol}   Enter: <SYMBOL> <FN>   (HELP for mnemonics)",
     placeholderEmpty: "—",
+    placeholderShort: "{symbol} · type SYMBOL FN",
+    placeholderShortEmpty: "type SYMBOL FN · HELP",
     enter: "ENTER",
     tab: "TAB",
     quick: "Quick:",
@@ -322,13 +324,13 @@ export default {
       hint: "Pick a strategy preset above, then press Plot. P/L is at expiration; multiplier 100 (US equity options).",
     },
     sql: {
-      title: "SQL — DuckDB Workbench",
+      title: "SQL Workbench",
       no_tables: "no tables yet",
       run: "Run (Cmd+Enter)",
       placeholder: "SELECT ... FROM bars WHERE symbol = 'AAPL'  (Cmd/Ctrl+Enter to run)",
       meta: "{rows} rows · {ms}ms",
       truncated: " · TRUNCATED",
-      empty: "Run a query to see rows. Tables: bars, macro, filings (read-only).",
+      empty: "Run a query to see rows. Tables: BARS, MACRO, FILINGS (read-only).",
       presets: {
         aapl_30: "AAPL last 30 closes",
         avg_vol: "Avg daily volume by symbol",
@@ -345,6 +347,8 @@ export default {
       esg_title: "Restrict to filings that typically carry ESG/climate disclosures (10-K, 8-K, DEF 14A, S-K)",
       index_meta: "Metadata only ({sym})",
       index_full: "Full text ({sym})",
+      index_meta_short: "Metadata only",
+      index_full_short: "Full text",
       indexed: "indexed {indexed} · bodies {bodies}",
       empty: "Index a symbol's filings, then search the corpus. Full-text mode fetches the primary document from EDGAR (slower, per-filing) and indexes the body so phrase searches work.",
       none: "No hits.",

@@ -36,8 +36,8 @@ export default function SizingPanel({ symbol }) {
         ) : null
       }
     >
-      <div className="mb-3 flex items-baseline gap-3 text-xs">
-        <label className="flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-3 text-xs">
+        <label className="flex items-center gap-2 whitespace-nowrap">
           <span className="text-terminal-muted">{t("p.sizing.stop")}</span>
           <input
             type="number"
@@ -49,9 +49,6 @@ export default function SizingPanel({ symbol }) {
             className="w-16 border border-terminal-border bg-terminal-bg px-2 py-0.5 tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
           />
         </label>
-        <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
-          {t("p.sizing.stop_hint")}
-        </span>
       </div>
       {credsMissing ? (
         <div className="text-xs text-terminal-muted">{t("p.sizing.need_alpaca")}</div>

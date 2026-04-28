@@ -27,7 +27,8 @@ function applyTheme(slug) {
 
 function readInitial() {
   // URL param wins (so `?theme=light` shareable links work), then
-  // localStorage, then system preference.
+  // localStorage. Always falls back to dark — the terminal aesthetic is
+  // dark-first; we don't honor OS prefers-color-scheme as a default.
   try {
     const url = new URL(window.location.href);
     const fromUrl = url.searchParams.get(URL_PARAM);
@@ -38,13 +39,6 @@ function readInitial() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored && THEMES.some((t) => t.slug === stored)) return stored;
-  } catch {
-    // ignore
-  }
-  try {
-    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
-      return "light";
-    }
   } catch {
     // ignore
   }

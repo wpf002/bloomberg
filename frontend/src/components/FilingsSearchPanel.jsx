@@ -98,9 +98,9 @@ export default function FilingsSearchPanel({ symbol }) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("p.search.placeholder")}
-            className="flex-1 border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text focus:border-terminal-amber focus:outline-none"
+            className="w-full min-w-0 border border-terminal-border bg-terminal-bg px-2 py-1 text-xs text-terminal-text focus:border-terminal-amber focus:outline-none sm:w-auto sm:flex-1"
           />
-          <label className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-terminal-muted">
+          <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] uppercase tracking-widest text-terminal-muted">
             <input
               type="checkbox"
               checked={filterToActive}
@@ -109,7 +109,7 @@ export default function FilingsSearchPanel({ symbol }) {
             {t("p.search.limit_to", { sym: symbol })}
           </label>
           <label
-            className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-terminal-muted"
+            className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] uppercase tracking-widest text-terminal-muted"
             title={t("p.search.esg_title")}
           >
             <input
@@ -122,26 +122,40 @@ export default function FilingsSearchPanel({ symbol }) {
           <button
             type="submit"
             disabled={loading || !query.trim()}
-            className="border border-terminal-amber px-3 py-0.5 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
+            className="shrink-0 border border-terminal-amber px-3 py-1 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50 sm:ml-auto"
           >
             {loading ? t("p.common.searching") : t("p.common.search")}
           </button>
         </form>
-        <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest text-terminal-muted">
-          <span>{t("p.search.index_label")}</span>
+        <div className="flex flex-nowrap items-center gap-2 overflow-x-auto whitespace-nowrap text-[10px] uppercase tracking-widest text-terminal-muted">
+          <span className="shrink-0">{t("p.search.index_label")}</span>
           <button
             onClick={() => reindex(false)}
             disabled={indexing || !symbol}
-            className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
+            className="shrink-0 border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
           >
-            {indexing ? "…" : t("p.search.index_meta", { sym: symbol ?? "—" })}
+            {indexing ? (
+              "…"
+            ) : (
+              <>
+                <span className="sm:hidden">{t("p.search.index_meta_short")}</span>
+                <span className="hidden sm:inline">{t("p.search.index_meta", { sym: symbol ?? "—" })}</span>
+              </>
+            )}
           </button>
           <button
             onClick={() => reindex(true)}
             disabled={indexing || !symbol}
-            className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
+            className="shrink-0 border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
           >
-            {indexing ? "…" : t("p.search.index_full", { sym: symbol ?? "—" })}
+            {indexing ? (
+              "…"
+            ) : (
+              <>
+                <span className="sm:hidden">{t("p.search.index_full_short")}</span>
+                <span className="hidden sm:inline">{t("p.search.index_full", { sym: symbol ?? "—" })}</span>
+              </>
+            )}
           </button>
           {indexResult ? (
             <span className="text-terminal-green">

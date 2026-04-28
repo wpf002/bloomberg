@@ -117,21 +117,27 @@ export default function RiskPanel() {
       title={t("panels.risk")}
       accent="red"
       actions={
-        <div className="flex gap-2 text-[10px] uppercase tracking-widest">
+        <div className="flex items-center text-[10px] uppercase tracking-widest">
           {[
             ["summary", t("p.risk.tabs.summary")],
             ["exposure", t("p.risk.tabs.exposure")],
             ["correlation", t("p.risk.tabs.correlation")],
             ["drawdown", t("p.risk.tabs.drawdown")],
             ["stress", t("p.risk.tabs.stress")],
-          ].map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={tab === k ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
-            >
-              {label}
-            </button>
+          ].map(([k, label], i) => (
+            <span key={k} className="flex items-center">
+              {i > 0 ? (
+                <span className="px-2 text-terminal-border" aria-hidden>
+                  ·
+                </span>
+              ) : null}
+              <button
+                onClick={() => setTab(k)}
+                className={tab === k ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text"}
+              >
+                {label}
+              </button>
+            </span>
           ))}
         </div>
       }

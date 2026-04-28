@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
@@ -69,22 +70,23 @@ function SnapshotOutput({ output }) {
 
   const entries = Object.entries(output);
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-[11px] tabular">
-      {entries.map(([k, v]) => (
-        <SnapshotRow key={k} k={k} v={v} />
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] text-[11px] tabular">
+      {entries.map(([k, v], i) => (
+        <SnapshotRow key={k} k={k} v={v} isLast={i === entries.length - 1} />
       ))}
     </div>
   );
 }
 
-function SnapshotRow({ k, v }) {
+function SnapshotRow({ k, v, isLast }) {
   const formatted = formatSnapshotValue(v);
+  const borderCls = isLast ? "" : "border-b border-terminal-border/40";
   return (
     <>
-      <div className="text-[10px] uppercase tracking-widest text-terminal-muted whitespace-nowrap">
+      <div className={clsx("py-1 pr-3 text-[10px] uppercase tracking-widest text-terminal-muted whitespace-nowrap", borderCls)}>
         {k}
       </div>
-      <div className="min-w-0 break-words text-terminal-text">{formatted}</div>
+      <div className={clsx("min-w-0 break-words py-1 text-terminal-text", borderCls)}>{formatted}</div>
     </>
   );
 }
@@ -228,14 +230,14 @@ export default function ProvenancePanel({ symbol }) {
       ) : error ? (
         <div className="text-terminal-red">{error}</div>
       ) : tab === "records" ? (
-        <table className="w-full text-[11px] leading-tight">
+        <table className="w-full border-collapse text-[11px] leading-tight [&_td]:border-r [&_td]:border-terminal-border/40 [&_td]:px-2 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-terminal-border/40 [&_th]:px-2 [&_th:last-child]:border-r-0">
           <thead className="text-terminal-muted">
             <tr>
               <th className="text-left">{t("p.provenance.cols_r.source")}</th>
               <th className="text-left">{t("p.provenance.cols_r.series")}</th>
               <th className="text-right">{t("p.provenance.cols_r.value")}</th>
-              <th className="text-left pl-2">{t("p.provenance.cols_r.ts")}</th>
-              <th className="text-left pl-2">{t("p.provenance.cols_r.ingested")}</th>
+              <th className="text-left">{t("p.provenance.cols_r.ts")}</th>
+              <th className="text-left">{t("p.provenance.cols_r.ingested")}</th>
             </tr>
           </thead>
           <tbody>
@@ -251,8 +253,8 @@ export default function ProvenancePanel({ symbol }) {
                   <td className="text-terminal-blue">{r.source}</td>
                   <td className="text-terminal-text">{r.series_id}</td>
                   <td className="text-right text-terminal-amber">{fmtValue(r.value, r.unit)}</td>
-                  <td className="pl-2 text-terminal-muted">{fmtTime(r.timestamp)}</td>
-                  <td className="pl-2 text-terminal-muted">{fmtTime(r.ingested_at)}</td>
+                  <td className="text-terminal-muted">{fmtTime(r.timestamp)}</td>
+                  <td className="text-terminal-muted">{fmtTime(r.ingested_at)}</td>
                 </tr>
               ))
             )}
@@ -263,14 +265,14 @@ export default function ProvenancePanel({ symbol }) {
           {audit.note ? (
             <div className="mb-2 text-[10px] text-terminal-muted">{audit.note}</div>
           ) : null}
-          <table className="w-full text-[11px] leading-tight">
+          <table className="w-full border-collapse text-[11px] leading-tight [&_td]:border-r [&_td]:border-terminal-border/40 [&_td]:px-2 [&_td:last-child]:border-r-0 [&_th]:border-r [&_th]:border-terminal-border/40 [&_th]:px-2 [&_th:last-child]:border-r-0">
             <thead className="text-terminal-muted">
               <tr>
                 <th className="text-left">{t("p.provenance.cols_a.source")}</th>
                 <th className="text-left">{t("p.provenance.cols_a.symbol")}</th>
                 <th className="text-left">{t("p.provenance.cols_a.endpoint")}</th>
-                <th className="text-left pl-2">{t("p.provenance.cols_a.user")}</th>
-                <th className="text-left pl-2">{t("p.provenance.cols_a.ingested")}</th>
+                <th className="text-left">{t("p.provenance.cols_a.user")}</th>
+                <th className="text-left">{t("p.provenance.cols_a.ingested")}</th>
               </tr>
             </thead>
             <tbody>
@@ -286,8 +288,8 @@ export default function ProvenancePanel({ symbol }) {
                     <td className="text-terminal-blue">{r.source}</td>
                     <td className="text-terminal-text">{r.symbol}</td>
                     <td className="text-terminal-muted">{r.endpoint_called || "—"}</td>
-                    <td className="pl-2 text-terminal-muted">{r.user_id ?? "—"}</td>
-                    <td className="pl-2 text-terminal-muted">{fmtTime(r.ingested_at)}</td>
+                    <td className="text-terminal-muted">{r.user_id ?? "—"}</td>
+                    <td className="text-terminal-muted">{fmtTime(r.ingested_at)}</td>
                   </tr>
                 ))
               )}

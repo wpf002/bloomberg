@@ -77,23 +77,25 @@ export default function SqlPanel() {
       accent="amber"
       actions={
         <span className="text-terminal-muted">
-          {tables.map((t2) => `${t2.name}(${t2.row_count})`).join(" · ") ||
+          {tables.map((t2) => `${t2.name.toUpperCase()}(${t2.row_count})`).join(" · ") ||
             t("p.sql.no_tables")}
         </span>
       }
     >
       <div className="flex h-full min-h-0 flex-col gap-2">
-        <div className="flex flex-wrap gap-1 text-[10px] uppercase tracking-widest text-terminal-muted">
-          <span>Presets:</span>
-          {presets.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setQuery(p.sql)}
-              className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber"
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
+          <div className="mb-1">Presets:</div>
+          <div className="grid grid-cols-2 gap-1">
+            {presets.map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setQuery(p.sql)}
+                className="border border-terminal-border/60 px-2 py-0.5 text-left uppercase hover:border-terminal-amber hover:text-terminal-amber"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
         <textarea
           value={query}
