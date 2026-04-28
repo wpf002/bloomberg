@@ -287,6 +287,13 @@ function CorrelationTab({ correlation, t }) {
     return <div className="text-terminal-muted">{t("p.risk.corr.need")}</div>;
   }
   const { symbols, matrix } = correlation;
+  // Backend can return symbols with an empty matrix (single-position
+  // portfolio, insufficient observations, etc.). Without this guard the
+  // map below dereferences matrix[i][j] on undefined and crashes the
+  // whole app since there's no error boundary above us.
+  if (!Array.isArray(matrix) || matrix.length !== symbols.length) {
+    return <div className="text-terminal-muted">{t("p.risk.corr.need")}</div>;
+  }
   return (
     <div className="overflow-auto">
       <table className="text-[10px]">
