@@ -137,8 +137,8 @@ const DEFAULT_LAYOUTS = {
     { i: "search",       x: 8,  y: 50, w: 4, h: 12, minW: 3, minH: 6 },
     { i: "factors",      x: 0,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
-    { i: "futures",      x: 0,  y: 72, w: 12, h: 10, minW: 4, minH: 6 },
-    { i: "gex",          x: 0,  y: 82, w: 12, h: 10, minW: 4, minH: 6 },
+    { i: "gex",          x: 0,  y: 72, w: 12, h: 10, minW: 4, minH: 6 },
+    { i: "futures",      x: 0,  y: 82, w: 12, h: 10, minW: 4, minH: 6 },
     // AURORA panels deliberately omitted from Terminal-mode layout —
     // they live in INTELLIGENCE_LAYOUTS below. Including them here would
     // reserve empty grid slots and leave a tall gap under Futures.
@@ -166,8 +166,8 @@ const DEFAULT_LAYOUTS = {
     { i: "search",       x: 0,  y: 94, w: 12, h: 10 },
     { i: "factors",      x: 0,  y: 104, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 111, w: 12, h: 7 },
-    { i: "futures",      x: 0,  y: 118, w: 12, h: 10 },
-    { i: "gex",          x: 0,  y: 128, w: 12, h: 10 },
+    { i: "gex",          x: 0,  y: 118, w: 12, h: 10 },
+    { i: "futures",      x: 0,  y: 128, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -192,8 +192,8 @@ const DEFAULT_LAYOUTS = {
     { i: "search",       x: 0, y: 139, w: 6, h: 10 },
     { i: "factors",      x: 0, y: 149, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 156, w: 6, h: 7 },
-    { i: "futures",      x: 0, y: 163, w: 6, h: 10 },
-    { i: "gex",          x: 0, y: 174, w: 6, h: 12 },
+    { i: "gex",          x: 0, y: 163, w: 6, h: 12 },
+    { i: "futures",      x: 0, y: 175, w: 6, h: 10 },
   ],
 };
 

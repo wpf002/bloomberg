@@ -141,12 +141,6 @@ export default function FlowPanel({ symbol }) {
           <Section title={t("p.flow.sec.heatmap")}>
             <Heatmap buckets={heatmapQ.data?.buckets || []} loading={heatmapQ.loading && !heatmapQ.data} t={t} />
           </Section>
-          <Section title={t("p.flow.sec.tier_note_title")}>
-            <div className="rounded border border-terminal-border/60 px-3 py-2 text-[11px] leading-relaxed text-terminal-muted">
-              <div className="mb-1 text-terminal-amber">{t("p.flow.unsupported_head")}</div>
-              <div>{t("p.flow.unsupported_msg")}</div>
-            </div>
-          </Section>
         </div>
       )}
     </Panel>
