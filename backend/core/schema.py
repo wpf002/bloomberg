@@ -77,6 +77,26 @@ CREATE TABLE IF NOT EXISTS shared_layouts (
 
 CREATE INDEX IF NOT EXISTS shared_layouts_owner_idx
     ON shared_layouts(owner_user_id);
+
+-- V2.2: manually-tracked positions. Not a hypertable — one row per
+-- holding, edited interactively. user_id may be NULL when the user
+-- isn't signed in (the row is then keyed by a client-provided
+-- session token in the future; for now, anonymous rows are scoped to
+-- a special user_id = 0 sentinel).
+CREATE TABLE IF NOT EXISTS manual_positions (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL DEFAULT 0,
+    symbol      TEXT   NOT NULL,
+    quantity    DOUBLE PRECISION NOT NULL,
+    cost_basis  DOUBLE PRECISION NOT NULL,
+    entry_date  DATE,
+    notes       TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS manual_positions_user_idx
+    ON manual_positions (user_id, symbol);
 """
 
 

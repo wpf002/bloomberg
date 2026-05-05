@@ -75,6 +75,41 @@ export const api = {
   },
   portfolioAccount: () => request(`/api/portfolio/account`),
   portfolioPositions: () => request(`/api/portfolio/positions`),
+
+  // ── V2.2: manual positions ────────────────────────────────────────────
+  manualPositions: () => request(`/api/portfolio/manual`),
+  createManualPosition: (body) =>
+    request(`/api/portfolio/manual`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateManualPosition: (id, body) =>
+    request(`/api/portfolio/manual/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteManualPosition: (id) =>
+    request(`/api/portfolio/manual/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }),
+  importManualPositions: async (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const url = `${BASE}/api/portfolio/manual/import`;
+    const resp = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      body: fd,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      const err = new Error(`${resp.status} :: ${text}`);
+      err.status = resp.status;
+      err.detail = text;
+      throw err;
+    }
+    return resp.json();
+  },
   sizing: (symbol, stopPct = 5) =>
     request(`/api/sizing/${encodeURIComponent(symbol)}?stop_pct=${stopPct}`),
   explain: (symbol) => request(`/api/explain/${encodeURIComponent(symbol)}`),

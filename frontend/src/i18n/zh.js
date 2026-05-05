@@ -140,6 +140,8 @@ export default {
     watchlist: {
       remove_title: "移除 {sym}",
       no_data_label: "无数据",
+      add_placeholder: "添加代码…",
+      add_title: "加入自选",
     },
     chart: {
       title: "走势图 — {sym}",
@@ -278,6 +280,19 @@ export default {
       buy_pwr_title: "购买力",
       day_tr_title: "日内交易(5 个工作日内 4+ 次为 PDT)",
       cols: { sym: "代码", qty: "数量", avg: "均价", last: "最新", mkt_val: "市值", day: "今日", unr_pl: "未实现盈亏" },
+      manual_badge: "手动",
+      tabs: { positions: "持仓", manage: "管理" },
+      manage: {
+        empty: "暂无手动持仓。在上方添加,或导入 CSV(symbol, quantity, cost_basis)。",
+        added: "已添加持仓。",
+        delete: "删除持仓",
+        import_csv: "导入 CSV",
+        csv_hint: "CSV 列:symbol、quantity、cost_basis、entry_date(YYYY-MM-DD,可选)、notes(可选)",
+        import_done: "导入 {imported} · 跳过 {skipped} · 错误 {errs}",
+        f: { symbol: "代码", qty: "数量", cost: "成本", entry: "入场日期", notes: "备注" },
+        add: "添加",
+        cols: { cost: "成本", notes: "备注" },
+      },
     },
     alerts: {
       title: "提醒",

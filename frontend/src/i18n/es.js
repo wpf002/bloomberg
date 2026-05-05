@@ -140,6 +140,8 @@ export default {
     watchlist: {
       remove_title: "Eliminar {sym}",
       no_data_label: "sin datos",
+      add_placeholder: "AÑADIR SÍMBOLO…",
+      add_title: "Añadir a la lista",
     },
     chart: {
       title: "Gráfico — {sym}",
@@ -278,6 +280,19 @@ export default {
       buy_pwr_title: "Poder de compra",
       day_tr_title: "Operaciones intradía (PDT si 4+ en 5 días hábiles)",
       cols: { sym: "SÍM", qty: "CANT", avg: "PROM", last: "ÚLT", mkt_val: "VAL MKT", day: "DÍA", unr_pl: "G/P NO REAL." },
+      manual_badge: "MANUAL",
+      tabs: { positions: "POSICIONES", manage: "GESTIONAR" },
+      manage: {
+        empty: "Sin posiciones manuales. Añade una arriba o importa un CSV (symbol, quantity, cost_basis).",
+        added: "Posición añadida.",
+        delete: "Eliminar posición",
+        import_csv: "Importar CSV",
+        csv_hint: "Columnas CSV: symbol, quantity, cost_basis, entry_date (YYYY-MM-DD, opcional), notes (opcional)",
+        import_done: "Importadas {imported} · saltadas {skipped} · errores {errs}",
+        f: { symbol: "Símbolo", qty: "Cant.", cost: "Coste base", entry: "Fecha entrada", notes: "Notas" },
+        add: "Añadir",
+        cols: { cost: "COSTE", notes: "NOTAS" },
+      },
     },
     alerts: {
       title: "Alertas",

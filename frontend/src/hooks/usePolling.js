@@ -1,10 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export default function usePolling(fetcher, intervalMs = 15000, deps = []) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
   const mounted = useRef(true);
+  // Latest fetcher reference so refetch always uses the current closure.
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await fetcherRef.current();
+      if (mounted.current) {
+        setData(result);
+        setError(null);
+      }
+      return result;
+    } catch (err) {
+      if (mounted.current) setError(err);
+      throw err;
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     mounted.current = true;
@@ -14,7 +35,7 @@ export default function usePolling(fetcher, intervalMs = 15000, deps = []) {
 
     const run = async () => {
       try {
-        const result = await fetcher();
+        const result = await fetcherRef.current();
         if (mounted.current) {
           setData(result);
           setError(null);
@@ -36,7 +57,7 @@ export default function usePolling(fetcher, intervalMs = 15000, deps = []) {
       if (timer) clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, tick]);
 
-  return { data, error, loading };
+  return { data, error, loading, refetch };
 }

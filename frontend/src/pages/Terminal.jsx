@@ -463,9 +463,23 @@ export default function Terminal() {
     [activeSymbol, persistWatchlist]
   );
 
+  const handleAdd = useCallback(
+    (symbol) => {
+      const sym = String(symbol || "").trim().toUpperCase();
+      if (!sym) return;
+      setWatchlist((prev) => {
+        if (prev.includes(sym)) return prev;
+        const next = [...prev, sym];
+        persistWatchlist(next);
+        return next;
+      });
+    },
+    [persistWatchlist]
+  );
+
   const panels = useMemo(
     () => [
-      { id: "watchlist",    render: () => <Watchlist symbols={watchlist} activeSymbol={activeSymbol} onSelect={handleSelect} onRemove={handleRemove} /> },
+      { id: "watchlist",    render: () => <Watchlist symbols={watchlist} activeSymbol={activeSymbol} onSelect={handleSelect} onRemove={handleRemove} onAdd={handleAdd} /> },
       { id: "chart",        render: () => <Chart symbol={activeSymbol} /> },
       { id: "news",         render: () => <NewsFeed symbols={[activeSymbol]} /> },
       { id: "markets",      render: () => <MarketOverview onSelect={handleSelect} /> },

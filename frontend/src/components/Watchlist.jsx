@@ -16,8 +16,18 @@ function formatNumber(value, digits = 2) {
 
 const FLASH_MS = 600;
 
-export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove }) {
+export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove, onAdd }) {
   const { t } = useTranslation();
+  const [draft, setDraft] = useState("");
+
+  const submitAdd = (e) => {
+    e?.preventDefault?.();
+    if (!onAdd) return;
+    const sym = (draft || "").trim().toUpperCase();
+    if (!sym) return;
+    onAdd(sym);
+    setDraft("");
+  };
   const { data, error, loading } = usePolling(
     () => api.quotes(symbols),
     15000,
@@ -183,6 +193,24 @@ export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove })
           </tbody>
         </table>
       )}
+      {onAdd ? (
+        <form onSubmit={submitAdd} className="mt-2 flex items-center gap-1 border-t border-terminal-border/60 pt-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value.toUpperCase())}
+            placeholder={t("p.watchlist.add_placeholder")}
+            className="flex-1 bg-transparent border border-terminal-border/60 px-2 py-1 text-xs uppercase tabular text-terminal-text outline-none focus:border-terminal-amber"
+            maxLength={20}
+          />
+          <button
+            type="submit"
+            className="px-2 py-1 text-[10px] uppercase tracking-wider bg-terminal-amber text-black hover:opacity-90"
+            title={t("p.watchlist.add_title")}
+          >
+            +
+          </button>
+        </form>
+      ) : null}
     </Panel>
   );
 }
