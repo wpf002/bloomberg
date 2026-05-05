@@ -1,7 +1,21 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import Panel from "./Panel.jsx";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
+
+const MODE_KEY = "bt.advisor.mode.v1";
+
+// V2.7: Day Trader tab set. Used when mode === "dt".
+const DT_TABS = ["dt-setup", "dt-levels", "dt-flow-confirm", "dt-rr", "dt-eod", "dt-ask"];
+const DT_LABEL = {
+  "dt-setup": "dt_setup",
+  "dt-levels": "dt_levels",
+  "dt-flow-confirm": "dt_flow",
+  "dt-rr": "dt_rr",
+  "dt-eod": "dt_eod",
+  "dt-ask": "dt_ask",
+};
 
 // 11 tabs split into two visual tiers. Primary = quick generators users
 // reach for daily; secondary = form-driven / situation-specific runs.
@@ -50,15 +64,47 @@ async function streamInto(response, onChunk, onDone) {
 
 export default function AdvisorPanel({ symbol, watchlist }) {
   const { t } = useTranslation();
+  const [mode, setMode] = useState(() => {
+    try {
+      const v = localStorage.getItem(MODE_KEY);
+      return v === "dt" ? "dt" : "investor";
+    } catch {
+      return "investor";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_KEY, mode);
+    } catch {
+      // ignore
+    }
+  }, [mode]);
+  useEffect(() => {
+    const handler = (e) => {
+      if (e?.detail === "dt" || e?.detail === "investor") setMode(e.detail);
+    };
+    window.addEventListener("bt:advisor-mode", handler);
+    return () => window.removeEventListener("bt:advisor-mode", handler);
+  }, []);
   const [tab, setTab] = useState("ask");
+  // When mode flips, snap to the right default tab.
+  useEffect(() => {
+    setTab(mode === "dt" ? "dt-setup" : "ask");
+  }, [mode]);
+
+  // Day-trader form state.
+  const [dtFlowIdea, setDtFlowIdea] = useState("");
+  const [dtRR, setDtRR] = useState({ entry: "", stop: "", target: "", account_size: "" });
+  const [dtAskInput, setDtAskInput] = useState("");
+  const [dtAskHistory, setDtAskHistory] = useState([]);
 
   // Ask is the only multi-turn tab. Everything else is stateless.
   const [askHistory, setAskHistory] = useState([]); // [{role, text}]
   const [askInput, setAskInput] = useState("");
 
-  // Per-tab cached output (last completed stream).
+  // Per-tab cached output (last completed stream). Includes DT keys.
   const [tabOutputs, setTabOutputs] = useState(
-    () => Object.fromEntries(TAB_KEYS.filter((k) => k !== "ask").map((k) => [k, ""]))
+    () => Object.fromEntries([...TAB_KEYS, ...DT_TABS].filter((k) => k !== "ask" && k !== "dt-ask").map((k) => [k, ""]))
   );
 
   // Per-tab form state for the new capabilities.
@@ -227,6 +273,58 @@ export default function AdvisorPanel({ symbol, watchlist }) {
     setTab(next);
     setStreaming(""); // hide any in-flight stream when leaving its tab
   }, []);
+
+  // ── V2.7: Day-trader handlers ─────────────────────────────────────
+  const onDtSetup = useCallback(() => {
+    if (busy) return;
+    setTabOutputs((p) => ({ ...p, "dt-setup": "" }));
+    generateOneShot("dt/setup", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
+  const onDtLevels = useCallback(() => {
+    if (busy) return;
+    setTabOutputs((p) => ({ ...p, "dt-levels": "" }));
+    generateOneShot("dt/levels", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
+  const onDtFlowConfirm = useCallback(() => {
+    if (busy || !dtFlowIdea.trim()) return;
+    setTabOutputs((p) => ({ ...p, "dt-flow-confirm": "" }));
+    generateOneShot("dt/flow-confirm", { active_symbol: symbol, watchlist, idea: dtFlowIdea.trim() });
+  }, [busy, symbol, watchlist, dtFlowIdea, generateOneShot]);
+  const onDtRR = useCallback(() => {
+    const entry = Number(dtRR.entry);
+    const stop = Number(dtRR.stop);
+    const target = Number(dtRR.target);
+    if (busy || !entry || !stop || !target) return;
+    setTabOutputs((p) => ({ ...p, "dt-rr": "" }));
+    generateOneShot("dt/risk-reward", {
+      active_symbol: symbol,
+      watchlist,
+      entry,
+      stop,
+      target,
+      account_size: dtRR.account_size ? Number(dtRR.account_size) : null,
+    });
+  }, [busy, symbol, watchlist, dtRR, generateOneShot]);
+  const onDtEod = useCallback(() => {
+    if (busy) return;
+    setTabOutputs((p) => ({ ...p, "dt-eod": "" }));
+    generateOneShot("dt/eod-recap", { active_symbol: symbol, watchlist });
+  }, [busy, symbol, watchlist, generateOneShot]);
+  const onDtAsk = useCallback(() => {
+    const q = dtAskInput.trim();
+    if (!q || busy) return;
+    setDtAskInput("");
+    const histSnapshot = dtAskHistory.slice(-12).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.text,
+    }));
+    setDtAskHistory((h) => [...h, { role: "user", text: q }]);
+    runStream(
+      "dt/ask",
+      { active_symbol: symbol, watchlist, question: q, history: histSnapshot },
+      (full) => setDtAskHistory((h) => [...h, { role: "advisor", text: full }]),
+    );
+  }, [busy, symbol, watchlist, dtAskInput, dtAskHistory, runStream]);
 
   // ── copy / export helpers ──────────────────────────────────────────
 
@@ -520,14 +618,127 @@ export default function AdvisorPanel({ symbol, watchlist }) {
     </div>
   );
 
+  // V2.7 — DT-mode renderers
+  const renderDtAsk = () => (
+    <div className="flex h-full flex-col">
+      <div className="flex-1 min-h-0 overflow-auto pr-1">
+        {dtAskHistory.length === 0 && !streaming ? (
+          <div className="text-terminal-muted text-[12px]">{t("p.advisor.dt.ask_empty")}</div>
+        ) : null}
+        {dtAskHistory.map((m, i) => (
+          <div key={i} className="mb-2">
+            <div className={`text-[10px] uppercase tracking-widest ${m.role === "user" ? "text-terminal-blue" : "text-terminal-amber"}`}>
+              {m.role === "user" ? t("p.advisor.you") : t("p.advisor.aurora")}
+            </div>
+            <div className="whitespace-pre-wrap text-[12px] leading-relaxed text-terminal-text">{m.text}</div>
+          </div>
+        ))}
+        {tab === "dt-ask" && streaming ? (
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-terminal-amber">{t("p.advisor.aurora")}</div>
+            <div className="whitespace-pre-wrap text-[12px] leading-relaxed text-terminal-text">
+              {streaming}
+              <span className="animate-pulse text-terminal-amber"> ▌</span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-2 flex gap-2 border-t border-terminal-border pt-2">
+        <input
+          value={dtAskInput}
+          onChange={(e) => setDtAskInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              onDtAsk();
+            }
+          }}
+          placeholder={t("p.advisor.dt.ask_placeholder")}
+          className="flex-1 border border-terminal-border bg-terminal-bg px-2 py-1 text-[12px] text-terminal-text outline-none focus:border-terminal-amber"
+        />
+        <button
+          onClick={onDtAsk}
+          disabled={busy || !dtAskInput.trim()}
+          className="border border-terminal-amber px-3 text-[10px] uppercase tracking-widest text-terminal-amber hover:bg-terminal-amber/20 disabled:opacity-40"
+        >
+          {t("aurora.advisor.send")}
+        </button>
+      </div>
+    </div>
+  );
+
+  const dtFlowForm_ui = (
+    <div className="mb-2 border-b border-terminal-border/40 pb-2">
+      <textarea
+        value={dtFlowIdea}
+        onChange={(e) => setDtFlowIdea(e.target.value)}
+        placeholder={t("p.advisor.dt.flow_ph")}
+        rows={3}
+        className={inputCls + " resize-y"}
+      />
+    </div>
+  );
+  const dtRR_ui = (
+    <div className="mb-2 grid grid-cols-2 gap-2 border-b border-terminal-border/40 pb-2">
+      <input value={dtRR.entry} onChange={(e) => setDtRR({ ...dtRR, entry: e.target.value })} type="number" step="any" placeholder={t("p.advisor.dt.entry")} className={inputCls} />
+      <input value={dtRR.stop} onChange={(e) => setDtRR({ ...dtRR, stop: e.target.value })} type="number" step="any" placeholder={t("p.advisor.dt.stop")} className={inputCls} />
+      <input value={dtRR.target} onChange={(e) => setDtRR({ ...dtRR, target: e.target.value })} type="number" step="any" placeholder={t("p.advisor.dt.target")} className={inputCls} />
+      <input value={dtRR.account_size} onChange={(e) => setDtRR({ ...dtRR, account_size: e.target.value })} type="number" step="any" placeholder={t("p.advisor.dt.account_size")} className={inputCls} />
+    </div>
+  );
+
+  const renderDtTabRow = () => (
+    <div className="flex flex-nowrap items-center overflow-x-auto whitespace-nowrap text-[10px] uppercase tracking-widest">
+      {DT_TABS.map((key, i) => (
+        <span key={key} className="flex shrink-0 items-center">
+          {i > 0 ? <span className="px-2 text-terminal-border">·</span> : null}
+          <button
+            onClick={() => switchTab(key)}
+            disabled={busy}
+            className={
+              (tab === key ? "text-terminal-amber" : "text-terminal-muted hover:text-terminal-text") +
+              " disabled:cursor-not-allowed disabled:opacity-40"
+            }
+          >
+            {t(`p.advisor.tabs.${DT_LABEL[key]}`)}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+
+  const ModeToggle = () => (
+    <div className="flex items-center border border-terminal-border/60">
+      <button
+        onClick={() => setMode("investor")}
+        className={clsx(
+          "px-2 py-0.5 text-[10px] uppercase tracking-wider",
+          mode === "investor" ? "bg-terminal-amber text-black" : "text-terminal-muted hover:text-terminal-text"
+        )}
+      >
+        {t("p.advisor.mode.investor")}
+      </button>
+      <button
+        onClick={() => setMode("dt")}
+        className={clsx(
+          "px-2 py-0.5 text-[10px] uppercase tracking-wider",
+          mode === "dt" ? "bg-terminal-red text-black" : "text-terminal-muted hover:text-terminal-text"
+        )}
+      >
+        {t("p.advisor.mode.day_trader")}
+      </button>
+    </div>
+  );
+
   return (
     <Panel
       title={t("panels.advisor")}
       accent="amber"
       actions={
         <div className="flex items-center gap-3">
-          {renderTabRow(TAB_PRIMARY)}
-          {tab === "ask" && askHistory.length > 0 ? (
+          <ModeToggle />
+          {mode === "investor" ? renderTabRow(TAB_PRIMARY) : renderDtTabRow()}
+          {mode === "investor" && tab === "ask" && askHistory.length > 0 ? (
             <button
               onClick={() => setAskHistory([])}
               className="ml-2 border border-terminal-border px-2 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-red"
@@ -536,14 +747,24 @@ export default function AdvisorPanel({ symbol, watchlist }) {
               {t("p.common.clear")}
             </button>
           ) : null}
+          {mode === "dt" && tab === "dt-ask" && dtAskHistory.length > 0 ? (
+            <button
+              onClick={() => setDtAskHistory([])}
+              className="ml-2 border border-terminal-border px-2 text-[10px] uppercase tracking-widest text-terminal-muted hover:text-terminal-red"
+            >
+              {t("p.common.clear")}
+            </button>
+          ) : null}
         </div>
       }
     >
       <div className="flex h-full flex-col">
-        <div className="mb-2 flex items-center gap-2 border-b border-terminal-border/40 pb-2 text-[10px] uppercase tracking-widest text-terminal-muted/70">
-          <span className="shrink-0 text-terminal-muted/60">More:</span>
-          {renderTabRow(TAB_SECONDARY)}
-        </div>
+        {mode === "investor" ? (
+          <div className="mb-2 flex items-center gap-2 border-b border-terminal-border/40 pb-2 text-[10px] uppercase tracking-widest text-terminal-muted/70">
+            <span className="shrink-0 text-terminal-muted/60">More:</span>
+            {renderTabRow(TAB_SECONDARY)}
+          </div>
+        ) : null}
         <div className="min-h-0 flex-1">
           {tab === "ask" ? (
             renderAsk()
@@ -589,6 +810,26 @@ export default function AdvisorPanel({ symbol, watchlist }) {
               runBtn(onPostMortem, t("p.advisor.postmortem.run"), "post-mortem"),
               postmortem_ui,
             )
+          ) : tab === "dt-setup" ? (
+            renderStreamingArea("dt-setup", runBtn(onDtSetup, t("p.advisor.dt.run_setup"), "dt-setup"))
+          ) : tab === "dt-levels" ? (
+            renderStreamingArea("dt-levels", runBtn(onDtLevels, t("p.advisor.dt.run_levels"), "dt-levels"))
+          ) : tab === "dt-flow-confirm" ? (
+            renderStreamingArea(
+              "dt-flow-confirm",
+              runBtn(onDtFlowConfirm, t("p.advisor.dt.run_flow"), "dt-flow-confirm"),
+              dtFlowForm_ui,
+            )
+          ) : tab === "dt-rr" ? (
+            renderStreamingArea(
+              "dt-rr",
+              runBtn(onDtRR, t("p.advisor.dt.run_rr"), "dt-rr"),
+              dtRR_ui,
+            )
+          ) : tab === "dt-eod" ? (
+            renderStreamingArea("dt-eod", runBtn(onDtEod, t("p.advisor.dt.run_eod"), "dt-eod"))
+          ) : tab === "dt-ask" ? (
+            renderDtAsk()
           ) : (
             renderStreamingArea("alert-analysis", runBtn(onAlert, t("aurora.advisor.generate"), "alert-analysis"))
           )}

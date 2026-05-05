@@ -745,3 +745,243 @@ async def stream_post_mortem(
         f"{json.dumps(payload, default=str)}"
     )
     return stream_advisor(capability="post-mortem", user_message=user_msg, context=context)
+
+
+# ── V2.7: AI Day Trader mode ──────────────────────────────────────────
+
+
+_DT_SYSTEM = """\
+You are AURORA — DAY TRADER PERSONA. You speak and think like a seasoned
+intraday trader. Your job is to help the user identify high-probability
+intraday setups, key levels, flow confirmation, and risk/reward — and
+to debrief the day at the close. You are direct, fast, level-driven,
+and never hedge.
+
+ABSOLUTE RULES:
+- Time horizon: intraday to 2-3 days max. NEVER discuss long-term
+  fundamentals, macro regime arcs, or multi-quarter portfolio thinking
+  unless they directly affect intraday price action.
+- Always cite specific levels (entry, stop, target) — never vague
+  advice like "watch for a breakout."
+- Always reference: current price vs key levels, flow confirmation,
+  risk/reward ratio, max loss in $ on the trade.
+- Forbidden: hedging language ("might", "could", "consider"), markdown
+  formatting (**, ##, --- ), emojis, any vague timing.
+- Output style: ALL CAPS section headings, '› ' list markers, plain
+  text only. Same terminal aesthetic as INVESTOR mode.
+- Use CONTEXT.gex_levels and CONTEXT.iv_stats and CONTEXT.flow when
+  building setups — flow + dealer positioning are the signal layer.
+- Never invent data. If a CONTEXT field is missing, state it bluntly
+  ("FLOW DATA UNAVAILABLE — DO NOT TRADE BLIND") and stop.
+"""
+
+
+_DT_TASKS = {
+    "dt-setup": (
+        "TASK: Identify a HIGH-PROBABILITY INTRADAY SETUP for "
+        "CONTEXT.active_symbol now. Sections: SETUP TYPE (one of: "
+        "breakout / breakdown / VWAP reclaim / momentum continuation / "
+        "reversal). ENTRY (specific price). STOP (specific price). "
+        "TARGET (specific price). R/R RATIO (target-entry / entry-stop). "
+        "FLOW CONFIRMATION (does CONTEXT.gex_levels + CONTEXT.flow "
+        "support this setup? CONFIRMS / CONTRADICTS / NEUTRAL). DEALER "
+        "WALLS (any GEX walls between entry and target? — if yes, the "
+        "move may stall there). TIME-OF-DAY SUITABILITY (good for "
+        "current session phase? premarket / open / mid-day / power-hour "
+        "/ close). VERDICT (TAKE / SKIP) with one-line reason. Plain "
+        "text, ALL CAPS sections, '› ' lists."
+    ),
+    "dt-levels": (
+        "TASK: Identify KEY INTRADAY LEVELS for CONTEXT.active_symbol. "
+        "Sections: VWAP + VWAP BANDS (state numerically if available). "
+        "GEX FLIP POINT and MAX GAMMA STRIKE (from CONTEXT.gex_levels). "
+        "PRE-MARKET HIGH / LOW. PREVIOUS DAY HIGH / LOW / CLOSE. "
+        "INTRADAY HIGH / LOW. RANKED LEVELS (numbered 1-5 by intraday "
+        "significance with a one-line reason for each). Plain text, "
+        "ALL CAPS sections, '› ' lists."
+    ),
+    "dt-flow-confirm": (
+        "TASK: Take the user's setup or trade idea and check whether "
+        "CURRENT OPTIONS FLOW from CONTEXT.flow / CONTEXT.gex_levels "
+        "confirms or contradicts it. Sections: SMART MONEY POSITIONING "
+        "(net flow direction). CONTRADICTING SWEEPS (any large opposite "
+        "side?). IV EXPANSION/CONTRACTION (does it support the move?). "
+        "VERDICT (CONFIRMS / CONTRADICTS / NEUTRAL) with one-line reason. "
+        "Plain text, ALL CAPS sections, '› ' lists."
+    ),
+    "dt-rr": (
+        "TASK: Compute RISK/REWARD for the user's intended trade. "
+        "Sections: R MULTIPLE (reward / risk to one decimal). POSITION "
+        "SIZE AT 0.5%, 1%, 2% ACCOUNT RISK (in shares + notional, given "
+        "CONTEXT.account.equity). MAXIMUM SHARES (under buying power). "
+        "MEETS MINIMUM 1.5:1 R/R (YES / NO). KELLY FRACTION (if user has "
+        "post-mortem history; otherwise 'INSUFFICIENT HISTORY'). VERDICT "
+        "(TAKE / TIGHTEN STOP / SKIP) with one-line reason. Plain text, "
+        "ALL CAPS sections, '› ' lists."
+    ),
+    "dt-eod": (
+        "TASK: END-OF-DAY RECAP for CONTEXT.active_symbol or watchlist. "
+        "Sections: SETUP VS REALITY (how did price action play out vs the "
+        "morning setup?). KEY DRIVER (what moved the day?). FLOW VERDICT "
+        "(did flow call it correctly?). LEVELS HELD (did GEX flip / max "
+        "gamma act as support/resistance?). 3 LESSONS FOR TOMORROW "
+        "(numbered, one line each). Plain text, ALL CAPS sections, "
+        "'› ' lists."
+    ),
+    "dt-ask": (
+        "TASK: Answer the user's intraday question directly with "
+        "specific levels and flow context. Same constraints as the "
+        "system prompt. Multi-turn conversation — build on prior turns."
+    ),
+}
+
+
+def _system_for_dt(capability: str) -> str:
+    return _DT_SYSTEM + "\n\n" + _DT_TASKS.get(capability, "")
+
+
+async def stream_advisor_dt(
+    *,
+    capability: str,
+    user_message: str,
+    context: dict[str, Any],
+    history: list[dict[str, str]] | None = None,
+    max_tokens: int = 1500,
+) -> AsyncIterator[str]:
+    """Day-trader streaming wrapper. Mirrors stream_advisor but swaps in
+    the day-trader system prompt + capability task block."""
+    client = _client()
+    system = _system_for_dt(capability)
+    messages = _build_messages(context, user_message, history)
+    try:
+        async with client.messages.stream(
+            model=ADVISOR_MODEL,
+            max_tokens=max_tokens,
+            temperature=0.3,
+            system=system,
+            messages=messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text
+    except Exception as exc:
+        logger.exception("dt advisor stream failed")
+        yield f"\n\n[day-trader advisor error: {exc}]"
+
+
+async def build_dt_context(
+    *,
+    active_symbol: str | None,
+    watchlist: list[str] | None,
+    user_id: int | None = None,
+) -> dict[str, Any]:
+    """Day-trader context payload — intraday-focused.
+
+    Reuses build_context (which already pulls regime, GEX levels, IV
+    stats, prediction markets, flow heatmap proxies, and recent news),
+    then layers session-phase tagging + time-of-day metadata so the
+    persona can speak with the correct intraday cadence.
+    """
+    base = await build_context(
+        active_symbol=active_symbol,
+        watchlist=watchlist,
+        include_news=True,
+        user_id=user_id,
+    )
+    base["session_phase"] = _session_phase()
+    base["dt_mode"] = True
+    return base
+
+
+def _session_phase() -> str:
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    # ET ≈ UTC-5 (winter) / UTC-4 (summer). Approximate as -5 for tagging.
+    minute_of_day = (now.hour - 5) * 60 + now.minute
+    if minute_of_day < 0:
+        minute_of_day += 24 * 60
+    if minute_of_day < 9 * 60 + 30:
+        return "PREMARKET"
+    if minute_of_day < 10 * 60 + 30:
+        return "OPEN"
+    if minute_of_day < 15 * 60:
+        return "MID_DAY"
+    if minute_of_day < 16 * 60:
+        return "POWER_HOUR"
+    if minute_of_day < 16 * 60 + 30:
+        return "CLOSE"
+    return "AFTER_HOURS"
+
+
+# Public DT streaming helpers — used by the route layer.
+
+
+async def stream_dt_setup(context: dict[str, Any]) -> AsyncIterator[str]:
+    return stream_advisor_dt(
+        capability="dt-setup",
+        user_message="Identify the best intraday setup for the active symbol now.",
+        context=context,
+    )
+
+
+async def stream_dt_levels(context: dict[str, Any]) -> AsyncIterator[str]:
+    return stream_advisor_dt(
+        capability="dt-levels",
+        user_message="Identify and rank the key intraday levels for the active symbol.",
+        context=context,
+    )
+
+
+async def stream_dt_flow_confirm(context: dict[str, Any], idea: str) -> AsyncIterator[str]:
+    return stream_advisor_dt(
+        capability="dt-flow-confirm",
+        user_message=f"Check flow confirmation for this setup/idea: {idea}",
+        context=context,
+    )
+
+
+async def stream_dt_risk_reward(
+    context: dict[str, Any],
+    *,
+    entry: float,
+    stop: float,
+    target: float,
+    account_size: float | None = None,
+) -> AsyncIterator[str]:
+    payload = {
+        "entry": entry,
+        "stop": stop,
+        "target": target,
+        "account_size": account_size,
+        "r_multiple": (
+            ((target - entry) / (entry - stop))
+            if (entry - stop)
+            else None
+        ),
+    }
+    return stream_advisor_dt(
+        capability="dt-rr",
+        user_message=f"Compute R/R for: {json.dumps(payload, default=str)}",
+        context=context,
+    )
+
+
+async def stream_dt_eod(context: dict[str, Any]) -> AsyncIterator[str]:
+    return stream_advisor_dt(
+        capability="dt-eod",
+        user_message="Produce the end-of-day recap now for the active symbol or watchlist.",
+        context=context,
+    )
+
+
+async def stream_dt_ask(
+    context: dict[str, Any],
+    question: str,
+    history: list[dict[str, str]] | None = None,
+) -> AsyncIterator[str]:
+    return stream_advisor_dt(
+        capability="dt-ask",
+        user_message=question,
+        context=context,
+        history=history,
+    )

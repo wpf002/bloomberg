@@ -255,3 +255,81 @@ async def post_post_mortem(req: PostMortemRequest):
             req.original_thesis,
         )
     )
+
+
+# ── V2.7: Day Trader mode capabilities ──────────────────────────────────
+
+
+class DtFlowConfirmRequest(_BaseAdvisorRequest):
+    idea: str
+
+
+class DtRRRequest(_BaseAdvisorRequest):
+    entry: float
+    stop: float
+    target: float
+    account_size: float | None = None
+
+
+@router.post("/dt/setup")
+async def post_dt_setup(req: _BaseAdvisorRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(advisor.stream_dt_setup(ctx))
+
+
+@router.post("/dt/levels")
+async def post_dt_levels(req: _BaseAdvisorRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(advisor.stream_dt_levels(ctx))
+
+
+@router.post("/dt/flow-confirm")
+async def post_dt_flow_confirm(req: DtFlowConfirmRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(advisor.stream_dt_flow_confirm(ctx, req.idea))
+
+
+@router.post("/dt/risk-reward")
+async def post_dt_risk_reward(req: DtRRRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(
+        advisor.stream_dt_risk_reward(
+            ctx,
+            entry=req.entry,
+            stop=req.stop,
+            target=req.target,
+            account_size=req.account_size,
+        )
+    )
+
+
+@router.post("/dt/eod-recap")
+async def post_dt_eod(req: _BaseAdvisorRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(advisor.stream_dt_eod(ctx))
+
+
+@router.post("/dt/ask")
+async def post_dt_ask(req: AskRequest):
+    _503_if_no_llm()
+    ctx = await advisor.build_dt_context(
+        active_symbol=req.active_symbol, watchlist=req.watchlist
+    )
+    return _stream_response(
+        advisor.stream_dt_ask(ctx, req.question, _history_dicts(req))
+    )

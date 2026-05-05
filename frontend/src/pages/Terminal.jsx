@@ -403,6 +403,17 @@ export default function Terminal() {
       if (parsed.intent === "compare" && parsed.symbols?.length >= 2) {
         setCompareSymbols([parsed.symbols[0], parsed.symbols[1]]);
       }
+      // V2.7 — DT mnemonic flips advisor into Day Trader mode before
+      // routing to the advisor panel. localStorage + a custom event so
+      // the panel updates without prop drilling.
+      if (parsed.intent === "daytrader") {
+        try {
+          localStorage.setItem("bt.advisor.mode.v1", "dt");
+          window.dispatchEvent(new CustomEvent("bt:advisor-mode", { detail: "dt" }));
+        } catch {
+          // ignore
+        }
+      }
       switch (parsed.intent) {
         case "help":
           setHelpOpen(true);
