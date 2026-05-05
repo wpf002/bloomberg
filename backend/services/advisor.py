@@ -330,6 +330,27 @@ async def build_context(
         except Exception:
             gex_levels = None
 
+    # V2.6: IV rank/percentile, short interest, insider summary for the active symbol.
+    iv_stats: dict[str, Any] | None = None
+    short_interest: list[dict[str, Any]] = []
+    insider_summary: list[dict[str, Any]] = []
+    if active_symbol:
+        try:
+            from ..data.sources.cboe_source import get_cboe_source
+            from ..data.sources.nasdaq_data_link_source import NasdaqDataLinkSource
+
+            cboe = get_cboe_source()
+            iv_stats = {
+                "iv_rank": cboe.iv_rank(active_symbol),
+                "iv_percentile": cboe.iv_percentile(active_symbol),
+            }
+            ndl = NasdaqDataLinkSource()
+            if ndl.configured:
+                short_interest = await _safe(ndl.short_interest(active_symbol), [])
+                insider_summary = (await _safe(ndl.insider_transactions(active_symbol), []))[:10]
+        except Exception:
+            iv_stats = None
+
     # V2.5: prediction-market consensus — top 5 macro contracts by volume.
     prediction_markets: list[dict[str, Any]] = []
     try:
@@ -369,6 +390,9 @@ async def build_context(
         "recent_alerts": alerts_recent,
         "gex_levels": gex_levels,
         "prediction_markets": prediction_markets,
+        "iv_stats": iv_stats,
+        "short_interest_recent": short_interest[:5],
+        "insider_recent": insider_summary,
     }
 
 

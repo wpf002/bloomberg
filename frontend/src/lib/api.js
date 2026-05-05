@@ -290,6 +290,14 @@ export const api = {
   vexProfile: (symbol) => request(`/api/vex/${encodeURIComponent(symbol)}`),
   gexLevels: (symbol) => request(`/api/gex/${encodeURIComponent(symbol)}/levels`),
 
+  // ── V2.6: supplementary market data ─────────────────────────────────
+  marketShortInterest: (symbol) =>
+    request(`/api/market/short-interest/${encodeURIComponent(symbol)}`),
+  marketInsider: (symbol) => request(`/api/market/insider/${encodeURIComponent(symbol)}`),
+  marketInstitutional: (symbol) =>
+    request(`/api/market/institutional/${encodeURIComponent(symbol)}`),
+  marketIv: (symbol) => request(`/api/market/iv/${encodeURIComponent(symbol)}`),
+
   // ── V2.5: Prediction markets (Polymarket + Kalshi) ─────────────────
   predictionsMacro: () => request(`/api/predictions/macro`),
   predictionsMarkets: () => request(`/api/predictions/markets`),

@@ -19,6 +19,7 @@ from .routes import (
     gex,
     intelligence,
     macro,
+    market,
     me,
     news,
     options,
@@ -72,5 +73,6 @@ api_router.include_router(flow.router, prefix="/flow", tags=["flow"])
 api_router.include_router(gex.router, prefix="/gex", tags=["gex"])
 api_router.include_router(vex.router, prefix="/vex", tags=["vex"])
 api_router.include_router(predictions.router, prefix="/predictions", tags=["predictions"])
+api_router.include_router(market.router, prefix="/market", tags=["market"])
 
 __all__ = ["api_router"]

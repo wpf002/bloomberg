@@ -33,6 +33,16 @@ export default function OptionsPanel({ symbol }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [iv, setIv] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!symbol) return;
+    api.marketIv(symbol).then((d) => !cancelled && setIv(d)).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [symbol, data]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +107,16 @@ export default function OptionsPanel({ symbol }) {
       accent="blue"
       actions={
         <div className="flex items-center gap-2">
+          {iv?.iv_rank != null ? (
+            <span className="border border-terminal-border/60 px-1.5 py-0.5 text-[10px] tabular">
+              IV RANK <span className="text-terminal-amber">{Math.round(iv.iv_rank * 100)}</span>
+            </span>
+          ) : null}
+          {iv?.iv_percentile != null ? (
+            <span className="border border-terminal-border/60 px-1.5 py-0.5 text-[10px] tabular">
+              IV %ile <span className="text-terminal-amber">{Math.round(iv.iv_percentile * 100)}</span>
+            </span>
+          ) : null}
           <span className="text-terminal-muted">{t("p.options.exp")}</span>
           <select
             value={expiration || ""}

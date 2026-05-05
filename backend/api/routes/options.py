@@ -65,7 +65,35 @@ async def get_chain(
     sym = symbol.upper()
     try:
         chain = await _alpaca.get_option_chain(sym, expiration=expiration)
-        return chain
     except Exception as exc:
         logger.warning("alpaca options failed for %s: %s", sym, exc)
         return OptionChain(symbol=sym)
+    # V2.6: feed at-the-money IV into the CBOE rolling buffer so the
+    # /api/market/iv endpoint can compute IV rank + percentile.
+    try:
+        from ...data.sources.cboe_source import get_cboe_source
+
+        spot = chain.underlying_price
+        if spot:
+            atm_iv = _atm_iv(chain.calls, chain.puts, spot)
+            if atm_iv is not None and atm_iv > 0:
+                get_cboe_source().record_iv(sym, atm_iv)
+    except Exception:
+        pass
+    return chain
+
+
+def _atm_iv(calls, puts, spot: float) -> float | None:
+    """Mean of the call+put IV at the strike closest to spot."""
+    if spot is None or spot <= 0:
+        return None
+    contracts = list(calls or []) + list(puts or [])
+    if not contracts:
+        return None
+    closest = min(contracts, key=lambda c: abs((c.strike or 0) - spot))
+    target_strike = closest.strike
+    same_strike = [c for c in contracts if c.strike == target_strike and (c.implied_volatility or 0) > 0]
+    if not same_strike:
+        return None
+    ivs = [c.implied_volatility for c in same_strike if c.implied_volatility]
+    return sum(ivs) / len(ivs) if ivs else None
