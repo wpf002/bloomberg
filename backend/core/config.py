@@ -98,7 +98,6 @@ class Settings(BaseSettings):
     # V2.6 — supplemental data sources (all optional; the app falls back
     # to Alpaca / yfinance when these are unset).
     polygon_api_key: str | None = None
-    nasdaq_data_link_api_key: str | None = None
     alpaca_data_tier: str = "iex"  # "iex" (free) or "premium" (paid SIP+L2)
 
     risk_free_rate: float = 0.045
