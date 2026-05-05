@@ -16,6 +16,7 @@ from .routes import (
     fundamentals,
     futures,
     fx,
+    gex,
     intelligence,
     macro,
     me,
@@ -32,6 +33,7 @@ from .routes import (
     sql,
     streams,
     symbols,
+    vex,
 )
 
 api_router = APIRouter()
@@ -66,5 +68,7 @@ api_router.include_router(intelligence.router, prefix="/intelligence", tags=["in
 api_router.include_router(advisor.router, prefix="/advisor", tags=["advisor"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(flow.router, prefix="/flow", tags=["flow"])
+api_router.include_router(gex.router, prefix="/gex", tags=["gex"])
+api_router.include_router(vex.router, prefix="/vex", tags=["vex"])
 
 __all__ = ["api_router"]

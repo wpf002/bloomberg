@@ -429,3 +429,240 @@ async def compute_var() -> dict[str, Any]:
 async def compute_stress() -> dict[str, Any]:
     positions = await get_alpaca_source().get_positions()
     return await stress_tests(positions)
+
+
+# ── V2.4: GEX / VEX (gamma + vanna exposure) ──────────────────────────
+
+
+def _bsm_vanna(spot: float, strike: float, t_years: float, rate: float, sigma: float) -> float:
+    """Black-Scholes vanna = -d1 * phi(d1) / (spot * sigma * sqrt(T)).
+
+    Vanna measures how delta changes with implied vol. We use it to
+    derive VEX when the upstream chain doesn't ship vanna directly.
+    """
+    import math
+
+    if spot <= 0 or strike <= 0 or t_years <= 0 or sigma <= 0:
+        return 0.0
+    sqrt_t = math.sqrt(t_years)
+    d1 = (math.log(spot / strike) + (rate + 0.5 * sigma * sigma) * t_years) / (sigma * sqrt_t)
+    pdf_d1 = math.exp(-0.5 * d1 * d1) / math.sqrt(2.0 * math.pi)
+    return -d1 * pdf_d1 / (spot * sigma * sqrt_t)
+
+
+def compute_gex_profile(
+    *,
+    spot: float,
+    contracts: list[Any],
+    multiplier: int = 100,
+) -> dict[str, Any]:
+    """Per-strike GEX values + net GEX, flip point, max gamma strike.
+
+    GEX per strike =
+        open_interest * gamma * multiplier (100) * spot^2 * 0.01
+    Calls add positive GEX (dealers long gamma → pinning).
+    Puts add negative GEX (dealers short gamma → amplification).
+
+    Returns:
+        {
+          strikes: [{strike, call_gex, put_gex, net_gex}, ...],
+          net_gex: float,
+          flip_point: float | None,
+          max_gamma_strike: float | None,
+          spot: float,
+          walls: [{strike, gex}, ...],   # top 3 by |GEX|
+        }
+    """
+    if spot is None or spot <= 0:
+        return {
+            "strikes": [], "net_gex": 0.0, "flip_point": None,
+            "max_gamma_strike": None, "spot": spot, "walls": [],
+        }
+    by_strike: dict[float, dict[str, float]] = {}
+    for c in contracts:
+        strike = float(getattr(c, "strike", 0.0) or 0.0)
+        if strike <= 0:
+            continue
+        oi = float(getattr(c, "open_interest", 0) or 0)
+        gamma = getattr(c, "gamma", None)
+        if gamma is None:
+            continue
+        gamma_val = float(gamma)
+        gex = oi * gamma_val * multiplier * (spot * spot) * 0.01
+        is_call = (getattr(c, "option_type", "") or "").lower() in ("call", "c")
+        signed_gex = gex if is_call else -gex
+        bucket = by_strike.setdefault(strike, {"call_gex": 0.0, "put_gex": 0.0})
+        if is_call:
+            bucket["call_gex"] += signed_gex
+        else:
+            bucket["put_gex"] += signed_gex
+    rows = []
+    for strike in sorted(by_strike.keys()):
+        cg = by_strike[strike]["call_gex"]
+        pg = by_strike[strike]["put_gex"]
+        rows.append({
+            "strike": strike,
+            "call_gex": cg,
+            "put_gex": pg,
+            "net_gex": cg + pg,
+        })
+    net_gex = sum(r["net_gex"] for r in rows)
+    flip = _gex_flip_point(rows)
+    max_gamma_strike = None
+    if rows:
+        max_gamma_strike = max(rows, key=lambda r: abs(r["net_gex"]))["strike"]
+    walls = sorted(rows, key=lambda r: abs(r["net_gex"]), reverse=True)[:3]
+    walls = [{"strike": w["strike"], "gex": w["net_gex"]} for w in walls]
+    return {
+        "strikes": rows,
+        "net_gex": net_gex,
+        "flip_point": flip,
+        "max_gamma_strike": max_gamma_strike,
+        "spot": spot,
+        "walls": walls,
+    }
+
+
+def _gex_flip_point(rows: list[dict]) -> float | None:
+    """Linear interpolation between the two strikes that bracket the
+    cumulative-net-GEX zero crossing."""
+    if not rows:
+        return None
+    cum = 0.0
+    prev_strike = None
+    prev_cum = 0.0
+    for r in rows:
+        next_cum = cum + r["net_gex"]
+        if prev_strike is not None and ((cum <= 0 < next_cum) or (cum >= 0 > next_cum)):
+            # interpolate where cumulative crosses zero
+            denom = next_cum - cum
+            if denom == 0:
+                return r["strike"]
+            t = -cum / denom
+            return prev_strike + t * (r["strike"] - prev_strike)
+        prev_strike = r["strike"]
+        prev_cum = cum
+        cum = next_cum
+    return None
+
+
+def compute_vex_profile(
+    *,
+    spot: float,
+    contracts: list[Any],
+    multiplier: int = 100,
+    rate: float = 0.045,
+) -> dict[str, Any]:
+    """Per-strike VEX values + net VEX + vol trigger.
+
+    VEX per strike = open_interest * vanna * multiplier (100).
+    """
+    import math
+
+    if spot is None or spot <= 0:
+        return {"strikes": [], "net_vex": 0.0, "vol_trigger": None, "spot": spot}
+
+    from ..core.bsm import year_fraction
+
+    by_strike: dict[float, float] = {}
+    for c in contracts:
+        strike = float(getattr(c, "strike", 0.0) or 0.0)
+        if strike <= 0:
+            continue
+        oi = float(getattr(c, "open_interest", 0) or 0)
+        if oi <= 0:
+            continue
+        vanna = getattr(c, "vanna", None)
+        if vanna is None:
+            iv = float(getattr(c, "implied_volatility", 0.0) or 0.0)
+            if iv <= 0:
+                continue
+            t = year_fraction(getattr(c, "expiration", "") or "")
+            vanna = _bsm_vanna(spot, strike, t, rate, iv)
+        is_call = (getattr(c, "option_type", "") or "").lower() in ("call", "c")
+        # Calls: dealer is short calls → vanna sign flipped vs naive long.
+        signed_vanna = float(vanna) if is_call else -float(vanna)
+        vex = oi * signed_vanna * multiplier
+        by_strike[strike] = by_strike.get(strike, 0.0) + vex
+    rows = [{"strike": k, "vex": v} for k, v in sorted(by_strike.items())]
+    net_vex = sum(r["vex"] for r in rows)
+    vol_trigger = _vol_trigger(spot, contracts)
+    return {
+        "strikes": rows,
+        "net_vex": net_vex,
+        "vol_trigger": vol_trigger,
+        "spot": spot,
+    }
+
+
+def _vol_trigger(spot: float, contracts: list[Any]) -> float | None:
+    """Approximate the IV level at which net VEX flips sign.
+
+    We re-evaluate VEX at a small grid of IV multipliers and return the
+    first crossing; this is the operationally useful number — telling
+    the user "if IV drops below X, dealers turn into buyers." Returns
+    None when the chain has no IV info.
+    """
+    if not contracts:
+        return None
+    ivs = [float(getattr(c, "implied_volatility", 0.0) or 0.0) for c in contracts]
+    ivs = [v for v in ivs if v > 0]
+    if not ivs:
+        return None
+    base_iv = sum(ivs) / len(ivs)
+    grid = [0.5, 0.7, 0.85, 1.0, 1.15, 1.3, 1.5]
+    prev_sign = None
+    prev_iv = None
+    for mult in grid:
+        iv = base_iv * mult
+        net = 0.0
+        for c in contracts:
+            strike = float(getattr(c, "strike", 0.0) or 0.0)
+            oi = float(getattr(c, "open_interest", 0) or 0)
+            if strike <= 0 or oi <= 0:
+                continue
+            try:
+                from ..core.bsm import year_fraction
+                t = year_fraction(getattr(c, "expiration", "") or "")
+                vanna = _bsm_vanna(spot, strike, t, 0.045, iv)
+            except Exception:
+                continue
+            is_call = (getattr(c, "option_type", "") or "").lower() in ("call", "c")
+            net += oi * (vanna if is_call else -vanna) * 100.0
+        sign = 1 if net > 0 else (-1 if net < 0 else 0)
+        if prev_sign is not None and sign != 0 and prev_sign != 0 and sign != prev_sign:
+            return (prev_iv + iv) / 2.0
+        prev_sign = sign
+        prev_iv = iv
+    return None
+
+
+async def compute_gex(symbol: str) -> dict[str, Any]:
+    """Public entry point — fetches the chain and returns the GEX profile."""
+    alpaca = get_alpaca_source()
+    chain = await alpaca.get_option_chain(symbol)
+    contracts = list(chain.calls) + list(chain.puts)
+    spot = chain.underlying_price or 0.0
+    return compute_gex_profile(spot=spot, contracts=contracts)
+
+
+async def compute_vex(symbol: str) -> dict[str, Any]:
+    alpaca = get_alpaca_source()
+    chain = await alpaca.get_option_chain(symbol)
+    contracts = list(chain.calls) + list(chain.puts)
+    spot = chain.underlying_price or 0.0
+    return compute_vex_profile(spot=spot, contracts=contracts)
+
+
+async def compute_gex_levels(symbol: str) -> dict[str, Any]:
+    """Trimmed GEX response — flip point, max gamma, walls — used by
+    the chart overlay and the AI Advisor context payload."""
+    profile = await compute_gex(symbol)
+    return {
+        "symbol": symbol.upper(),
+        "spot": profile.get("spot"),
+        "flip_point": profile.get("flip_point"),
+        "max_gamma_strike": profile.get("max_gamma_strike"),
+        "walls": profile.get("walls", []),
+        "net_gex": profile.get("net_gex"),
+    }

@@ -271,6 +271,20 @@ export default {
       read: "Lectura",
       meta: "Modelo: {model} · {time} · cacheado 30m",
     },
+    gex: {
+      title: "GEX / VEX — {sym}",
+      spot: "SPOT {px}",
+      flip: "GEX FLIP",
+      max_gamma: "MAX GAMMA",
+      net_gex: "NET GEX",
+      vol_trigger: "VOL TRIGGER",
+      sec: { gex_profile: "PERFIL GEX", vex_profile: "PERFIL VEX" },
+      interp: {
+        long_gamma: "Los dealers están largos en gamma sobre {x} — pinning probable cerca de strikes clave.",
+        short_gamma: "Dealers cortos en gamma — amplificación de volatilidad probable.",
+        neutral: "Gamma de dealer balanceada — sin sesgo claro de pinning o amplificación.",
+      },
+    },
     flow: {
       title: "Flujo de Opciones y Dark Pool",
       needs_key_head: "Configura UNUSUAL_WHALES_API_KEY o BULLFLOW_API_KEY para habilitar.",

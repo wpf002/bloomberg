@@ -285,6 +285,11 @@ export const api = {
   flowHeatmap: ({ side = "all", minPremium = 100000 } = {}) =>
     request(`/api/flow/heatmap?side=${side}&min_premium=${minPremium}`),
 
+  // ── V2.4: GEX / VEX ─────────────────────────────────────────────────
+  gexProfile: (symbol) => request(`/api/gex/${encodeURIComponent(symbol)}`),
+  vexProfile: (symbol) => request(`/api/vex/${encodeURIComponent(symbol)}`),
+  gexLevels: (symbol) => request(`/api/gex/${encodeURIComponent(symbol)}/levels`),
+
   // ── filings search ────────────────────────────────────────────────────
   filingsSearch: (q, { symbol, formType, limit = 20 } = {}) => {
     const params = new URLSearchParams({ q, limit: String(limit) });

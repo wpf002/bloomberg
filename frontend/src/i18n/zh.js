@@ -271,6 +271,20 @@ export default {
       read: "解读",
       meta: "模型: {model} · {time} · 缓存 30 分钟",
     },
+    gex: {
+      title: "GEX / VEX — {sym}",
+      spot: "SPOT {px}",
+      flip: "GEX 翻转",
+      max_gamma: "最大 GAMMA",
+      net_gex: "净 GEX",
+      vol_trigger: "波动触发",
+      sec: { gex_profile: "GEX 分布", vex_profile: "VEX 分布" },
+      interp: {
+        long_gamma: "做市商在 {x} 之上为净 long gamma — 关键行权附近可能出现粘性。",
+        short_gamma: "做市商净 short gamma — 方向性走势可能放大波动。",
+        neutral: "做市商 gamma 平衡 — 无明显粘性或放大倾向。",
+      },
+    },
     flow: {
       title: "期权流向与暗池",
       needs_key_head: "需配置 UNUSUAL_WHALES_API_KEY 或 BULLFLOW_API_KEY 才能启用。",

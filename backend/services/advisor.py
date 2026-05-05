@@ -290,6 +290,7 @@ async def build_context(
     active_news: list[dict[str, Any]] = []
     earnings_reactions: list[dict[str, Any]] = []
     pre_market: dict[str, Any] | None = None
+    gex_levels: dict[str, Any] | None = None
     if active_symbol:
         try:
             quote = await alpaca.get_stock_quote(active_symbol)
@@ -320,6 +321,14 @@ async def build_context(
             earnings_reactions = await _historical_earnings_reactions(
                 alpaca, finnhub, active_symbol
             )
+        # V2.4: dealer positioning for the active symbol. Computed from
+        # the Alpaca options chain — failure is non-fatal.
+        try:
+            from . import risk_engine as _re
+
+            gex_levels = await _re.compute_gex_levels(active_symbol)
+        except Exception:
+            gex_levels = None
 
     return {
         "as_of": datetime.now(timezone.utc).isoformat(timespec="minutes"),
@@ -342,6 +351,7 @@ async def build_context(
         "yield_curve": curve_state,
         "mortgage_spread": mortgage_state,
         "recent_alerts": alerts_recent,
+        "gex_levels": gex_levels,
     }
 
 

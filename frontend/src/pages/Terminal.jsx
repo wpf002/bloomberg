@@ -12,6 +12,7 @@ import FilingsPanel from "../components/FilingsPanel.jsx";
 import FilingsSearchPanel from "../components/FilingsSearchPanel.jsx";
 import FixedIncomePanel from "../components/FixedIncomePanel.jsx";
 import FlowPanel from "../components/FlowPanel.jsx";
+import GexPanel from "../components/GexPanel.jsx";
 import FundamentalsPanel from "../components/FundamentalsPanel.jsx";
 import FuturesPanel from "../components/FuturesPanel.jsx";
 import Launchpad from "../components/Launchpad.jsx";
@@ -495,6 +496,7 @@ export default function Terminal() {
       { id: "news",         render: () => <NewsFeed symbols={[activeSymbol]} /> },
       { id: "markets",      render: () => <MarketOverview onSelect={handleSelect} /> },
       { id: "flow",         render: () => <FlowPanel symbol={activeSymbol} /> },
+      { id: "gex",          render: () => <GexPanel symbol={activeSymbol} /> },
       { id: "macro",        render: () => <MacroPanel /> },
       { id: "portfolio",    render: () => <Portfolio /> },
       { id: "crypto",       render: () => <CryptoPanel /> },
