@@ -645,6 +645,11 @@ async def _massive_chain(symbol: str) -> tuple[float, list[Any]]:
     Massive is preferred for GEX/VEX because it ships open_interest in
     every snapshot row. Alpaca's indicative chain leaves OI unset on
     most contracts, which collapses every strike's GEX to zero.
+
+    Spot is sourced from Alpaca rather than Massive's stock snapshot
+    so an Options-only Massive plan is sufficient — Massive's stock
+    snapshot endpoint is gated behind a separate Stocks tier we don't
+    otherwise need.
     """
     from types import SimpleNamespace
 
@@ -653,11 +658,15 @@ async def _massive_chain(symbol: str) -> tuple[float, list[Any]]:
     massive = MassiveSource()
     if not massive.configured:
         return 0.0, []
-    quote = await massive.get_stock_quote(symbol)
-    spot = float(getattr(quote, "price", 0.0) or 0.0)
-    # 4 pages × 250 contracts = up to 1000 contracts, enough for the
-    # strikes-near-spot view a GEX profile renders.
     snaps = await massive.options_snapshot(symbol, max_pages=4)
+    if not snaps:
+        return 0.0, []
+    spot = 0.0
+    try:
+        quote = await get_alpaca_source().get_stock_quote(symbol)
+        spot = float(getattr(quote, "price", 0.0) or 0.0)
+    except Exception as exc:
+        logger.debug("alpaca spot lookup failed for %s: %s", symbol, exc)
     contracts = [
         SimpleNamespace(
             strike=float(s.get("strike") or 0.0),
