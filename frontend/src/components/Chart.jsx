@@ -111,7 +111,7 @@ export default function Chart({ symbol }) {
             hide_legend: false,
             save_image: false,
             allow_symbol_change: false,
-            withdateranges: true,
+            withdateranges: false,
             extended_hours: true,
             toolbar_bg: "#0b0d10",
             backgroundColor: "#0b0d10",
@@ -169,9 +169,6 @@ export default function Chart({ symbol }) {
             className="h-full w-full"
             style={{ minHeight: 320 }}
           />
-        </div>
-        <div className="mt-1 text-[10px] text-terminal-muted">
-          {t("p.chart.tv_credit")}
         </div>
       </div>
     </Panel>

@@ -637,18 +637,62 @@ def _vol_trigger(spot: float, contracts: list[Any]) -> float | None:
     return None
 
 
+async def _massive_chain(symbol: str) -> tuple[float, list[Any]]:
+    """Build a (spot, contracts) tuple from the Massive snapshot when
+    configured. Returns (0.0, []) if Massive isn't set up so callers can
+    fall through to the Alpaca chain.
+
+    Massive is preferred for GEX/VEX because it ships open_interest in
+    every snapshot row. Alpaca's indicative chain leaves OI unset on
+    most contracts, which collapses every strike's GEX to zero.
+    """
+    from types import SimpleNamespace
+
+    from ..data.sources.massive_source import MassiveSource
+
+    massive = MassiveSource()
+    if not massive.configured:
+        return 0.0, []
+    quote = await massive.get_stock_quote(symbol)
+    spot = float(getattr(quote, "price", 0.0) or 0.0)
+    # 4 pages × 250 contracts = up to 1000 contracts, enough for the
+    # strikes-near-spot view a GEX profile renders.
+    snaps = await massive.options_snapshot(symbol, max_pages=4)
+    contracts = [
+        SimpleNamespace(
+            strike=float(s.get("strike") or 0.0),
+            option_type=s.get("type") or "",
+            gamma=s.get("gamma"),
+            vanna=None,
+            implied_volatility=float(s.get("iv") or 0.0),
+            open_interest=int(s.get("open_interest") or 0),
+            expiration=s.get("expiry") or "",
+        )
+        for s in snaps
+    ]
+    return spot, contracts
+
+
 async def compute_gex(symbol: str) -> dict[str, Any]:
     """Public entry point — fetches the chain and returns the GEX profile."""
+    sym = symbol.upper()
+    spot, contracts = await _massive_chain(sym)
+    if contracts:
+        return compute_gex_profile(spot=spot, contracts=contracts)
     alpaca = get_alpaca_source()
-    chain = await alpaca.get_option_chain(symbol)
+    chain = await alpaca.get_option_chain(sym)
     contracts = list(chain.calls) + list(chain.puts)
     spot = chain.underlying_price or 0.0
     return compute_gex_profile(spot=spot, contracts=contracts)
 
 
 async def compute_vex(symbol: str) -> dict[str, Any]:
+    sym = symbol.upper()
+    spot, contracts = await _massive_chain(sym)
+    if contracts:
+        return compute_vex_profile(spot=spot, contracts=contracts)
     alpaca = get_alpaca_source()
-    chain = await alpaca.get_option_chain(symbol)
+    chain = await alpaca.get_option_chain(sym)
     contracts = list(chain.calls) + list(chain.puts)
     spot = chain.underlying_price or 0.0
     return compute_vex_profile(spot=spot, contracts=contracts)

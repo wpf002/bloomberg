@@ -99,6 +99,8 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       FINRA_API_KEY: ${FINRA_API_KEY:-}
       FINRA_API_SECRET: ${FINRA_API_SECRET:-}
+      MASSIVE_API_KEY: ${MASSIVE_API_KEY:-}
+      MASSIVE_BASE_URL: ${MASSIVE_BASE_URL:-https://api.massive.com}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:

@@ -114,48 +114,87 @@ class MassiveSource:
 
     # ── options-derived flow tape ─────────────────────────────────────
 
-    async def options_snapshot(self, underlying: str) -> list[dict]:
-        """Fetch the full options snapshot for one underlying.
+    async def options_snapshot(self, underlying: str, *, max_pages: int = 1) -> list[dict]:
+        """Fetch the options snapshot for one underlying.
 
         Returns a list of contract dicts, each enriched with day volume,
         last trade, premium, IV, and Greeks. Used by the synthetic flow
         tape — large day volume + high premium ≈ institutional activity.
+
+        The endpoint caps each response at 250 contracts. GEX/VEX want
+        the full chain across expirations, so they pass max_pages>1 to
+        walk the next_url cursor; flow polls a single page per ticker.
         """
         sym = underlying.upper()
-        data = await self._get(f"/v3/snapshot/options/{sym}", {"limit": 250})
-        if not data:
-            return []
-        results = data.get("results") or []
         out: list[dict] = []
-        for c in results:
-            details = c.get("details") or {}
-            day = c.get("day") or {}
-            last_trade = c.get("last_trade") or {}
-            greeks = c.get("greeks") or {}
-            try:
-                strike = _f(details.get("strike_price"))
-                expiry = details.get("expiration_date")
-                contract_type = (details.get("contract_type") or "").lower()  # call|put
-                price = _f(last_trade.get("price")) or _f(day.get("close"))
-                size = int(_f(day.get("volume")) or 0)
-                premium = (price * 100 * size) if (price is not None and size) else None
-                out.append({
-                    "ticker": details.get("ticker"),
-                    "underlying": sym,
-                    "type": contract_type,
-                    "strike": strike,
-                    "expiry": expiry,
-                    "size": size,
-                    "premium": premium,
-                    "iv": _f(c.get("implied_volatility")),
-                    "delta": _f(greeks.get("delta")),
-                    "gamma": _f(greeks.get("gamma")),
-                    "open_interest": int(_f(c.get("open_interest")) or 0),
-                    "last_trade_ts": _ts_iso(last_trade.get("sip_timestamp")),
-                })
-            except Exception:
-                continue
+        next_url: str | None = None
+        pages = 0
+        while pages < max_pages:
+            if next_url is None:
+                data = await self._get(f"/v3/snapshot/options/{sym}", {"limit": 250})
+            else:
+                data = await self._get_url(next_url)
+            if not data:
+                break
+            results = data.get("results") or []
+            for c in results:
+                details = c.get("details") or {}
+                day = c.get("day") or {}
+                last_trade = c.get("last_trade") or {}
+                greeks = c.get("greeks") or {}
+                try:
+                    strike = _f(details.get("strike_price"))
+                    expiry = details.get("expiration_date")
+                    contract_type = (details.get("contract_type") or "").lower()  # call|put
+                    price = _f(last_trade.get("price")) or _f(day.get("close"))
+                    size = int(_f(day.get("volume")) or 0)
+                    premium = (price * 100 * size) if (price is not None and size) else None
+                    out.append({
+                        "ticker": details.get("ticker"),
+                        "underlying": sym,
+                        "type": contract_type,
+                        "strike": strike,
+                        "expiry": expiry,
+                        "size": size,
+                        "premium": premium,
+                        "iv": _f(c.get("implied_volatility")),
+                        "delta": _f(greeks.get("delta")),
+                        "gamma": _f(greeks.get("gamma")),
+                        "open_interest": int(_f(c.get("open_interest")) or 0),
+                        "last_trade_ts": _ts_iso(last_trade.get("sip_timestamp")),
+                    })
+                except Exception:
+                    continue
+            next_url = data.get("next_url")
+            pages += 1
+            if not next_url:
+                break
         return out
+
+    async def _get_url(self, url: str) -> Any | None:
+        """Fetch a paginated next_url returned by a previous snapshot call.
+
+        Polygon's next_url is the full URL with cursor params; it does
+        not always include the apiKey, so we re-append ours defensively.
+        """
+        if not self.configured:
+            return None
+        if "apiKey=" not in url:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}apiKey={self._key}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+        except Exception as exc:
+            logger.warning("massive paginated request failed: %s", exc)
+            return None
+        if resp.status_code != 200:
+            logger.warning("massive paginated -> %s", resp.status_code)
+            return None
+        try:
+            return resp.json()
+        except Exception:
+            return None
 
 
 def _f(v: Any) -> float | None:
