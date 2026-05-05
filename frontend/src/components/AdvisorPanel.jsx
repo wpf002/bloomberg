@@ -166,9 +166,9 @@ export default function AdvisorPanel({ symbol, watchlist }) {
   }, [askInput, busy, symbol, watchlist, askHistory, runStream]);
 
   const generateOneShot = useCallback(
-    (endpoint, body) => {
+    (endpoint, body, cacheKey = endpoint) => {
       runStream(endpoint, body, (full) =>
-        setTabOutputs((prev) => ({ ...prev, [endpoint]: full })),
+        setTabOutputs((prev) => ({ ...prev, [cacheKey]: full })),
       );
     },
     [runStream],
@@ -278,17 +278,21 @@ export default function AdvisorPanel({ symbol, watchlist }) {
   const onDtSetup = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, "dt-setup": "" }));
-    generateOneShot("dt/setup", { active_symbol: symbol, watchlist });
+    generateOneShot("dt/setup", { active_symbol: symbol, watchlist }, "dt-setup");
   }, [busy, symbol, watchlist, generateOneShot]);
   const onDtLevels = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, "dt-levels": "" }));
-    generateOneShot("dt/levels", { active_symbol: symbol, watchlist });
+    generateOneShot("dt/levels", { active_symbol: symbol, watchlist }, "dt-levels");
   }, [busy, symbol, watchlist, generateOneShot]);
   const onDtFlowConfirm = useCallback(() => {
     if (busy || !dtFlowIdea.trim()) return;
     setTabOutputs((p) => ({ ...p, "dt-flow-confirm": "" }));
-    generateOneShot("dt/flow-confirm", { active_symbol: symbol, watchlist, idea: dtFlowIdea.trim() });
+    generateOneShot(
+      "dt/flow-confirm",
+      { active_symbol: symbol, watchlist, idea: dtFlowIdea.trim() },
+      "dt-flow-confirm",
+    );
   }, [busy, symbol, watchlist, dtFlowIdea, generateOneShot]);
   const onDtRR = useCallback(() => {
     const entry = Number(dtRR.entry);
@@ -296,19 +300,23 @@ export default function AdvisorPanel({ symbol, watchlist }) {
     const target = Number(dtRR.target);
     if (busy || !entry || !stop || !target) return;
     setTabOutputs((p) => ({ ...p, "dt-rr": "" }));
-    generateOneShot("dt/risk-reward", {
-      active_symbol: symbol,
-      watchlist,
-      entry,
-      stop,
-      target,
-      account_size: dtRR.account_size ? Number(dtRR.account_size) : null,
-    });
+    generateOneShot(
+      "dt/risk-reward",
+      {
+        active_symbol: symbol,
+        watchlist,
+        entry,
+        stop,
+        target,
+        account_size: dtRR.account_size ? Number(dtRR.account_size) : null,
+      },
+      "dt-rr",
+    );
   }, [busy, symbol, watchlist, dtRR, generateOneShot]);
   const onDtEod = useCallback(() => {
     if (busy) return;
     setTabOutputs((p) => ({ ...p, "dt-eod": "" }));
-    generateOneShot("dt/eod-recap", { active_symbol: symbol, watchlist });
+    generateOneShot("dt/eod-recap", { active_symbol: symbol, watchlist }, "dt-eod");
   }, [busy, symbol, watchlist, generateOneShot]);
   const onDtAsk = useCallback(() => {
     const q = dtAskInput.trim();
