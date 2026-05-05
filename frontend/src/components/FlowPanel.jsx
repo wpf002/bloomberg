@@ -1,5 +1,16 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
+import {
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+  ZAxis,
+} from "recharts";
 import Panel from "./Panel.jsx";
 import usePolling from "../hooks/usePolling.js";
 import { api } from "../lib/api.js";
@@ -125,7 +136,7 @@ export default function FlowPanel({ symbol }) {
       ) : (
         <div className="space-y-4">
           <Section title={t("p.flow.sec.tape")}>
-            <FlowTable items={flowQ.data?.items || []} loading={flowQ.loading && !flowQ.data} t={t} />
+            <FlowChart items={flowQ.data?.items || []} loading={flowQ.loading && !flowQ.data} t={t} />
           </Section>
           <Section title={t("p.flow.sec.heatmap")}>
             <Heatmap buckets={heatmapQ.data?.buckets || []} loading={heatmapQ.loading && !heatmapQ.data} t={t} />
@@ -202,55 +213,106 @@ function Section({ title, children }) {
   );
 }
 
-function FlowTable({ items, loading, sweepStyle, t }) {
+function FlowChart({ items, loading, t }) {
   if (loading) return <div className="text-terminal-muted text-xs">{t("p.common.loading")}</div>;
   if (!items.length) return <div className="text-terminal-muted text-xs">{t("p.flow.none")}</div>;
+  // Top 100 by premium keeps the scatter legible without losing the
+  // institutional-size tail. Each contract is one bubble; bubble area
+  // scales with traded contracts, color encodes side.
+  const data = items
+    .slice(0, 100)
+    .filter((r) => r.strike != null && r.premium != null)
+    .map((r) => ({
+      ...r,
+      strike: Number(r.strike),
+      premium: Number(r.premium),
+      size: Number(r.size || 0),
+    }));
+  if (!data.length) return <div className="text-terminal-muted text-xs">{t("p.flow.none")}</div>;
   return (
-    <div className="-mx-3 overflow-x-auto px-3">
-      <table className="w-full min-w-[640px] text-xs tabular">
-        <thead>
-          <tr className="text-left text-terminal-muted">
-            <th className="py-1 pr-2">{t("p.flow.cols.time")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.sym")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.type")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.strike")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.exp")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.size")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.prem")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.side")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.tag")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.slice(0, sweepStyle ? 20 : 50).map((row, idx) => (
-            <tr
-              key={`${row.timestamp}-${row.symbol}-${idx}`}
-              className={clsx(
-                "border-t border-terminal-border/60",
-                sweepStyle && "bg-terminal-amber/5"
-              )}
-            >
-              <td className="py-1 pr-2 text-terminal-muted whitespace-nowrap">{formatTime(row.timestamp)}</td>
-              <td className="py-1 pr-2 font-bold text-terminal-amber whitespace-nowrap">{row.symbol}</td>
-              <td className="py-1 pr-2 uppercase whitespace-nowrap">{row.type || "--"}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{row.strike ?? "--"}</td>
-              <td className="py-1 pr-2 whitespace-nowrap">{row.expiry ?? "--"}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{formatNumber(row.size)}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{formatNotional(row.premium)}</td>
-              <td
-                className={clsx(
-                  "py-1 pr-2 whitespace-nowrap font-bold uppercase",
-                  row.side === "bullish" && "text-terminal-green",
-                  row.side === "bearish" && "text-terminal-red"
-                )}
-              >
-                {row.side}
-              </td>
-              <td className="py-1 pr-2 text-terminal-muted whitespace-nowrap">{row.sentiment || row.source}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{ width: "100%", height: 320 }}>
+      <ResponsiveContainer>
+        <ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 8 }}>
+          <CartesianGrid stroke="#1f242c" strokeDasharray="2 4" />
+          <XAxis
+            type="number"
+            dataKey="strike"
+            stroke="#8a8f98"
+            fontSize={10}
+            domain={["dataMin", "dataMax"]}
+            label={{
+              value: t("p.flow.cols.strike"),
+              position: "insideBottom",
+              offset: -8,
+              fontSize: 10,
+              fill: "#8a8f98",
+            }}
+          />
+          <YAxis
+            type="number"
+            dataKey="premium"
+            stroke="#8a8f98"
+            fontSize={10}
+            tickFormatter={(v) => formatNotional(v)}
+            width={60}
+          />
+          <ZAxis type="number" dataKey="size" range={[40, 600]} />
+          <Tooltip cursor={{ strokeDasharray: "3 3" }} content={<FlowTooltip t={t} />} />
+          <Scatter data={data} isAnimationActive={false}>
+            {data.map((row, idx) => (
+              <Cell
+                key={idx}
+                fill={
+                  row.side === "bullish"
+                    ? "#00d26a"
+                    : row.side === "bearish"
+                    ? "#ff4d4d"
+                    : "#facc15"
+                }
+                fillOpacity={0.7}
+                stroke={
+                  row.side === "bullish"
+                    ? "#00d26a"
+                    : row.side === "bearish"
+                    ? "#ff4d4d"
+                    : "#facc15"
+                }
+              />
+            ))}
+          </Scatter>
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function FlowTooltip({ active, payload, t }) {
+  if (!active || !payload || !payload.length) return null;
+  const r = payload[0].payload;
+  return (
+    <div className="border border-terminal-border/60 bg-terminal-bg px-2 py-1.5 text-[11px]">
+      <div className="font-bold text-terminal-amber">
+        {r.symbol} {String(r.type || "").toUpperCase()} {r.strike}
+      </div>
+      <div className="text-terminal-muted">
+        {t("p.flow.cols.exp")} {r.expiry || "--"}
+      </div>
+      <div
+        className={clsx(
+          "font-bold uppercase",
+          r.side === "bullish" && "text-terminal-green",
+          r.side === "bearish" && "text-terminal-red"
+        )}
+      >
+        {r.side}
+      </div>
+      <div>
+        {t("p.flow.cols.prem")} {formatNotional(r.premium)}
+      </div>
+      <div>
+        {t("p.flow.cols.size")} {formatNumber(r.size)}
+      </div>
+      <div className="text-terminal-muted">{formatTime(r.timestamp)}</div>
     </div>
   );
 }
