@@ -290,6 +290,13 @@ export const api = {
   vexProfile: (symbol) => request(`/api/vex/${encodeURIComponent(symbol)}`),
   gexLevels: (symbol) => request(`/api/gex/${encodeURIComponent(symbol)}/levels`),
 
+  // ── V2.5: Prediction markets (Polymarket + Kalshi) ─────────────────
+  predictionsMacro: () => request(`/api/predictions/macro`),
+  predictionsMarkets: () => request(`/api/predictions/markets`),
+  predictionsEvents: () => request(`/api/predictions/events`),
+  predictionsSearch: (q, limit = 20) =>
+    request(`/api/predictions/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+
   // ── filings search ────────────────────────────────────────────────────
   filingsSearch: (q, { symbol, formType, limit = 20 } = {}) => {
     const params = new URLSearchParams({ q, limit: String(limit) });

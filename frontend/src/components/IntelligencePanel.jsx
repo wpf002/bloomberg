@@ -38,13 +38,21 @@ const TAB_FETCHERS = {
   fragility: (api) => api.intelFragility(),
   flows:     (api) => api.intelFlows(),
   rotation:  (api) => api.intelRotation(),
+  predictions: async (api) => {
+    const [macro, markets, events] = await Promise.all([
+      api.predictionsMacro().catch(() => ({ items: [] })),
+      api.predictionsMarkets().catch(() => ({ items: [] })),
+      api.predictionsEvents().catch(() => ({ items: [] })),
+    ]);
+    return { macro: macro.items || [], markets: markets.items || [], events: events.items || [] };
+  },
 };
 
 export default function IntelligencePanel() {
   const { t } = useTranslation();
   const [tab, setTab] = useState("regime");
-  const [data, setData] = useState({ regime: null, fragility: null, flows: null, rotation: null });
-  const [loaded, setLoaded] = useState({ regime: false, fragility: false, flows: false, rotation: false });
+  const [data, setData] = useState({ regime: null, fragility: null, flows: null, rotation: null, predictions: null });
+  const [loaded, setLoaded] = useState({ regime: false, fragility: false, flows: false, rotation: false, predictions: false });
   const [loading, setLoading] = useState({});
   const [pendingOrders, setPendingOrders] = useState([]);
 
@@ -104,6 +112,7 @@ export default function IntelligencePanel() {
             ["fragility", t("p.intel.tabs.fragility")],
             ["flows", t("p.intel.tabs.flows")],
             ["rotation", t("p.intel.tabs.rotation")],
+            ["predictions", t("p.intel.tabs.predictions")],
           ].map(([k, label]) => (
             <button
               key={k}
@@ -124,6 +133,8 @@ export default function IntelligencePanel() {
         <FragilityTab fragility={data.fragility} pendingOrders={pendingOrders} t={t} />
       ) : tab === "flows" ? (
         <FlowsTab flows={data.flows} t={t} />
+      ) : tab === "predictions" ? (
+        <PredictionsTab predictions={data.predictions} t={t} />
       ) : (
         <RotationTab rotation={data.rotation} t={t} />
       )}
@@ -449,4 +460,98 @@ function RotationTab({ rotation, t }) {
       </div>
     </div>
   );
+}
+
+function PredictionsTab({ predictions, t }) {
+  if (!predictions) {
+    return <div className="text-terminal-muted">{t("p.intel.loading")}</div>;
+  }
+  const { macro = [], markets = [], events = [] } = predictions;
+  const total = macro.length + markets.length + events.length;
+  if (!total) {
+    return <div className="text-terminal-muted">{t("p.intel.predictions.empty")}</div>;
+  }
+  return (
+    <div className="space-y-3 text-xs">
+      <Section title={t("p.intel.predictions.sec.macro")}>
+        <ConsensusGrid items={macro} t={t} />
+      </Section>
+      <Section title={t("p.intel.predictions.sec.markets")}>
+        <ConsensusGrid items={markets} t={t} />
+      </Section>
+      <Section title={t("p.intel.predictions.sec.events")}>
+        <ConsensusGrid items={events} t={t} />
+      </Section>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section>
+      <h3 className="mb-1 text-[10px] uppercase tracking-wider text-terminal-amber">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function ConsensusGrid({ items, t }) {
+  if (!items || !items.length) {
+    return <div className="text-terminal-muted text-[11px]">{t("p.intel.predictions.empty")}</div>;
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      {items.slice(0, 12).map((it) => (
+        <ConsensusCard key={`${it.source}-${it.id || it.slug}`} item={it} t={t} />
+      ))}
+    </div>
+  );
+}
+
+function ConsensusCard({ item, t }) {
+  const prob = item.probability != null ? Number(item.probability) : null;
+  const probPct = prob != null ? Math.round(prob * 100) : null;
+  const cls =
+    probPct == null
+      ? "border-terminal-border/60 text-terminal-text"
+      : probPct >= 70
+      ? "border-terminal-green/60 text-terminal-green"
+      : probPct <= 30
+      ? "border-terminal-red/60 text-terminal-red"
+      : "border-terminal-amber/60 text-terminal-amber";
+  return (
+    <a
+      href={item.url || "#"}
+      target="_blank"
+      rel="noreferrer"
+      className={`block rounded border ${cls} px-2 py-1.5 hover:bg-terminal-panelAlt`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wider text-terminal-muted">
+          {(item.source || "").toUpperCase()}
+        </span>
+        <span className="text-base font-bold tabular">{probPct != null ? `${probPct}%` : "--"}</span>
+      </div>
+      <div className="mt-0.5 text-[11px] leading-snug text-terminal-text line-clamp-3">
+        {item.question || item.slug}
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[10px] text-terminal-muted tabular">
+        <span>
+          {item.days_to_resolution != null
+            ? t("p.intel.predictions.days", { n: item.days_to_resolution })
+            : ""}
+        </span>
+        <span>
+          {item.volume_24h != null ? `$${formatVol(item.volume_24h)}` : ""}
+        </span>
+      </div>
+    </a>
+  );
+}
+
+function formatVol(v) {
+  if (v == null) return "--";
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+  return Math.round(v).toLocaleString();
 }

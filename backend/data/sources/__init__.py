@@ -1,6 +1,8 @@
 from .alpaca_source import AlpacaSource, get_alpaca_source
 from .bullflow_source import BullFlowSource
 from .finnhub_source import FinnhubSource
+from .kalshi_source import KalshiSource
+from .polymarket_source import PolymarketSource
 from .finra_source import FinraSource
 from .fmp_source import FmpSource
 from .frankfurter_source import FrankfurterSource
@@ -23,7 +25,9 @@ __all__ = [
     "FrenchSource",
     "FredSource",
     "FuturesSource",
+    "KalshiSource",
     "MeilisearchSource",
+    "PolymarketSource",
     "RssSource",
     "SecEdgarSource",
     "TreasurySource",

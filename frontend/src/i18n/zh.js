@@ -473,7 +473,12 @@ export default {
     },
     intel: {
       loading: "加载智能数据中…",
-      tabs: { regime: "状态", fragility: "脆弱", flows: "资金流", rotation: "轮动" },
+      tabs: { regime: "状态", fragility: "脆弱", flows: "资金流", rotation: "轮动", predictions: "预测" },
+      predictions: {
+        empty: "暂无预测市场数据。Polymarket / Kalshi 可能限流。",
+        sec: { macro: "宏观共识", markets: "市场与波动", events: "即将事件" },
+        days: "{n}天",
+      },
       regime: {
         unavail: "状态数据不可用。",
         conf: "置信度",

@@ -25,6 +25,7 @@ from .routes import (
     orders,
     overview,
     portfolio,
+    predictions,
     provenance,
     quotes,
     risk,
@@ -70,5 +71,6 @@ api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
 api_router.include_router(flow.router, prefix="/flow", tags=["flow"])
 api_router.include_router(gex.router, prefix="/gex", tags=["gex"])
 api_router.include_router(vex.router, prefix="/vex", tags=["vex"])
+api_router.include_router(predictions.router, prefix="/predictions", tags=["predictions"])
 
 __all__ = ["api_router"]

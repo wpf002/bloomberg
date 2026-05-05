@@ -491,7 +491,12 @@ export default {
     },
     intel: {
       loading: "Loading intelligence…",
-      tabs: { regime: "REGIME", fragility: "FRAG", flows: "FLOWS", rotation: "ROT" },
+      tabs: { regime: "REGIME", fragility: "FRAG", flows: "FLOWS", rotation: "ROT", predictions: "PRED" },
+      predictions: {
+        empty: "No prediction-market data right now. Polymarket / Kalshi may be rate-limiting.",
+        sec: { macro: "MACRO CONSENSUS", markets: "MARKETS & VOL", events: "UPCOMING EVENTS" },
+        days: "{n}d",
+      },
       regime: {
         unavail: "Regime data unavailable.",
         conf: "conf",

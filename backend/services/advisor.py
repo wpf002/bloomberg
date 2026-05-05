@@ -330,6 +330,22 @@ async def build_context(
         except Exception:
             gex_levels = None
 
+    # V2.5: prediction-market consensus — top 5 macro contracts by volume.
+    prediction_markets: list[dict[str, Any]] = []
+    try:
+        from ..data.sources.kalshi_source import KalshiSource
+        from ..data.sources.polymarket_source import PolymarketSource
+
+        poly_macro, kalshi_macro = await asyncio.gather(
+            _safe(PolymarketSource().macro(20), []),
+            _safe(KalshiSource().macro(20), []),
+        )
+        merged = (poly_macro or []) + (kalshi_macro or [])
+        merged.sort(key=lambda r: -(r.get("volume_24h") or r.get("volume_total") or 0))
+        prediction_markets = merged[:5]
+    except Exception:
+        prediction_markets = []
+
     return {
         "as_of": datetime.now(timezone.utc).isoformat(timespec="minutes"),
         "active_symbol": active_symbol,
@@ -352,6 +368,7 @@ async def build_context(
         "mortgage_spread": mortgage_state,
         "recent_alerts": alerts_recent,
         "gex_levels": gex_levels,
+        "prediction_markets": prediction_markets,
     }
 
 

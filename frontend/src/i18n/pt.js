@@ -473,7 +473,12 @@ export default {
     },
     intel: {
       loading: "Carregando inteligência…",
-      tabs: { regime: "REGIME", fragility: "FRAG", flows: "FLUXOS", rotation: "ROT" },
+      tabs: { regime: "REGIME", fragility: "FRAG", flows: "FLUXOS", rotation: "ROT", predictions: "PRED" },
+      predictions: {
+        empty: "Sem dados de mercados de previsão. Polymarket/Kalshi podem estar limitando.",
+        sec: { macro: "CONSENSO MACRO", markets: "MERCADOS E VOL", events: "EVENTOS PRÓXIMOS" },
+        days: "{n}d",
+      },
       regime: {
         unavail: "Dados de regime indisponíveis.",
         conf: "conf",
