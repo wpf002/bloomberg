@@ -147,6 +147,9 @@ export default {
       none: "无 {sym} 走势图数据。",
       pick_diff: " 请从自选股选择其他代码。",
       points: "{count} 点 · {interval}",
+      interval_title: "切换走势图周期为 {label}",
+      tv_error: "走势图加载失败：{msg}。请刷新页面重试。",
+      tv_credit: "走势图由 TradingView 提供",
     },
     news: {
       loading: "加载新闻中…",

@@ -147,6 +147,9 @@ export default {
       none: "No hay datos de gráfico para {sym}.",
       pick_diff: " Selecciona otro símbolo de la lista.",
       points: "{count} puntos · {interval}",
+      interval_title: "Cambiar intervalo del gráfico a {label}",
+      tv_error: "El gráfico no se pudo cargar: {msg}. Recargue para reintentar.",
+      tv_credit: "Gráficos por TradingView",
     },
     news: {
       loading: "Cargando noticias…",

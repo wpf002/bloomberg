@@ -158,6 +158,9 @@ export default {
       none: "No chart data available for {sym}.",
       pick_diff: " Pick a different symbol from the watchlist.",
       points: "{count} points · {interval}",
+      interval_title: "Switch chart interval to {label}",
+      tv_error: "Chart failed to load: {msg}. Refresh to retry.",
+      tv_credit: "Charts by TradingView",
     },
     news: {
       loading: "Loading news…",

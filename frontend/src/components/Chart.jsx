@@ -1,160 +1,179 @@
-import { useMemo, useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Panel from "./Panel.jsx";
-import usePolling from "../hooks/usePolling.js";
-import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
 
-const PERIODS = [
-  ["1D", "1d", "5m"],
-  ["5D", "5d", "15m"],
-  ["1M", "1mo", "1d"],
-  ["6M", "6mo", "1d"],
-  ["1Y", "1y", "1d"],
-  ["5Y", "5y", "1wk"],
+const TV_SCRIPT_SRC = "https://s3.tradingview.com/tv.js";
+const TV_SCRIPT_ID = "tradingview-widget-loader";
+
+const INTERVALS = [
+  ["1m",  "1"],
+  ["5m",  "5"],
+  ["10m", "10"],
+  ["15m", "15"],
+  ["30m", "30"],
+  ["1h",  "60"],
+  ["2h",  "120"],
+  ["3h",  "180"],
+  ["6h",  "360"],
+  ["12h", "720"],
+  ["1D",  "D"],
+  ["1W",  "W"],
+  ["1M",  "M"],
 ];
 
+const STORAGE_KEY = "bt.chart.interval.v1";
+const DEFAULT_INTERVAL = "D";
+
+function loadInterval() {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    if (v && INTERVALS.some(([, code]) => code === v)) return v;
+  } catch {
+    // ignore
+  }
+  return DEFAULT_INTERVAL;
+}
+
+function persistInterval(code) {
+  try {
+    localStorage.setItem(STORAGE_KEY, code);
+  } catch {
+    // ignore
+  }
+}
+
+let tvScriptPromise = null;
+function loadTradingViewScript() {
+  if (typeof window === "undefined") return Promise.resolve(null);
+  if (window.TradingView) return Promise.resolve(window.TradingView);
+  if (tvScriptPromise) return tvScriptPromise;
+  tvScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById(TV_SCRIPT_ID);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(window.TradingView));
+      existing.addEventListener("error", reject);
+      return;
+    }
+    const s = document.createElement("script");
+    s.id = TV_SCRIPT_ID;
+    s.src = TV_SCRIPT_SRC;
+    s.async = true;
+    s.onload = () => resolve(window.TradingView);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return tvScriptPromise;
+}
+
+// TradingView only ships locales for a fixed set; map ours.
+function tvLocale(code) {
+  if (code === "es") return "es";
+  if (code === "pt") return "pt";
+  if (code === "zh") return "zh_CN";
+  return "en";
+}
+
 export default function Chart({ symbol }) {
-  const { t } = useTranslation();
-  const [selected, setSelected] = useState(PERIODS[2]);
-  const [, period, interval] = selected;
+  const { t, locale } = useTranslation();
+  const containerId = useId().replace(/[:]/g, "_") + "_tv";
+  const [interval, setInterval] = useState(() => loadInterval());
+  const [error, setError] = useState(null);
+  const containerRef = useRef(null);
+  const widgetRef = useRef(null);
 
-  const { data, loading, error } = usePolling(
-    () => api.history(symbol, period, interval),
-    60_000,
-    [symbol, period, interval]
-  );
+  const tvSymbol = useMemo(() => (symbol ? String(symbol).toUpperCase() : "AAPL"), [symbol]);
 
-  const series = useMemo(
-    () =>
-      (data || []).map((p) => ({
-        t: new Date(p.timestamp).getTime(),
-        close: p.close,
-      })),
-    [data]
-  );
+  useEffect(() => {
+    persistInterval(interval);
+  }, [interval]);
 
-  const first = series[0]?.close;
-  const last = series[series.length - 1]?.close;
-  const delta = first && last ? last - first : 0;
-  const deltaPct = first ? (delta / first) * 100 : 0;
-  const positive = delta >= 0;
+  useEffect(() => {
+    let cancelled = false;
+    setError(null);
+
+    loadTradingViewScript()
+      .then((TV) => {
+        if (cancelled || !TV || !containerRef.current) return;
+        // Clear any previous widget render in the container.
+        containerRef.current.innerHTML = "";
+        try {
+          // eslint-disable-next-line new-cap
+          widgetRef.current = new TV.widget({
+            container_id: containerId,
+            symbol: tvSymbol,
+            interval,
+            theme: "dark",
+            autosize: true,
+            locale: tvLocale(locale),
+            timezone: "Etc/UTC",
+            style: "1", // candles
+            hide_top_toolbar: false,
+            hide_legend: false,
+            save_image: false,
+            allow_symbol_change: false,
+            withdateranges: true,
+            extended_hours: true,
+            toolbar_bg: "#0b0d10",
+            backgroundColor: "#0b0d10",
+            gridColor: "#1f242c",
+            studies: [],
+          });
+        } catch (e) {
+          setError(e?.message || "TradingView widget failed to mount");
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e?.message || "Failed to load TradingView");
+      });
+
+    return () => {
+      cancelled = true;
+      if (containerRef.current) containerRef.current.innerHTML = "";
+      widgetRef.current = null;
+    };
+  }, [tvSymbol, interval, locale, containerId]);
 
   return (
     <Panel
-      title={t("p.chart.title", { sym: symbol })}
+      title={t("p.chart.title", { sym: tvSymbol })}
       accent="blue"
       actions={
-        <div className="flex items-center gap-1">
-          {PERIODS.map((p) => (
+        <div className="flex flex-wrap items-center gap-1">
+          {INTERVALS.map(([label, code]) => (
             <button
-              key={p[0]}
-              onClick={() => setSelected(p)}
-              className={`px-2 py-0.5 text-[10px] uppercase tracking-wider ${
-                p === selected
+              key={code}
+              onClick={() => setInterval(code)}
+              className={`px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${
+                code === interval
                   ? "bg-terminal-amber text-black"
                   : "text-terminal-muted hover:text-terminal-text"
               }`}
+              title={t("p.chart.interval_title", { label })}
             >
-              {p[0]}
+              {label}
             </button>
           ))}
         </div>
       }
     >
-      {loading && !data ? (
-        <div className="text-terminal-muted">{t("p.chart.loading")}</div>
-      ) : error ? (
-        <div className="text-xs leading-relaxed text-terminal-muted">
-          {t("p.chart.none", { sym: symbol })}
-          {error.status === 404 ? <>{t("p.chart.pick_diff")}</> : null}
-        </div>
-      ) : (
-        <div className="flex h-full flex-col">
-          <div className="mb-2 flex items-baseline gap-3 tabular">
-            <span className="text-2xl font-bold text-terminal-text">
-              {last ? last.toFixed(2) : "--"}
-            </span>
-            <span
-              className={
-                positive ? "text-terminal-green" : "text-terminal-red"
-              }
-            >
-              {positive ? "+" : ""}
-              {delta.toFixed(2)} ({positive ? "+" : ""}
-              {deltaPct.toFixed(2)}%)
-            </span>
-            <span className="ml-auto text-xs text-terminal-muted">
-              {t("p.chart.points", { count: series.length, interval })}
-            </span>
+      <div className="flex h-full flex-col">
+        {error ? (
+          <div className="text-xs text-terminal-muted">
+            {t("p.chart.tv_error", { msg: error })}
           </div>
-          <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series}>
-                <defs>
-                  <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0%"
-                      stopColor={positive ? "#00d26a" : "#ff4d4d"}
-                      stopOpacity={0.35}
-                    />
-                    <stop
-                      offset="100%"
-                      stopColor={positive ? "#00d26a" : "#ff4d4d"}
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#1f242c" strokeDasharray="2 4" />
-                <XAxis
-                  dataKey="t"
-                  tickFormatter={(v) =>
-                    new Date(v).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "2-digit",
-                    })
-                  }
-                  stroke="#8a8f98"
-                  fontSize={10}
-                  minTickGap={32}
-                />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  stroke="#8a8f98"
-                  fontSize={10}
-                  width={48}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#111418",
-                    border: "1px solid #1f242c",
-                    fontFamily: "JetBrains Mono, monospace",
-                    fontSize: 11,
-                  }}
-                  labelFormatter={(v) => new Date(v).toLocaleString()}
-                  formatter={(value) => [Number(value).toFixed(2), "Close"]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="close"
-                  stroke={positive ? "#00d26a" : "#ff4d4d"}
-                  strokeWidth={1.5}
-                  fill="url(#chartFill)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+        ) : null}
+        <div className="flex-1 min-h-[320px]">
+          <div
+            id={containerId}
+            ref={containerRef}
+            className="h-full w-full"
+            style={{ minHeight: 320 }}
+          />
         </div>
-      )}
+        <div className="mt-1 text-[10px] text-terminal-muted">
+          {t("p.chart.tv_credit")}
+        </div>
+      </div>
     </Panel>
   );
 }
