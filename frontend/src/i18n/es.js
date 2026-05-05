@@ -287,8 +287,8 @@ export default {
     },
     flow: {
       title: "Flujo de Opciones y Dark Pool",
-      needs_key_head: "Configura BULLFLOW_API_KEY para habilitar.",
-      needs_key_msg: "Añade BULLFLOW_API_KEY a .env y reinicia el backend. Sin una clave el panel seguirá mostrando este mensaje — el resto del terminal no se ve afectado.",
+      needs_key_head: "Configura MASSIVE_API_KEY para habilitar.",
+      needs_key_msg: "Añade MASSIVE_API_KEY a .env y reinicia el backend. Sin una clave el panel seguirá mostrando este mensaje — el resto del terminal no se ve afectado.",
       unsupported_head: "No disponible en el tier actual.",
       unsupported_msg: "Los prints de dark pool, alertas de sweeps y actividad inusual requieren un feed de opciones tick-a-tick que no tenemos. El tape de flujo y el heatmap sectorial siguen activos.",
       none: "Sin registros para los filtros actuales.",

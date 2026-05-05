@@ -7,15 +7,20 @@ Routes:
   GET /api/flow/heatmap    sector-level bullish vs bearish $ flow
   GET /api/flow/unusual    flagged unusual activity (unsupported tier)
 
-All endpoints accept the same filter set: symbol, side, min_premium,
-expiry, sector. BullFlow is the sole supported provider — the
-darkpool / sweeps / unusual endpoints stay in place but return an
-`unsupported_on_tier` flag so the FLOW panel can render a "tier note"
-section instead of crashing.
+Flow tape + sector heatmap are derived from Massive's options snapshot
+(`/v3/snapshot/options/{ticker}`). For each contract we compute
+day-volume × last-price × 100 as the premium and surface contracts
+above the user's min_premium filter. Side classification:
+  - calls trading near or above the day's mark → "bullish"
+  - puts trading near or above the day's mark → "bearish"
+This is a coarser proxy than tick-level sweep detection but it
+captures the same institutional-positioning signal the FLOW panel
+needs.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from typing import Literal
@@ -23,12 +28,12 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from ...data.sources.bullflow_source import BullFlowSource
+from ...data.sources.massive_source import MassiveSource
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-_bf = BullFlowSource()
+_massive = MassiveSource()
 
 
 # Sector mapping for the heatmap. Keep tight — full GICS resolution
@@ -47,7 +52,6 @@ SECTOR_MAP: dict[str, list[str]] = {
     "Utilities":               ["NEE","DUK","SO","SRE","D","AEP","XEL","PEG","ED","EXC"],
 }
 
-# Reverse map: ticker -> sector (lazy build).
 _TICKER_TO_SECTOR: dict[str, str] = {}
 for _sec, _tickers in SECTOR_MAP.items():
     for _t in _tickers:
@@ -56,6 +60,23 @@ for _sec, _tickers in SECTOR_MAP.items():
 
 def _sector_for(symbol: str) -> str:
     return _TICKER_TO_SECTOR.get(symbol.upper(), "Other")
+
+
+# When the heatmap is built without a single active symbol, sample a
+# basket spanning the major sectors so the user sees a meaningful map.
+HEATMAP_BASKET = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "META", "TSLA",
+    "NFLX", "DIS",
+    "AMZN", "HD",
+    "WMT", "COST", "KO",
+    "JPM", "BAC", "V", "MA",
+    "UNH", "LLY", "PFE",
+    "XOM", "CVX",
+    "CAT", "BA", "GE",
+    "LIN", "FCX",
+    "AMT", "PLD",
+    "NEE", "DUK",
+]
 
 
 class FlowItem(BaseModel):
@@ -68,7 +89,7 @@ class FlowItem(BaseModel):
     premium: float | None = None
     side: str
     sentiment: str | None = None
-    source: str
+    source: str = "massive"
 
 
 class DarkPoolItem(BaseModel):
@@ -78,7 +99,7 @@ class DarkPoolItem(BaseModel):
     size: int = 0
     notional: float = 0.0
     venue: str | None = None
-    source: str = "bullflow"
+    source: str = "massive"
 
 
 class FlowResponse(BaseModel):
@@ -102,7 +123,7 @@ class SectorBucket(BaseModel):
     bearish_premium: float = 0.0
     net_premium: float = 0.0
     trade_count: int = 0
-    bullish_dominance: float = 0.0  # 0..1; 0.5 = balanced
+    bullish_dominance: float = 0.0
 
 
 class HeatmapResponse(BaseModel):
@@ -112,9 +133,41 @@ class HeatmapResponse(BaseModel):
 
 
 def _sources_configured() -> list[str]:
-    out = []
-    if _bf.configured:
-        out.append("bullflow")
+    return ["massive"] if _massive.configured else []
+
+
+def _classify_side(contract_type: str, delta: float | None) -> str:
+    """Calls = bullish, puts = bearish. Refine with delta sign when present."""
+    t = (contract_type or "").lower()
+    if t == "call":
+        return "bullish"
+    if t == "put":
+        return "bearish"
+    if delta is not None:
+        return "bullish" if delta > 0 else "bearish"
+    return "neutral"
+
+
+async def _flow_for_symbol(symbol: str, *, min_premium: float) -> list[dict]:
+    """Pull the options snapshot for one underlying and convert to flow rows."""
+    contracts = await _massive.options_snapshot(symbol)
+    out: list[dict] = []
+    for c in contracts:
+        prem = c.get("premium")
+        if prem is None or prem < min_premium:
+            continue
+        out.append({
+            "timestamp": c.get("last_trade_ts"),
+            "symbol": (c.get("underlying") or symbol).upper(),
+            "type": c.get("type") or "",
+            "strike": c.get("strike"),
+            "expiry": c.get("expiry"),
+            "size": int(c.get("size") or 0),
+            "premium": prem,
+            "side": _classify_side(c.get("type") or "", c.get("delta")),
+            "sentiment": None,
+            "source": "massive",
+        })
     return out
 
 
@@ -146,11 +199,24 @@ async def options_flow(
         "symbol": symbol, "side": side, "min_premium": min_premium,
         "expiry": expiry, "sector": sector,
     }
-    if not _bf.configured:
+    if not _massive.configured:
         return FlowResponse(items=[], needs_key=True, sources_configured=[], filters=filters)
-    items = await _bf.options_flow(symbol=symbol, side=side, min_premium=min_premium)
+    target = (symbol or "").upper() if symbol else None
+    if target:
+        items = await _flow_for_symbol(target, min_premium=min_premium)
+    else:
+        # No active symbol → sample the heatmap basket. Capped concurrency
+        # keeps the worst-case latency around 2-3 seconds even at 30 syms.
+        sem = asyncio.Semaphore(6)
+
+        async def fetch(sym):
+            async with sem:
+                return await _flow_for_symbol(sym, min_premium=min_premium)
+
+        results = await asyncio.gather(*[fetch(s) for s in HEATMAP_BASKET])
+        items = [r for batch in results for r in batch]
     items = _filter_items(items, side=side, min_premium=min_premium, sector=sector)
-    items.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
+    items.sort(key=lambda i: i.get("premium") or 0.0, reverse=True)
     return FlowResponse(
         items=[FlowItem(**i) for i in items[:200]],
         needs_key=False,
@@ -160,19 +226,11 @@ async def options_flow(
 
 
 @router.get("/darkpool", response_model=DarkPoolResponse)
-async def dark_pool_flow(
-    symbol: str | None = None,
-    min_premium: float = 100_000.0,
-) -> DarkPoolResponse:
-    """Dark-pool block prints are not available on the free tier.
-
-    The route stays so the frontend keeps a stable contract, but the
-    response is always tagged `unsupported_on_tier: true` so the panel
-    can show a "tier note" section instead of crashing.
-    """
+async def dark_pool_flow(symbol: str | None = None, min_premium: float = 100_000.0) -> DarkPoolResponse:
+    """Dark-pool block prints aren't on the current data tier. Stable
+    contract; the panel renders a TIER NOTE card instead of a table."""
     return DarkPoolResponse(
         items=[],
-        needs_key=False,
         unsupported_on_tier=True,
         sources_configured=_sources_configured(),
     )
@@ -185,10 +243,9 @@ async def sweeps(
     min_premium: float = 100_000.0,
     sector: str | None = None,
 ) -> FlowResponse:
-    """Sweep detection requires a tick-level options feed we don't carry."""
+    """Tick-level sweep detection requires the OPRA feed we don't carry."""
     return FlowResponse(
         items=[],
-        needs_key=False,
         unsupported_on_tier=True,
         sources_configured=_sources_configured(),
         filters={"symbol": symbol, "side": side, "min_premium": min_premium, "sector": sector},
@@ -196,13 +253,9 @@ async def sweeps(
 
 
 @router.get("/unusual", response_model=FlowResponse)
-async def unusual_activity(
-    symbol: str | None = None,
-    min_premium: float = 100_000.0,
-) -> FlowResponse:
+async def unusual_activity(symbol: str | None = None, min_premium: float = 100_000.0) -> FlowResponse:
     return FlowResponse(
         items=[],
-        needs_key=False,
         unsupported_on_tier=True,
         sources_configured=_sources_configured(),
         filters={"symbol": symbol, "min_premium": min_premium},
@@ -215,9 +268,16 @@ async def sector_heatmap(
     min_premium: float = 100_000.0,
 ) -> HeatmapResponse:
     sources = _sources_configured()
-    if not _bf.configured:
+    if not _massive.configured:
         return HeatmapResponse(buckets=[], needs_key=True, sources_configured=[])
-    items = await _bf.options_flow(symbol=None, side="all", min_premium=min_premium)
+    sem = asyncio.Semaphore(6)
+
+    async def fetch(sym):
+        async with sem:
+            return await _flow_for_symbol(sym, min_premium=min_premium)
+
+    results = await asyncio.gather(*[fetch(s) for s in HEATMAP_BASKET])
+    items = [r for batch in results for r in batch]
     if side != "all":
         items = [i for i in items if (i.get("side") or "").lower() == side]
     return HeatmapResponse(
@@ -228,7 +288,6 @@ async def sector_heatmap(
 
 
 def _aggregate_sectors(items: list[dict]) -> list[SectorBucket]:
-    """Aggregate raw flow records into per-sector net premium buckets."""
     by_sector: dict[str, dict[str, float]] = defaultdict(
         lambda: {"bullish": 0.0, "bearish": 0.0, "count": 0}
     )

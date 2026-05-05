@@ -89,15 +89,16 @@ class Settings(BaseSettings):
     finra_api_key: str | None = None
     finra_api_secret: str | None = None
 
-    # V2.3 — Options flow. BullFlow is the sole flow provider; without
-    # the key the FLOW panel renders a "configure key" message for the
-    # tape + heatmap and an "unsupported on free tier" note for the
-    # dark-pool / sweeps sections.
-    bullflow_api_key: str | None = None
+    # V2.3 — Options flow + market data via Massive. Massive serves a
+    # Polygon-compatible REST API at api.massive.com — one key covers
+    # quotes, aggregates, options snapshots, and the synthetic flow
+    # tape we derive from the options snapshot.
+    massive_api_key: str | None = None
+    massive_base_url: str = "https://api.massive.com"
 
     # V2.6 — supplemental data sources (all optional; the app falls back
-    # to Alpaca / yfinance when these are unset).
-    polygon_api_key: str | None = None
+    # to Alpaca / yfinance when these are unset). Massive replaces the
+    # legacy Polygon integration — set MASSIVE_API_KEY above.
     alpaca_data_tier: str = "iex"  # "iex" (free) or "premium" (paid SIP+L2)
 
     risk_free_rate: float = 0.045

@@ -287,8 +287,8 @@ export default {
     },
     flow: {
       title: "期权流向与暗池",
-      needs_key_head: "需配置 BULLFLOW_API_KEY 才能启用。",
-      needs_key_msg: "在 .env 中添加 BULLFLOW_API_KEY 并重启后端。没有 API 密钥时该面板将持续显示此消息,其他面板不受影响。",
+      needs_key_head: "需配置 MASSIVE_API_KEY 才能启用。",
+      needs_key_msg: "在 .env 中添加 MASSIVE_API_KEY 并重启后端。没有 API 密钥时该面板将持续显示此消息,其他面板不受影响。",
       unsupported_head: "当前数据档不支持。",
       unsupported_msg: "暗池成交、扫单警报与异常活动需要逐笔期权数据,我们暂不提供。上方的实时流向与板块热图仍可正常使用。",
       none: "当前筛选下无记录。",

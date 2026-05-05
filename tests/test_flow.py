@@ -1,9 +1,9 @@
 """V2.3 — Options-flow endpoint structure + filter param tests.
 
-We don't hit the live BullFlow API in CI. Without a key configured,
+We don't hit the live Massive API in CI. Without a key configured,
 every flow-providing endpoint must return an empty payload tagged
 with `needs_key=True`. Endpoints whose data isn't available on the
-free tier (darkpool / sweeps / unusual) must instead return an empty
+current tier (darkpool / sweeps / unusual) must instead return an empty
 payload tagged `unsupported_on_tier=True`. Filters and sector
 aggregation are exercised against the in-process aggregator.
 """
@@ -13,8 +13,10 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from backend.api.routes.flow import (
+    HEATMAP_BASKET,
     SECTOR_MAP,
     _aggregate_sectors,
+    _classify_side,
     _filter_items,
     _sector_for,
 )
@@ -132,3 +134,23 @@ def test_aggregate_sectors_balanced_dominance_for_zero_premium():
     buckets = _aggregate_sectors(items)
     tech = next(b for b in buckets if b.sector == "Technology")
     assert tech.bullish_dominance == 0.5
+
+
+def test_classify_side_calls_bullish_puts_bearish():
+    assert _classify_side("call", None) == "bullish"
+    assert _classify_side("put", None) == "bearish"
+    assert _classify_side("CALL", None) == "bullish"
+
+
+def test_classify_side_falls_back_to_delta_when_type_missing():
+    assert _classify_side("", 0.4) == "bullish"
+    assert _classify_side("", -0.4) == "bearish"
+    assert _classify_side("", None) == "neutral"
+
+
+def test_heatmap_basket_spans_every_sector():
+    """Every sector defined in SECTOR_MAP must have at least one ticker
+    in the basket so the heatmap shows real data instead of zeros."""
+    sectors_in_basket = {_sector_for(s) for s in HEATMAP_BASKET}
+    for sec in SECTOR_MAP.keys():
+        assert sec in sectors_in_basket, f"basket missing {sec}"
