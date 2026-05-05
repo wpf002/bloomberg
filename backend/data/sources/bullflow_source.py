@@ -1,10 +1,8 @@
 """BullFlow adapter — institutional order flow.
 
-This is the secondary feed for the V2.3 FLOW panel. It mirrors the
-shape of UnusualWhalesSource so the route handlers can merge results
-without per-source branching. Without BULLFLOW_API_KEY all methods
-return [] — the route handler swaps that for a "needs_key" indicator
-in the response payload.
+Sole supported feed for the V2.3 FLOW panel. Without BULLFLOW_API_KEY
+all methods return [] — the route handler swaps that for a "needs_key"
+indicator in the response payload.
 """
 
 from __future__ import annotations

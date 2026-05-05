@@ -303,8 +303,10 @@ export default {
     },
     flow: {
       title: "Options Flow & Dark Pool",
-      needs_key_head: "Configure UNUSUAL_WHALES_API_KEY or BULLFLOW_API_KEY to enable.",
-      needs_key_msg: "Add either UNUSUAL_WHALES_API_KEY or BULLFLOW_API_KEY to .env and restart the backend. Without a key the panel will keep showing this message — the rest of the terminal is unaffected.",
+      needs_key_head: "Configure BULLFLOW_API_KEY to enable.",
+      needs_key_msg: "Add BULLFLOW_API_KEY to .env and restart the backend. Without a key the panel will keep showing this message — the rest of the terminal is unaffected.",
+      unsupported_head: "Not available on the current data tier.",
+      unsupported_msg: "Dark-pool prints, sweep alerts, and unusual-activity flags require a tick-level options feed we don't carry. The live flow tape and sector heatmap above remain functional.",
       none: "No flow records match the current filters.",
       min_prem: "MIN $",
       side: { all: "ALL", bull: "BULL", bear: "BEAR" },
@@ -313,8 +315,7 @@ export default {
       sec: {
         tape: "LIVE FLOW TAPE",
         heatmap: "SECTOR FLOW HEATMAP",
-        darkpool: "DARK POOL PRINTS",
-        sweeps: "SWEEP ALERTS",
+        tier_note_title: "TIER NOTE",
       },
       cols: {
         time: "TIME", sym: "SYM", type: "TYPE", strike: "STRIKE", exp: "EXP",

@@ -89,10 +89,10 @@ class Settings(BaseSettings):
     finra_api_key: str | None = None
     finra_api_secret: str | None = None
 
-    # V2.3 — Options flow / dark pool / sweep alerts. Both providers are
-    # paid; without keys the FLOW panel shows a "configure key" message
-    # for each section it depends on (graceful degradation, not a 500).
-    unusual_whales_api_key: str | None = None
+    # V2.3 — Options flow. BullFlow is the sole flow provider; without
+    # the key the FLOW panel renders a "configure key" message for the
+    # tape + heatmap and an "unsupported on free tier" note for the
+    # dark-pool / sweeps sections.
     bullflow_api_key: str | None = None
 
     # V2.6 — supplemental data sources (all optional; the app falls back

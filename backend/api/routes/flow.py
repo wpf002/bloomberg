@@ -1,17 +1,17 @@
-"""V2.3 — Options flow, dark pool, sweeps, and sector heatmap endpoints.
+"""V2.3 — Options flow + sector heatmap endpoints.
 
 Routes:
   GET /api/flow/options    large options orders (size > min_premium)
-  GET /api/flow/darkpool   dark-pool block prints
-  GET /api/flow/sweeps     aggressive multi-exchange sweeps
+  GET /api/flow/darkpool   dark-pool block prints (unsupported tier)
+  GET /api/flow/sweeps     aggressive multi-exchange sweeps (unsupported)
   GET /api/flow/heatmap    sector-level bullish vs bearish $ flow
-  GET /api/flow/unusual    flagged unusual activity
+  GET /api/flow/unusual    flagged unusual activity (unsupported tier)
 
-All endpoints accept the same filter set:
-  symbol, side ("bullish" | "bearish" | "all"), min_premium, expiry,
-  sector. When neither UNUSUAL_WHALES_API_KEY nor BULLFLOW_API_KEY is
-  configured, responses include a `needs_key: true` flag and an empty
-  `items` list so the panel can render a "configure API key" message.
+All endpoints accept the same filter set: symbol, side, min_premium,
+expiry, sector. BullFlow is the sole supported provider — the
+darkpool / sweeps / unusual endpoints stay in place but return an
+`unsupported_on_tier` flag so the FLOW panel can render a "tier note"
+section instead of crashing.
 """
 
 from __future__ import annotations
@@ -20,17 +20,14 @@ import logging
 from collections import defaultdict
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from ...data.sources.bullflow_source import BullFlowSource
-from ...data.sources.unusual_whales_source import UnusualWhalesSource
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Lightweight singletons — both sources are stateless once configured.
-_uw = UnusualWhalesSource()
 _bf = BullFlowSource()
 
 
@@ -81,12 +78,13 @@ class DarkPoolItem(BaseModel):
     size: int = 0
     notional: float = 0.0
     venue: str | None = None
-    source: str = "unusual_whales"
+    source: str = "bullflow"
 
 
 class FlowResponse(BaseModel):
     items: list[FlowItem]
     needs_key: bool = False
+    unsupported_on_tier: bool = False
     sources_configured: list[str] = Field(default_factory=list)
     filters: dict = Field(default_factory=dict)
 
@@ -94,6 +92,7 @@ class FlowResponse(BaseModel):
 class DarkPoolResponse(BaseModel):
     items: list[DarkPoolItem]
     needs_key: bool = False
+    unsupported_on_tier: bool = False
     sources_configured: list[str] = Field(default_factory=list)
 
 
@@ -114,8 +113,6 @@ class HeatmapResponse(BaseModel):
 
 def _sources_configured() -> list[str]:
     out = []
-    if _uw.configured:
-        out.append("unusual_whales")
     if _bf.configured:
         out.append("bullflow")
     return out
@@ -145,23 +142,20 @@ async def options_flow(
     sector: str | None = None,
 ) -> FlowResponse:
     sources = _sources_configured()
-    if not sources:
-        return FlowResponse(items=[], needs_key=True, sources_configured=[], filters={
-            "symbol": symbol, "side": side, "min_premium": min_premium,
-            "expiry": expiry, "sector": sector,
-        })
-    items: list[dict] = []
-    if _uw.configured:
-        items.extend(await _uw.options_flow(symbol=symbol, side=side, min_premium=min_premium, expiry=expiry))
-    if _bf.configured:
-        items.extend(await _bf.options_flow(symbol=symbol, side=side, min_premium=min_premium))
+    filters = {
+        "symbol": symbol, "side": side, "min_premium": min_premium,
+        "expiry": expiry, "sector": sector,
+    }
+    if not _bf.configured:
+        return FlowResponse(items=[], needs_key=True, sources_configured=[], filters=filters)
+    items = await _bf.options_flow(symbol=symbol, side=side, min_premium=min_premium)
     items = _filter_items(items, side=side, min_premium=min_premium, sector=sector)
     items.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
     return FlowResponse(
         items=[FlowItem(**i) for i in items[:200]],
         needs_key=False,
         sources_configured=sources,
-        filters={"symbol": symbol, "side": side, "min_premium": min_premium, "expiry": expiry, "sector": sector},
+        filters=filters,
     )
 
 
@@ -170,16 +164,17 @@ async def dark_pool_flow(
     symbol: str | None = None,
     min_premium: float = 100_000.0,
 ) -> DarkPoolResponse:
-    sources = _sources_configured()
-    if not _uw.configured:
-        return DarkPoolResponse(items=[], needs_key=True, sources_configured=sources)
-    items = await _uw.dark_pool(symbol=symbol, min_premium=min_premium)
-    items = [i for i in items if (i.get("notional") or 0.0) >= min_premium]
-    items.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
+    """Dark-pool block prints are not available on the free tier.
+
+    The route stays so the frontend keeps a stable contract, but the
+    response is always tagged `unsupported_on_tier: true` so the panel
+    can show a "tier note" section instead of crashing.
+    """
     return DarkPoolResponse(
-        items=[DarkPoolItem(**i) for i in items[:200]],
+        items=[],
         needs_key=False,
-        sources_configured=sources,
+        unsupported_on_tier=True,
+        sources_configured=_sources_configured(),
     )
 
 
@@ -190,18 +185,12 @@ async def sweeps(
     min_premium: float = 100_000.0,
     sector: str | None = None,
 ) -> FlowResponse:
-    sources = _sources_configured()
-    if not _uw.configured:
-        return FlowResponse(items=[], needs_key=True, sources_configured=sources, filters={
-            "symbol": symbol, "side": side, "min_premium": min_premium, "sector": sector,
-        })
-    raw = await _uw.sweeps(symbol=symbol)
-    raw = _filter_items(raw, side=side, min_premium=min_premium, sector=sector)
-    raw.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
+    """Sweep detection requires a tick-level options feed we don't carry."""
     return FlowResponse(
-        items=[FlowItem(**i) for i in raw[:100]],
+        items=[],
         needs_key=False,
-        sources_configured=sources,
+        unsupported_on_tier=True,
+        sources_configured=_sources_configured(),
         filters={"symbol": symbol, "side": side, "min_premium": min_premium, "sector": sector},
     )
 
@@ -211,18 +200,11 @@ async def unusual_activity(
     symbol: str | None = None,
     min_premium: float = 100_000.0,
 ) -> FlowResponse:
-    sources = _sources_configured()
-    if not _uw.configured:
-        return FlowResponse(items=[], needs_key=True, sources_configured=sources, filters={
-            "symbol": symbol, "min_premium": min_premium,
-        })
-    raw = await _uw.unusual(symbol=symbol)
-    raw = _filter_items(raw, side="all", min_premium=min_premium, sector=None)
-    raw.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
     return FlowResponse(
-        items=[FlowItem(**i) for i in raw[:100]],
+        items=[],
         needs_key=False,
-        sources_configured=sources,
+        unsupported_on_tier=True,
+        sources_configured=_sources_configured(),
         filters={"symbol": symbol, "min_premium": min_premium},
     )
 
@@ -233,13 +215,9 @@ async def sector_heatmap(
     min_premium: float = 100_000.0,
 ) -> HeatmapResponse:
     sources = _sources_configured()
-    if not sources:
+    if not _bf.configured:
         return HeatmapResponse(buckets=[], needs_key=True, sources_configured=[])
-    items: list[dict] = []
-    if _uw.configured:
-        items.extend(await _uw.options_flow(symbol=None, side="all", min_premium=min_premium, expiry="all"))
-    if _bf.configured:
-        items.extend(await _bf.options_flow(symbol=None, side="all", min_premium=min_premium))
+    items = await _bf.options_flow(symbol=None, side="all", min_premium=min_premium)
     if side != "all":
         items = [i for i in items if (i.get("side") or "").lower() == side]
     return HeatmapResponse(

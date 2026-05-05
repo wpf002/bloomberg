@@ -1,10 +1,11 @@
 """V2.3 — Options-flow endpoint structure + filter param tests.
 
-We don't hit the live Unusual Whales / BullFlow APIs in CI. Without
-keys configured, every endpoint must return an empty payload tagged
-with `needs_key=True` instead of raising. Filters and sector
-aggregation are exercised against an in-process aggregator so we
-verify the pure logic here.
+We don't hit the live BullFlow API in CI. Without a key configured,
+every flow-providing endpoint must return an empty payload tagged
+with `needs_key=True`. Endpoints whose data isn't available on the
+free tier (darkpool / sweeps / unusual) must instead return an empty
+payload tagged `unsupported_on_tier=True`. Filters and sector
+aggregation are exercised against the in-process aggregator.
 """
 
 from __future__ import annotations
@@ -35,27 +36,27 @@ def test_options_endpoint_responds_when_no_keys_configured():
     assert body["filters"]["min_premium"] == 100_000.0
 
 
-def test_darkpool_endpoint_responds_when_no_keys_configured():
+def test_darkpool_endpoint_marks_tier_unsupported():
     with _client() as c:
         r = c.get("/api/flow/darkpool")
     assert r.status_code == 200
     body = r.json()
     assert body["items"] == []
-    assert body["needs_key"] is True
+    assert body["unsupported_on_tier"] is True
 
 
-def test_sweeps_endpoint_responds_when_no_keys_configured():
+def test_sweeps_endpoint_marks_tier_unsupported():
     with _client() as c:
         r = c.get("/api/flow/sweeps")
     assert r.status_code == 200
-    assert r.json()["needs_key"] is True
+    assert r.json()["unsupported_on_tier"] is True
 
 
-def test_unusual_endpoint_responds_when_no_keys_configured():
+def test_unusual_endpoint_marks_tier_unsupported():
     with _client() as c:
         r = c.get("/api/flow/unusual")
     assert r.status_code == 200
-    assert r.json()["needs_key"] is True
+    assert r.json()["unsupported_on_tier"] is True
 
 
 def test_heatmap_endpoint_responds_when_no_keys_configured():

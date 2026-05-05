@@ -69,23 +69,11 @@ export default function FlowPanel({ symbol }) {
     sector,
   ]);
   const heatmapQ = usePolling(() => api.flowHeatmap({ side, minPremium }), 60_000, [side, minPremium]);
-  const dpQ = usePolling(
-    () => api.flowDarkPool({ symbol: symbol || undefined, minPremium }),
-    60_000,
-    [symbol, minPremium]
-  );
-  const sweepsQ = usePolling(() => api.flowSweeps(filterParams), 60_000, [
-    symbol,
-    side,
-    minPremium,
-    sector,
-  ]);
 
-  const needsKey =
-    flowQ.data?.needs_key &&
-    heatmapQ.data?.needs_key &&
-    dpQ.data?.needs_key &&
-    sweepsQ.data?.needs_key;
+  // Dark-pool / sweeps / unusual aren't on our data tier — the panel
+  // shows a static tier note instead of polling those endpoints.
+  // Only the live tape + heatmap can need a configurable API key.
+  const needsKey = flowQ.data?.needs_key && heatmapQ.data?.needs_key;
 
   const sources =
     flowQ.data?.sources_configured?.join(", ") ||
@@ -136,17 +124,17 @@ export default function FlowPanel({ symbol }) {
         </div>
       ) : (
         <div className="space-y-4">
-          <Section title={t("p.flow.sec.sweeps")}>
-            <FlowTable items={sweepsQ.data?.items || []} loading={sweepsQ.loading && !sweepsQ.data} sweepStyle t={t} />
-          </Section>
           <Section title={t("p.flow.sec.tape")}>
             <FlowTable items={flowQ.data?.items || []} loading={flowQ.loading && !flowQ.data} t={t} />
           </Section>
           <Section title={t("p.flow.sec.heatmap")}>
             <Heatmap buckets={heatmapQ.data?.buckets || []} loading={heatmapQ.loading && !heatmapQ.data} t={t} />
           </Section>
-          <Section title={t("p.flow.sec.darkpool")}>
-            <DarkPoolTable items={dpQ.data?.items || []} loading={dpQ.loading && !dpQ.data} t={t} />
+          <Section title={t("p.flow.sec.tier_note_title")}>
+            <div className="rounded border border-terminal-border/60 px-3 py-2 text-[11px] leading-relaxed text-terminal-muted">
+              <div className="mb-1 text-terminal-amber">{t("p.flow.unsupported_head")}</div>
+              <div>{t("p.flow.unsupported_msg")}</div>
+            </div>
           </Section>
         </div>
       )}
@@ -301,35 +289,3 @@ function Heatmap({ buckets, loading, t }) {
   );
 }
 
-function DarkPoolTable({ items, loading, t }) {
-  if (loading) return <div className="text-terminal-muted text-xs">{t("p.common.loading")}</div>;
-  if (!items.length) return <div className="text-terminal-muted text-xs">{t("p.flow.none")}</div>;
-  return (
-    <div className="-mx-3 overflow-x-auto px-3">
-      <table className="w-full min-w-[480px] text-xs tabular">
-        <thead>
-          <tr className="text-left text-terminal-muted">
-            <th className="py-1 pr-2">{t("p.flow.cols.time")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.sym")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.price")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.size")}</th>
-            <th className="py-1 pr-2 text-right">{t("p.flow.cols.notional")}</th>
-            <th className="py-1 pr-2">{t("p.flow.cols.venue")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.slice(0, 50).map((r, idx) => (
-            <tr key={`${r.timestamp}-${r.symbol}-${idx}`} className="border-t border-terminal-border/60">
-              <td className="py-1 pr-2 text-terminal-muted whitespace-nowrap">{formatTime(r.timestamp)}</td>
-              <td className="py-1 pr-2 font-bold text-terminal-amber whitespace-nowrap">{r.symbol}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{formatNumber(r.price, 2)}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{formatNumber(r.size)}</td>
-              <td className="py-1 pr-2 text-right whitespace-nowrap">{formatNotional(r.notional)}</td>
-              <td className="py-1 pr-2 text-terminal-muted whitespace-nowrap">{r.venue || "--"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}

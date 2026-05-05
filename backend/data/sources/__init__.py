@@ -16,7 +16,6 @@ from .meilisearch_source import MeilisearchSource, get_meilisearch
 from .rss_source import RssSource
 from .sec_edgar_source import SecEdgarSource
 from .treasury_source import TreasurySource
-from .unusual_whales_source import UnusualWhalesSource
 
 __all__ = [
     "AlpacaSource",
@@ -38,7 +37,6 @@ __all__ = [
     "RssSource",
     "SecEdgarSource",
     "TreasurySource",
-    "UnusualWhalesSource",
     "get_alpaca_source",
     "get_meilisearch",
 ]
