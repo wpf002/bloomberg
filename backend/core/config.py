@@ -89,6 +89,18 @@ class Settings(BaseSettings):
     finra_api_key: str | None = None
     finra_api_secret: str | None = None
 
+    # V2.3 — Options flow / dark pool / sweep alerts. Both providers are
+    # paid; without keys the FLOW panel shows a "configure key" message
+    # for each section it depends on (graceful degradation, not a 500).
+    unusual_whales_api_key: str | None = None
+    bullflow_api_key: str | None = None
+
+    # V2.6 — supplemental data sources (all optional; the app falls back
+    # to Alpaca / yfinance when these are unset).
+    polygon_api_key: str | None = None
+    nasdaq_data_link_api_key: str | None = None
+    alpaca_data_tier: str = "iex"  # "iex" (free) or "premium" (paid SIP+L2)
+
     risk_free_rate: float = 0.045
     default_cache_ttl: int = 60
     rss_timeout_seconds: float = 6.0

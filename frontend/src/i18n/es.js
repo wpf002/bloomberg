@@ -56,6 +56,8 @@ export default {
     risk: "Motor de riesgo",
     intelligence: "Motor de inteligencia",
     advisor: "Asesor IA",
+    flow: "Flujo de Opciones",
+    gex: "GEX / VEX",
     help: "Referencia de mnemónicos",
   },
   aurora: {
@@ -268,6 +270,28 @@ export default {
       cols: { metric: "Métrica" },
       read: "Lectura",
       meta: "Modelo: {model} · {time} · cacheado 30m",
+    },
+    flow: {
+      title: "Flujo de Opciones y Dark Pool",
+      needs_key_head: "Configura UNUSUAL_WHALES_API_KEY o BULLFLOW_API_KEY para habilitar.",
+      needs_key_msg: "Añade UNUSUAL_WHALES_API_KEY o BULLFLOW_API_KEY a .env y reinicia el backend. Sin una clave el panel seguirá mostrando este mensaje — el resto del terminal no se ve afectado.",
+      none: "Sin registros para los filtros actuales.",
+      min_prem: "MIN $",
+      side: { all: "TODO", bull: "ALCISTA", bear: "BAJISTA" },
+      exp: { all: "TODOS", weekly: "SEMANAL", monthly: "MENSUAL" },
+      sector: { all: "TODOS LOS SECTORES" },
+      sec: {
+        tape: "FLUJO EN VIVO",
+        heatmap: "MAPA DE FLUJO POR SECTOR",
+        darkpool: "PRINTS DARK POOL",
+        sweeps: "ALERTAS DE SWEEPS",
+      },
+      cols: {
+        time: "HORA", sym: "SÍM", type: "TIPO", strike: "STRIKE", exp: "EXP",
+        size: "TAM", prem: "PRIMA", side: "LADO", tag: "TAG",
+        price: "PRECIO", notional: "NOCIONAL", venue: "VENUE",
+      },
+      heatmap: { dom: "{pct}% alcista" },
     },
     portfolio: {
       title: "Cartera",

@@ -255,6 +255,36 @@ export const api = {
       body: JSON.stringify({ query, max_rows: maxRows ?? null }),
     }),
 
+  // ── V2.3: options flow + dark pool ────────────────────────────────────
+  flowOptions: ({ symbol, side = "all", minPremium = 100000, expiry = "all", sector } = {}) => {
+    const q = new URLSearchParams({
+      side,
+      min_premium: String(minPremium),
+      expiry,
+    });
+    if (symbol) q.set("symbol", symbol);
+    if (sector) q.set("sector", sector);
+    return request(`/api/flow/options?${q.toString()}`);
+  },
+  flowDarkPool: ({ symbol, minPremium = 100000 } = {}) => {
+    const q = new URLSearchParams({ min_premium: String(minPremium) });
+    if (symbol) q.set("symbol", symbol);
+    return request(`/api/flow/darkpool?${q.toString()}`);
+  },
+  flowSweeps: ({ symbol, side = "all", minPremium = 100000, sector } = {}) => {
+    const q = new URLSearchParams({ side, min_premium: String(minPremium) });
+    if (symbol) q.set("symbol", symbol);
+    if (sector) q.set("sector", sector);
+    return request(`/api/flow/sweeps?${q.toString()}`);
+  },
+  flowUnusual: ({ symbol, minPremium = 100000 } = {}) => {
+    const q = new URLSearchParams({ min_premium: String(minPremium) });
+    if (symbol) q.set("symbol", symbol);
+    return request(`/api/flow/unusual?${q.toString()}`);
+  },
+  flowHeatmap: ({ side = "all", minPremium = 100000 } = {}) =>
+    request(`/api/flow/heatmap?side=${side}&min_premium=${minPremium}`),
+
   // ── filings search ────────────────────────────────────────────────────
   filingsSearch: (q, { symbol, formType, limit = 20 } = {}) => {
     const params = new URLSearchParams({ q, limit: String(limit) });

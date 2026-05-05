@@ -58,6 +58,11 @@ export const MNEMONICS = {
   REGIME:      { intent: "intelligence", description: "AURORA — current macro regime + contributing factors" },
   ADVISOR:     { intent: "advisor",      description: "AURORA — Claude AI portfolio advisor" },
   ASK:         { intent: "advisor",      description: "AURORA — ask the AI advisor a question" },
+  FLOW:        { intent: "flow",         description: "Options flow + dark pool prints (V2.3)" },
+  GEX:         { intent: "gex",          description: "Gamma / vanna exposure profile (V2.4)" },
+  VEX:         { intent: "gex",          description: "Vanna exposure profile (V2.4)" },
+  PRED:        { intent: "predictions",  description: "Prediction-market consensus (V2.5)" },
+  DT:          { intent: "daytrader",    description: "AI Day Trader mode (V2.7)" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

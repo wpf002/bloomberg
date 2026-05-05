@@ -59,6 +59,8 @@ export default {
     risk: "Risk Engine",
     intelligence: "Intelligence Engine",
     advisor: "AI Advisor",
+    flow: "Options Flow",
+    gex: "GEX / VEX",
     help: "Mnemonic Reference",
   },
   aurora: {
@@ -121,6 +123,11 @@ export default {
   },
   language: {
     label: "Language:",
+  },
+  // ─── V2 panels ─────────────────────────────────────────────────────
+  v2: {
+    flow_panel: "Options Flow",
+    gex_panel: "Dealer Positioning",
   },
   // ─── Panel internals (new in Phase 9.2) ────────────────────────────
   p: {
@@ -279,6 +286,28 @@ export default {
       cols: { metric: "Metric" },
       read: "Read",
       meta: "Model: {model} · {time} · cached 30m",
+    },
+    flow: {
+      title: "Options Flow & Dark Pool",
+      needs_key_head: "Configure UNUSUAL_WHALES_API_KEY or BULLFLOW_API_KEY to enable.",
+      needs_key_msg: "Add either UNUSUAL_WHALES_API_KEY or BULLFLOW_API_KEY to .env and restart the backend. Without a key the panel will keep showing this message — the rest of the terminal is unaffected.",
+      none: "No flow records match the current filters.",
+      min_prem: "MIN $",
+      side: { all: "ALL", bull: "BULL", bear: "BEAR" },
+      exp: { all: "ALL EXP", weekly: "WEEKLY", monthly: "MONTHLY" },
+      sector: { all: "ALL SECTORS" },
+      sec: {
+        tape: "LIVE FLOW TAPE",
+        heatmap: "SECTOR FLOW HEATMAP",
+        darkpool: "DARK POOL PRINTS",
+        sweeps: "SWEEP ALERTS",
+      },
+      cols: {
+        time: "TIME", sym: "SYM", type: "TYPE", strike: "STRIKE", exp: "EXP",
+        size: "SIZE", prem: "PREMIUM", side: "SIDE", tag: "TAG",
+        price: "PRICE", notional: "NOTIONAL", venue: "VENUE",
+      },
+      heatmap: { dom: "{pct}% bull" },
     },
     portfolio: {
       title: "Portfolio",

@@ -56,6 +56,8 @@ export default {
     risk: "风险引擎",
     intelligence: "智能引擎",
     advisor: "AI 顾问",
+    flow: "期权流向",
+    gex: "GEX / VEX",
     help: "助记符参考",
   },
   aurora: {
@@ -268,6 +270,28 @@ export default {
       cols: { metric: "指标" },
       read: "解读",
       meta: "模型: {model} · {time} · 缓存 30 分钟",
+    },
+    flow: {
+      title: "期权流向与暗池",
+      needs_key_head: "需配置 UNUSUAL_WHALES_API_KEY 或 BULLFLOW_API_KEY 才能启用。",
+      needs_key_msg: "在 .env 中添加 UNUSUAL_WHALES_API_KEY 或 BULLFLOW_API_KEY 并重启后端。没有 API 密钥时该面板将持续显示此消息,其他面板不受影响。",
+      none: "当前筛选下无记录。",
+      min_prem: "最低 $",
+      side: { all: "全部", bull: "看涨", bear: "看跌" },
+      exp: { all: "全部到期", weekly: "周", monthly: "月" },
+      sector: { all: "全部板块" },
+      sec: {
+        tape: "实时流向",
+        heatmap: "板块流向热图",
+        darkpool: "暗池成交",
+        sweeps: "扫单警报",
+      },
+      cols: {
+        time: "时间", sym: "代码", type: "类型", strike: "行权", exp: "到期",
+        size: "数量", prem: "权利金", side: "方向", tag: "标签",
+        price: "价格", notional: "名义", venue: "场所",
+      },
+      heatmap: { dom: "{pct}% 看涨" },
     },
     portfolio: {
       title: "组合",

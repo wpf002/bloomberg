@@ -11,6 +11,7 @@ import FactorAnalyticsPanel from "../components/FactorAnalyticsPanel.jsx";
 import FilingsPanel from "../components/FilingsPanel.jsx";
 import FilingsSearchPanel from "../components/FilingsSearchPanel.jsx";
 import FixedIncomePanel from "../components/FixedIncomePanel.jsx";
+import FlowPanel from "../components/FlowPanel.jsx";
 import FundamentalsPanel from "../components/FundamentalsPanel.jsx";
 import FuturesPanel from "../components/FuturesPanel.jsx";
 import Launchpad from "../components/Launchpad.jsx";
@@ -102,6 +103,10 @@ const INTENT_TO_PANEL = {
   risk: "risk",
   intelligence: "intelligence",
   advisor: "advisor",
+  flow: "flow",
+  gex: "gex",
+  predictions: "intelligence",
+  daytrader: "advisor",
   unknown: null,
 };
 
@@ -131,6 +136,8 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 52, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "futures",      x: 0,  y: 62, w: 12, h: 10, minW: 4, minH: 6 },
+    { i: "flow",         x: 0,  y: 72, w: 12, h: 10, minW: 4, minH: 6 },
+    { i: "gex",          x: 0,  y: 82, w: 12, h: 10, minW: 4, minH: 6 },
     // AURORA panels deliberately omitted from Terminal-mode layout —
     // they live in INTELLIGENCE_LAYOUTS below. Including them here would
     // reserve empty grid slots and leave a tall gap under Futures.
@@ -158,6 +165,8 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0,  y: 94, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 101, w: 12, h: 7 },
     { i: "futures",      x: 0,  y: 108, w: 12, h: 10 },
+    { i: "flow",         x: 0,  y: 118, w: 12, h: 10 },
+    { i: "gex",          x: 0,  y: 128, w: 12, h: 10 },
   ],
   sm: [
     { i: "watchlist",    x: 0, y: 0,   w: 6, h: 6 },
@@ -182,6 +191,8 @@ const DEFAULT_LAYOUTS = {
     { i: "factors",      x: 0, y: 138, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 145, w: 6, h: 7 },
     { i: "futures",      x: 0, y: 152, w: 6, h: 10 },
+    { i: "flow",         x: 0, y: 162, w: 6, h: 12 },
+    { i: "gex",          x: 0, y: 174, w: 6, h: 12 },
   ],
 };
 
@@ -483,6 +494,7 @@ export default function Terminal() {
       { id: "chart",        render: () => <Chart symbol={activeSymbol} /> },
       { id: "news",         render: () => <NewsFeed symbols={[activeSymbol]} /> },
       { id: "markets",      render: () => <MarketOverview onSelect={handleSelect} /> },
+      { id: "flow",         render: () => <FlowPanel symbol={activeSymbol} /> },
       { id: "macro",        render: () => <MacroPanel /> },
       { id: "portfolio",    render: () => <Portfolio /> },
       { id: "crypto",       render: () => <CryptoPanel /> },

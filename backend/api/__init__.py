@@ -12,6 +12,7 @@ from .routes import (
     factors,
     filings,
     fixed_income,
+    flow,
     fundamentals,
     futures,
     fx,
@@ -64,5 +65,6 @@ api_router.include_router(risk.router, prefix="/risk", tags=["risk"])
 api_router.include_router(intelligence.router, prefix="/intelligence", tags=["intelligence"])
 api_router.include_router(advisor.router, prefix="/advisor", tags=["advisor"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])
+api_router.include_router(flow.router, prefix="/flow", tags=["flow"])
 
 __all__ = ["api_router"]
