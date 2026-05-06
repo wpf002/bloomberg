@@ -35,3 +35,15 @@ async def run_query(body: SqlQuery) -> dict:
 @router.get("/tables")
 async def list_tables() -> dict:
     return {"tables": engine.list_tables()}
+
+
+@router.post("/refresh")
+async def refresh() -> dict:
+    """Re-pull bars / macro / filings from upstream into DuckDB.
+
+    The startup warm-up is best-effort and silently skips on provider error
+    — this lets an operator (or the SQL panel's refresh button) re-try
+    without restarting the process.
+    """
+    await engine.warm()
+    return {"tables": engine.list_tables()}

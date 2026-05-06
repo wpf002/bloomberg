@@ -373,6 +373,8 @@ export default {
       title: "SQL — Bancada DuckDB",
       no_tables: "sem tabelas ainda",
       run: "Executar (Cmd+Enter)",
+      refresh: "Atualizar dados",
+      refresh_title: "Recarregar bars / macro / filings da fonte para o DuckDB",
       placeholder: "SELECT ... FROM bars WHERE symbol = 'AAPL'  (Cmd/Ctrl+Enter para executar)",
       meta: "{rows} linhas · {ms}ms",
       truncated: " · TRUNCADO",

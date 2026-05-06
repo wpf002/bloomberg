@@ -33,8 +33,9 @@ from .config import settings
 logger = logging.getLogger(__name__)
 
 
-WARMUP_SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "SPY", "QQQ", "TLT"]
-WARMUP_MACRO = ["GDP", "CPIAUCSL", "UNRATE", "FEDFUNDS", "DGS10", "DGS2"]
+# Resolved at call time from settings — see config.sql_warm_symbols /
+# sql_warm_macro_series. Operators can override via SQL_WARM_SYMBOLS and
+# SQL_WARM_MACRO_SERIES env vars without changing code.
 
 _READONLY_LEADING = re.compile(r"^\s*(WITH|SELECT|EXPLAIN|PRAGMA|SHOW|DESCRIBE)\b", re.IGNORECASE)
 _FORBIDDEN = re.compile(
@@ -82,16 +83,18 @@ class SqlEngine:
         """Pull a small starter dataset so the very first SELECT returns rows.
         Best-effort: any provider error is logged and skipped.
         """
+        symbols = settings.sql_warm_symbols
+        macro_series = settings.sql_warm_macro_series
         try:
-            await self._warm_bars(WARMUP_SYMBOLS)
+            await self._warm_bars(symbols)
         except Exception as exc:
             logger.warning("sql warm bars failed: %s", exc)
         try:
-            await self._warm_macro(WARMUP_MACRO)
+            await self._warm_macro(macro_series)
         except Exception as exc:
             logger.warning("sql warm macro failed: %s", exc)
         try:
-            await self._warm_filings(WARMUP_SYMBOLS)
+            await self._warm_filings(symbols)
         except Exception as exc:
             logger.warning("sql warm filings failed: %s", exc)
 

@@ -31,6 +31,7 @@ export default function SqlPanel() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const presets = useMemo(
     () => PRESET_DEFS.map((p) => ({ ...p, label: t(`p.sql.presets.${p.key}`) })),
@@ -68,6 +69,19 @@ export default function SqlPanel() {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
       runQuery();
+    }
+  };
+
+  const refreshTables = async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const data = await api.sqlRefresh();
+      setTables(data?.tables || []);
+    } catch (err) {
+      setError(err.detail || err.message || String(err));
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -113,6 +127,14 @@ export default function SqlPanel() {
             className="border border-terminal-amber px-3 py-0.5 text-terminal-amber hover:bg-terminal-amber/10 disabled:opacity-50"
           >
             {busy ? t("p.common.running") : t("p.sql.run")}
+          </button>
+          <button
+            onClick={refreshTables}
+            disabled={refreshing}
+            title={t("p.sql.refresh_title")}
+            className="border border-terminal-border/60 px-2 py-0.5 hover:border-terminal-amber hover:text-terminal-amber disabled:opacity-50"
+          >
+            {refreshing ? "…" : t("p.sql.refresh")}
           </button>
           {result ? (
             <span>

@@ -43,6 +43,11 @@ async def search_filings(
     for tighter results.
     """
     meili = get_meilisearch()
+    # Without this guard, an unreachable Meili silently returns [] and the
+    # panel shows "No hits" — indistinguishable from a real zero-match
+    # query. Surface the outage so the frontend can render an error.
+    if not await meili.health():
+        raise HTTPException(status_code=503, detail="search service unavailable")
     if category and category.lower() == "esg" and not form_type:
         # Meilisearch doesn't accept an OR over filterable attributes from
         # a single search call cleanly without a filter expression — issue

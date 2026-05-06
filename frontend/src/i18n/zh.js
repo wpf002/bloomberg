@@ -373,6 +373,8 @@ export default {
       title: "SQL — DuckDB 工作台",
       no_tables: "暂无表",
       run: "运行 (Cmd+Enter)",
+      refresh: "刷新数据",
+      refresh_title: "从上游重新拉取 bars / macro / filings 到 DuckDB",
       placeholder: "SELECT ... FROM bars WHERE symbol = 'AAPL'  (Cmd/Ctrl+Enter 运行)",
       meta: "{rows} 行 · {ms}ms",
       truncated: " · 已截断",

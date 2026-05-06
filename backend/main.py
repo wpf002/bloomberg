@@ -49,6 +49,10 @@ async def lifespan(app: FastAPI):
     # Phase 7: re-index default-watchlist filings metadata once a day so the
     # SRCH panel stays current without anyone having to click "Index".
     asyncio.create_task(_filings_indexer_cron())
+    # Daily warm of the DuckDB workbench tables (bars / macro / filings)
+    # so an Alpaca/FRED/EDGAR outage at startup doesn't leave SQL empty
+    # for the rest of the process lifetime.
+    asyncio.create_task(_sql_warm_cron())
     yield
     try:
         await alert_engine.stop()
@@ -59,8 +63,13 @@ async def lifespan(app: FastAPI):
     await cache.disconnect()
 
 
-FILINGS_SEED_SYMBOLS = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "QQQ"]
 FILINGS_INDEX_INTERVAL_SECONDS = 24 * 60 * 60  # daily
+SQL_WARM_INTERVAL_SECONDS = 24 * 60 * 60  # daily
+
+# Accession numbers whose primary-document body has already been pushed to
+# Meili in this process. Bodies are large and Meili PUTs are idempotent;
+# this dedup just spares EDGAR an 80-doc re-fetch every cron tick.
+_INDEXED_BODIES: set[str] = set()
 
 
 async def _bootstrap_search_and_sql() -> None:
@@ -75,44 +84,101 @@ async def _bootstrap_search_and_sql() -> None:
         logger.warning("duckdb warm failed (non-fatal): %s", exc)
     # First-run seed: same symbols the cron will refresh, but we want hits
     # available immediately so SRCH isn't empty during the first 24h.
-    await _index_filings_metadata(meili)
+    # Bodies indexed too — without them, search only matches headlines.
+    await _index_filings_metadata(meili, with_bodies=True)
 
 
-async def _index_filings_metadata(meili) -> int:
+async def _index_filings_metadata(meili, with_bodies: bool = False) -> int:
     """Re-index filing metadata for the default symbol set. Returns the
     total number of documents pushed to Meili. Called both at startup
-    (immediate seed) and from the daily cron."""
+    (immediate seed) and from the daily cron.
+
+    When `with_bodies` is true, also fetches each filing's primary
+    document from EDGAR and patches the body+snippet onto the Meili doc
+    so phrase-level searches work. Skipped silently per-filing on error."""
     edgar = SecEdgarSource()
     total = 0
-    for sym in FILINGS_SEED_SYMBOLS:
+    for sym in settings.filings_seed_symbols:
         try:
             filings = await edgar.recent_filings(sym, limit=10)
             if filings:
                 indexed = await meili.index_filings_metadata(sym, filings)
                 total += int(indexed or 0)
+                if with_bodies:
+                    for f in filings:
+                        if f.accession_number in _INDEXED_BODIES:
+                            continue
+                        try:
+                            ok = await meili.index_filing_body(f)
+                            if ok:
+                                _INDEXED_BODIES.add(f.accession_number)
+                        except Exception as exc:
+                            logger.debug(
+                                "body index failed for %s: %s",
+                                f.accession_number,
+                                exc,
+                            )
         except Exception as exc:
             logger.debug("filings index failed for %s: %s", sym, exc)
     return total
 
 
 async def _filings_indexer_cron() -> None:
-    """Daily background indexer for the default symbol set.
+    """Background indexer for the default symbol set.
 
-    Sleeps first so the immediate-seed task in `_bootstrap_search_and_sql`
-    has finished — re-running the same indexing back-to-back is wasteful
-    and would race on the same documents.
+    Behaviour: short exponential back-off (60s → 24h cap) until the first
+    successful tick, then daily after that. The original implementation
+    slept 24h *before* the first run — so a Meili outage at startup left
+    the SRCH panel empty for a whole day.
     """
     meili = get_meilisearch()
+    backoff = 60
+    success = False
     while True:
         try:
-            await asyncio.sleep(FILINGS_INDEX_INTERVAL_SECONDS)
-            count = await _index_filings_metadata(meili)
-            logger.info("filings indexer cron tick", extra={"refreshed": count})
+            await asyncio.sleep(backoff if not success else FILINGS_INDEX_INTERVAL_SECONDS)
+            count = await _index_filings_metadata(meili, with_bodies=True)
+            if count > 0:
+                if not success:
+                    logger.info("filings indexer first successful tick", extra={"refreshed": count})
+                else:
+                    logger.info("filings indexer cron tick", extra={"refreshed": count})
+                success = True
+                backoff = 60
+            else:
+                backoff = min(backoff * 2, FILINGS_INDEX_INTERVAL_SECONDS)
+                logger.info("filings indexer no progress; retry in %ds", backoff)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             # Log + keep looping. A flaky 24h tick beats a dead task.
             logger.warning("filings indexer cron tick failed: %s", exc)
+            backoff = min(backoff * 2, FILINGS_INDEX_INTERVAL_SECONDS)
+
+
+async def _sql_warm_cron() -> None:
+    """Daily re-warm of DuckDB workbench tables. Same back-off pattern as
+    the filings indexer — short retries until upstream providers are
+    reachable, then daily."""
+    backoff = 300  # 5 min — Alpaca/FRED/EDGAR are usually only briefly down
+    success = False
+    while True:
+        try:
+            await asyncio.sleep(backoff if not success else SQL_WARM_INTERVAL_SECONDS)
+            await sql_engine.warm()
+            tables = sql_engine.list_tables()
+            row_total = sum(t["row_count"] for t in tables)
+            if row_total > 0:
+                logger.info("sql warm cron tick", extra={"row_total": row_total})
+                success = True
+                backoff = 300
+            else:
+                backoff = min(backoff * 2, SQL_WARM_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("sql warm cron tick failed: %s", exc)
+            backoff = min(backoff * 2, SQL_WARM_INTERVAL_SECONDS)
 
 
 app = FastAPI(

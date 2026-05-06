@@ -112,7 +112,11 @@ class MeilisearchSource:
         if not documents:
             return 0
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(
+            # PUT (not POST): Meili's POST is a full document replace, so a
+            # metadata-only re-index would wipe body+snippet that
+            # `index_filing_body` patched in later. PUT merges — provided
+            # fields update, omitted fields are left intact.
+            resp = await client.put(
                 f"{self._base}/indexes/{FILINGS_INDEX}/documents",
                 headers=self._headers,
                 json=documents,

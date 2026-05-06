@@ -389,6 +389,8 @@ export default {
       title: "SQL Workbench",
       no_tables: "no tables yet",
       run: "Run (Cmd+Enter)",
+      refresh: "Refresh data",
+      refresh_title: "Re-pull bars / macro / filings from upstream into DuckDB",
       placeholder: "SELECT ... FROM bars WHERE symbol = 'AAPL'  (Cmd/Ctrl+Enter to run)",
       meta: "{rows} rows · {ms}ms",
       truncated: " · TRUNCATED",

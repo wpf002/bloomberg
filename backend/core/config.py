@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     sql_query_max_rows: int = 5000
     sql_query_timeout_seconds: float = 8.0
 
+    # Default-watchlist seed lists for the SQL workbench warm-up and the
+    # Meilisearch filings indexer. Comma-separated strings so an operator
+    # can override on Railway / docker-compose without touching code.
+    # Empty values fall back to the bundled defaults below.
+    sql_warm_symbols_extra: str = Field(default="", alias="SQL_WARM_SYMBOLS")
+    sql_warm_macro_series_extra: str = Field(default="", alias="SQL_WARM_MACRO_SERIES")
+    filings_seed_symbols_extra: str = Field(default="", alias="FILINGS_SEED_SYMBOLS")
+
     # FINRA TRACE corporate bond data — OAuth2 client credentials grant.
     # Free dev account at https://developer.finra.org/. Without these, the
     # /api/fixed_income/trace endpoint returns 503 instead of failing later
@@ -161,6 +169,35 @@ class Settings(BaseSettings):
         templates expose the key under that name. Fall back to
         MEILISEARCH_MASTER_KEY for the original docker-compose setup."""
         return self.meilisearch_key or self.meilisearch_master_key
+
+    @staticmethod
+    def _split_csv(raw: str) -> list[str]:
+        return [s.strip().upper() for s in raw.split(",") if s.strip()]
+
+    @property
+    def sql_warm_symbols(self) -> List[str]:
+        """Equity / ETF universe loaded into the DuckDB `bars` table at
+        startup and refreshed daily. Override via SQL_WARM_SYMBOLS env."""
+        override = self._split_csv(self.sql_warm_symbols_extra)
+        return override or [
+            "AAPL", "MSFT", "NVDA", "TSLA", "AMZN",
+            "GOOGL", "META", "SPY", "QQQ", "TLT",
+        ]
+
+    @property
+    def sql_warm_macro_series(self) -> List[str]:
+        """FRED series loaded into the DuckDB `macro` table. Override via
+        SQL_WARM_MACRO_SERIES env."""
+        override = self._split_csv(self.sql_warm_macro_series_extra)
+        return override or ["GDP", "CPIAUCSL", "UNRATE", "FEDFUNDS", "DGS10", "DGS2"]
+
+    @property
+    def filings_seed_symbols(self) -> List[str]:
+        """Symbols whose recent SEC filings are auto-indexed into
+        Meilisearch on startup and daily. Override via FILINGS_SEED_SYMBOLS
+        env."""
+        override = self._split_csv(self.filings_seed_symbols_extra)
+        return override or ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN", "GOOGL", "META", "QQQ"]
 
     @property
     def cors_origins(self) -> List[str]:

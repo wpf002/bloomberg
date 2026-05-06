@@ -254,6 +254,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ query, max_rows: maxRows ?? null }),
     }),
+  sqlRefresh: () => request(`/api/sql/refresh`, { method: "POST" }),
 
   // ── V2.3: options flow + dark pool ────────────────────────────────────
   flowOptions: ({ symbol, side = "all", minPremium = 100000, expiry = "all", sector } = {}) => {
