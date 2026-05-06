@@ -5,12 +5,11 @@ import "react-resizable/css/styles.css";
 import "./launchpad.css";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
-// Bumped to v2 after mobile layout reflow — old saved layouts had positions
-// computed against the prior cols.xs=4 grid, which leaves panels rendering at
-// 150% width on phones. Bumping the key discards stale local layouts on first
-// load.
-const STORAGE_KEY = "bt.launchpad.layouts.v2";
-const HIDDEN_KEY = "bt.launchpad.hidden.v2";
+// Bumped to v3 after Chart/Markets mobile heights were grown so each panel's
+// content fits without inner scroll. Old saved sm layouts pin the prior
+// (shorter) heights, so the bump discards stale local layouts on first load.
+const STORAGE_KEY = "bt.launchpad.layouts.v3";
+const HIDDEN_KEY = "bt.launchpad.hidden.v3";
 
 // Below `sm` we still want a 6-col grid so the saved `sm` layout (w:6 = full
 // row) fits — switching to a narrower col count was leaving panels rendered
