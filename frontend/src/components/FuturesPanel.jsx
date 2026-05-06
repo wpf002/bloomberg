@@ -74,7 +74,7 @@ export default function FuturesPanel() {
       }
     >
       <div className="flex h-full flex-col">
-        <div className="grid grid-cols-2 gap-1 text-xs sm:grid-cols-3 md:grid-cols-5">
+        <div className="grid grid-cols-2 gap-1 text-xs">
           {dash.map((c) => (
             <div
               key={c.contract_symbol}
