@@ -37,6 +37,19 @@ logger = logging.getLogger(__name__)
 
 FMP_BASE = "https://financialmodelingprep.com/stable"
 
+# Major commodities FMP carries (futures-style front-month spot quotes).
+# root → (FMP symbol, display name).
+FMP_COMMODITIES: dict[str, tuple[str, str]] = {
+    "CL": ("CLUSD", "WTI Crude Oil"),
+    "BZ": ("BZUSD", "Brent Crude"),
+    "NG": ("NGUSD", "Natural Gas"),
+    "GC": ("GCUSD", "Gold"),
+    "SI": ("SIUSD", "Silver"),
+    "HG": ("HGUSD", "Copper"),
+    "ZC": ("ZCUSD", "Corn"),
+    "ZS": ("ZSUSD", "Soybeans"),
+}
+
 
 def _safe_float(value: Any) -> float | None:
     if value is None or value == "":
@@ -106,6 +119,33 @@ class FmpSource:
         except ValueError:
             logger.warning("FMP %s returned non-JSON", path)
             return None
+
+    @cached("fmp:commodities", ttl=300, model=None)
+    async def commodities(self) -> dict[str, dict]:
+        """root → {price, change, change_pct, name, symbol} for major
+        commodities (front-month spot). {} when FMP isn't configured."""
+        if not self.enabled():
+            return {}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            results = await asyncio.gather(
+                *(self._get(client, "quote", symbol=sym) for sym, _ in FMP_COMMODITIES.values())
+            )
+        out: dict[str, dict] = {}
+        for (root, (sym, name)), data in zip(FMP_COMMODITIES.items(), results):
+            row = data[0] if isinstance(data, list) and data else None
+            if not isinstance(row, dict):
+                continue
+            price = _safe_float(row.get("price"))
+            if price is None:
+                continue
+            out[root] = {
+                "price": price,
+                "change": _safe_float(row.get("change")) or 0.0,
+                "change_pct": _safe_float(row.get("changePercentage")) or 0.0,
+                "name": name,
+                "symbol": sym,
+            }
+        return out
 
     # 6h cache: fundamentals don't move intraday, and each call fans into 8
     # FMP sub-requests. With FMP's 250/day free tier this lets ~187 distinct

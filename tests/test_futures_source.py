@@ -53,6 +53,21 @@ def test_dashboard_falls_back_to_fred(monkeypatch):
     assert all("FRED" in c.contract_symbol for c in out)
 
 
+def test_dashboard_uses_fmp_when_massive_absent(monkeypatch):
+    class NoMassive:
+        configured = False
+
+    class FakeFmp:
+        async def commodities(self):
+            return {"GC": {"price": 2400.0, "change": 10.0, "change_pct": 0.42, "name": "Gold", "symbol": "GCUSD"}}
+
+    monkeypatch.setattr(fs, "MassiveSource", lambda: NoMassive())
+    monkeypatch.setattr(fs, "FmpSource", lambda: FakeFmp())
+    out = asyncio.run(fs.FuturesSource().dashboard())
+    gc = next(c for c in out if c.contract_symbol.startswith("GC"))
+    assert gc.price == 2400.0 and "GCUSD" in gc.contract_symbol
+
+
 def test_curve_builds_term_structure_from_massive(monkeypatch):
     monkeypatch.setattr(fs, "MassiveSource", lambda: FakeMassive())
     curve = asyncio.run(fs.FuturesSource().get_curve("CL"))

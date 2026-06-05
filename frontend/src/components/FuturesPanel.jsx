@@ -18,12 +18,17 @@ const ROOTS = [
   { id: "CL", label: "WTI Crude" },
   { id: "NG", label: "Nat Gas" },
   { id: "GC", label: "Gold" },
-  { id: "ES", label: "S&P E-mini" },
+  { id: "SI", label: "Silver" },
+  { id: "HG", label: "Copper" },
+  { id: "BZ", label: "Brent" },
 ];
 
-// The backend tags each tile with its source (e.g. "CL · CLZ24" from Massive
-// or "CL=F (FRED:DCOILWTICO)" from the FRED fallback). Show a clean desk name.
-const ROOT_NAME = { CL: "WTI Crude", NG: "Nat Gas", GC: "Gold", ES: "S&P E-mini", ZC: "Corn", ZS: "Soybeans" };
+// The backend tags each tile with its source (e.g. "CL · CLZ24" from Massive,
+// "CL · CLUSD" from FMP, or "CL=F (FRED:DCOILWTICO)" fallback). Clean desk name.
+const ROOT_NAME = {
+  CL: "WTI Crude", NG: "Nat Gas", GC: "Gold", SI: "Silver",
+  HG: "Copper", BZ: "Brent", ZC: "Corn", ZS: "Soybeans",
+};
 function friendlyContract(raw) {
   if (!raw) return "—";
   const root = raw.toUpperCase().slice(0, 2);

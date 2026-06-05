@@ -17,20 +17,24 @@ from datetime import datetime, timezone
 
 from ...core.cache_utils import cached
 from ...models.schemas import FuturesContract, FuturesCurve
+from .fmp_source import FmpSource
 from .fred_source import FredSource
 from .massive_source import MassiveSource
 
 logger = logging.getLogger(__name__)
 
-# `product` is the Polygon futures product code (Massive path). `series` is the
-# FRED fallback series (only crude + nat gas have a free public daily source).
+# `product` = Polygon futures product code (Massive path, live curve when the
+# plan is entitled). `fmp` = FMP commodity root (front-month spot fallback).
+# `series` = FRED daily fallback (only crude + nat gas have a free public one).
 ROOTS: dict[str, dict] = {
-    "CL": {"label": "WTI Crude Oil", "product": "CL", "series": "DCOILWTICO"},
-    "NG": {"label": "Natural Gas",   "product": "NG", "series": "DHHNGSP"},
-    "GC": {"label": "Gold",          "product": "GC"},
-    "ES": {"label": "S&P 500 E-mini", "product": "ES"},
-    "ZC": {"label": "Corn",          "product": "ZC"},
-    "ZS": {"label": "Soybeans",      "product": "ZS"},
+    "CL": {"label": "WTI Crude Oil", "product": "CL", "fmp": "CL", "series": "DCOILWTICO"},
+    "NG": {"label": "Natural Gas",   "product": "NG", "fmp": "NG", "series": "DHHNGSP"},
+    "GC": {"label": "Gold",          "product": "GC", "fmp": "GC"},
+    "SI": {"label": "Silver",        "product": "SI", "fmp": "SI"},
+    "HG": {"label": "Copper",        "product": "HG", "fmp": "HG"},
+    "BZ": {"label": "Brent Crude",   "product": "BZ", "fmp": "BZ"},
+    "ZC": {"label": "Corn",          "product": "ZC", "fmp": "ZC"},
+    "ZS": {"label": "Soybeans",      "product": "ZS", "fmp": "ZS"},
 }
 
 
@@ -61,14 +65,16 @@ async def _fred_quote(root: str) -> tuple[float, float, float] | None:
 class FuturesSource:
     @cached("futures:dashboard", ttl=300, model=FuturesContract)
     async def dashboard(self) -> list[FuturesContract]:
-        """Front-month snapshot per root — Massive (live) first, FRED fallback."""
+        """Front-month snapshot per root — Massive (live) → FMP commodities →
+        FRED, in that order."""
         massive = MassiveSource()
-        out = await asyncio.gather(*(self._dash_one(massive, r) for r in ROOTS))
+        fmp_quotes = await FmpSource().commodities()
+        out = await asyncio.gather(*(self._dash_one(massive, fmp_quotes, r) for r in ROOTS))
         return [c for c in out if c is not None]
 
-    async def _dash_one(self, massive: MassiveSource, root: str) -> FuturesContract | None:
+    async def _dash_one(self, massive: MassiveSource, fmp_quotes: dict, root: str) -> FuturesContract | None:
         meta = ROOTS[root]
-        # 1) Massive / Polygon futures (live front month).
+        # 1) Massive / Polygon futures (live front month + curve).
         if massive.configured:
             try:
                 contracts = await massive.futures_contracts(meta["product"], limit=1)
@@ -86,7 +92,14 @@ class FuturesSource:
                         )
             except Exception as exc:
                 logger.debug("massive futures dash %s failed: %s", root, exc)
-        # 2) FRED daily spot (CL / NG only).
+        # 2) FMP commodity spot (breadth — gold, silver, copper, grains, …).
+        q = fmp_quotes.get(meta.get("fmp"))
+        if q:
+            return FuturesContract(
+                contract_symbol=f"{root} · {q['symbol']}", expiration=None,
+                price=q["price"], change=q["change"], change_percent=q["change_pct"], volume=0,
+            )
+        # 3) FRED daily spot (CL / NG only).
         fred = await _fred_quote(root)
         if fred:
             price, change, change_pct = fred
@@ -126,7 +139,18 @@ class FuturesSource:
                     )
             except Exception as exc:
                 logger.debug("massive futures curve %s failed: %s", root, exc)
-        # 2) FRED single front-month point (CL / NG only).
+        # 2) FMP commodity single front-month point (no curve, but a live spot).
+        q = (await FmpSource().commodities()).get(meta.get("fmp"))
+        if q:
+            point = FuturesContract(
+                contract_symbol=f"{root} · {q['symbol']}", expiration=None,
+                price=q["price"], change=q["change"], change_percent=q["change_pct"], volume=0,
+            )
+            return FuturesCurve(
+                root=root, label=meta["label"], front_month_price=q["price"],
+                contracts=[point], timestamp=datetime.now(timezone.utc),
+            )
+        # 3) FRED single front-month point (CL / NG only).
         front = await _fred_quote(root)
         contracts: list[FuturesContract] = []
         if front:
