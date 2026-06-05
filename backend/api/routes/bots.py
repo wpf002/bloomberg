@@ -79,15 +79,24 @@ async def robinhood_tools(user: User = Depends(require_user)) -> dict:
     Requires ROBINHOOD_MCP_ENDPOINT + ROBINHOOD_MCP_TOKEN to be set."""
     if not (settings.robinhood_mcp_endpoint and settings.robinhood_mcp_token):
         raise HTTPException(status_code=503, detail="ROBINHOOD_MCP_ENDPOINT/TOKEN not configured")
-    from ...core.brokers.robinhood_mcp import RobinhoodMcpBroker
+    from ...core.brokers.robinhood_mcp import RobinhoodMcpBroker, auto_map_tools
     broker = RobinhoodMcpBroker()
     try:
         tools = await broker.list_tools()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"robinhood MCP discovery failed: {exc}")
+    names = [t.get("name") for t in tools if t.get("name")]
+    proposed = auto_map_tools(names)
     return {
         "tools": [{"name": t.get("name"), "description": t.get("description")} for t in tools],
-        "hint": "Map these to ROBINHOOD_TOOL_ACCOUNT/POSITIONS/PLACE_ORDER/CANCEL_ORDER, then set ROBINHOOD_ENABLED=true.",
+        "auto_mapped": proposed,
+        "auto_map_enabled": bool(settings.robinhood_auto_map),
+        "hint": (
+            "With ROBINHOOD_AUTO_MAP on (default), the client uses 'auto_mapped' "
+            "automatically — just set ROBINHOOD_ENABLED=true. Override any wrong "
+            "guess with ROBINHOOD_TOOL_ACCOUNT/POSITIONS/PLACE_ORDER/CANCEL_ORDER. "
+            "place_order refuses to run until it resolves to a tool."
+        ),
     }
 
 

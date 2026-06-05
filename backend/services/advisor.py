@@ -485,6 +485,17 @@ REGIME
 - Respect CONTEXT.regime: lean defensive in RISK_OFF, opportunistic in RISK_ON,
   and tie the call back to it.
 - When PRIOR_CONVERSATION is supplied, build on it — don't repeat yourself.
+
+SIGNAL LAYER (use it when an active symbol is in play)
+- CONTEXT.flow: options positioning for the active name — skew (bullish/bearish),
+  net_premium, call_pct_of_premium, top_trades (largest prints). Treat it as
+  dealer / smart-money positioning that confirms or undercuts a thesis.
+- CONTEXT.gex_levels: gamma flip point, max-gamma strike, walls — where price
+  tends to pin or accelerate.
+- CONTEXT.iv_stats.atm_iv_pct: current at-the-money IV (plus iv_rank /
+  iv_percentile when present). High IV favors defined-risk / selling premium;
+  low IV makes long optionality cheaper. Fold this into entries and hedges
+  rather than ignoring it. If a field is null, just skip it — don't refuse.
 """
 
 

@@ -70,9 +70,13 @@ class Settings(BaseSettings):
     robinhood_mcp_endpoint: str | None = Field(default=None, alias="ROBINHOOD_MCP_ENDPOINT")
     robinhood_mcp_token: str | None = Field(default=None, alias="ROBINHOOD_MCP_TOKEN")
     robinhood_protocol_version: str = "2025-06-18"
-    # Tool-name mapping — discovered per Robinhood's MCP docs. Order placement
-    # refuses to run until the place-order tool name is set (no guessing with
-    # real money).
+    # Auto-map discovered MCP tools to our operations by name heuristics so
+    # activation only needs endpoint + token (no manual tool mapping). The
+    # explicit ROBINHOOD_TOOL_* overrides below always win when set.
+    robinhood_auto_map: bool = Field(default=True, alias="ROBINHOOD_AUTO_MAP")
+    # Tool-name mapping — explicit overrides (discovered per Robinhood's MCP
+    # docs via GET /api/bots/robinhood/tools). When unset and auto-map is on,
+    # the client resolves them from the discovered tool list.
     robinhood_tool_account: str | None = Field(default=None, alias="ROBINHOOD_TOOL_ACCOUNT")
     robinhood_tool_positions: str | None = Field(default=None, alias="ROBINHOOD_TOOL_POSITIONS")
     robinhood_tool_place_order: str | None = Field(default=None, alias="ROBINHOOD_TOOL_PLACE_ORDER")

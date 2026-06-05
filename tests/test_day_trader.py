@@ -83,6 +83,14 @@ def test_dt_system_wires_signal_layer_and_bans_ai_speak():
     assert "not a chatbot" in sys
 
 
+def test_investor_base_system_references_signal_layer():
+    base = adv._BASE_SYSTEM
+    assert "SIGNAL LAYER" in base
+    assert "CONTEXT.flow" in base
+    assert "atm_iv_pct" in base
+    assert "gex_levels" in base
+
+
 def test_session_phase_classification():
     # We can't easily mock datetime at module level, so just assert the
     # function returns one of the documented buckets and doesn't crash.

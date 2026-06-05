@@ -40,6 +40,59 @@ from .base import BrokerError, BrokerNotConfigured, BrokerNotWired
 logger = logging.getLogger(__name__)
 
 
+# ── tool name auto-mapping ──────────────────────────────────────────────────
+# Heuristic: map discovered MCP tool names onto our four operations by the
+# keywords in the name. Action verbs (place/submit/buy/sell) drive place_order
+# so a read tool like "get_orders" is never mistaken for an order placer.
+# Explicit ROBINHOOD_TOOL_* always overrides this.
+
+_OP_KEYWORDS: dict[str, list[str]] = {
+    "account": ["account", "buying_power", "balance", "cash", "equity"],
+    "positions": ["position", "holding"],
+    "place_order": ["place_order", "submit_order", "create_order", "place", "submit", "buy", "sell"],
+    "cancel_order": ["cancel"],
+}
+# read-ish prefixes that should never be treated as an order *placer*
+_READ_PREFIXES = ("get_", "list_", "fetch_", "read_", "view_")
+
+
+def _norm(name: str) -> str:
+    return name.lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _score(op: str, normalized: str) -> int:
+    score = sum(1 for kw in _OP_KEYWORDS[op] if kw in normalized)
+    if op == "place_order":
+        if normalized.startswith(_READ_PREFIXES):
+            return 0  # a getter can't be the order placer
+        # strong signal for explicit place/submit/create-order tools
+        if any(p in normalized for p in ("place_order", "submit_order", "create_order")):
+            score += 2
+    return score
+
+
+def auto_map_tools(tool_names: list[str]) -> dict[str, str | None]:
+    """Best-effort op → tool-name mapping from a discovered tool list."""
+    norm = {t: _norm(t) for t in tool_names}
+    out: dict[str, str | None] = {}
+    # cancel first so it can be excluded from the place_order candidates
+    cancel = _pick("cancel_order", tool_names, norm)
+    out["cancel_order"] = cancel
+    for op in ("account", "positions", "place_order"):
+        candidates = [t for t in tool_names if t != cancel]
+        out[op] = _pick(op, candidates, norm)
+    return out
+
+
+def _pick(op: str, names: list[str], norm: dict[str, str]) -> str | None:
+    best, best_score = None, 0
+    for t in names:
+        s = _score(op, norm[t])
+        if s > best_score:
+            best, best_score = t, s
+    return best
+
+
 class RobinhoodMcpBroker:
     name = "robinhood"
 
@@ -49,6 +102,7 @@ class RobinhoodMcpBroker:
         self.token = settings.robinhood_mcp_token
         self._id = 0
         self._session_id: str | None = None
+        self._tool_map: dict[str, str | None] | None = None
 
     @property
     def mode(self) -> str:
@@ -126,30 +180,56 @@ class RobinhoodMcpBroker:
         await self.initialize()
         return await self._rpc("tools/call", {"name": name, "arguments": arguments})
 
-    # ── Broker surface (mapped onto configured tool names) ────────────────
+    # ── tool resolution (explicit override → auto-map from discovery) ─────
 
-    def _require_tool(self, tool: str | None, op: str) -> str:
+    _explicit = {
+        "account": "robinhood_tool_account",
+        "positions": "robinhood_tool_positions",
+        "place_order": "robinhood_tool_place_order",
+        "cancel_order": "robinhood_tool_cancel_order",
+    }
+
+    async def resolve_tools(self) -> dict[str, str | None]:
+        """Resolve op → tool name. Explicit ROBINHOOD_TOOL_* wins; otherwise,
+        when auto-map is on, derive from the discovered tool list. Cached per
+        instance."""
+        if self._tool_map is not None:
+            return self._tool_map
+        explicit = {op: getattr(settings, attr) for op, attr in self._explicit.items()}
+        if all(explicit.values()) or not settings.robinhood_auto_map:
+            self._tool_map = explicit
+            return self._tool_map
+        try:
+            tools = await self.list_tools()
+            names = [t.get("name") for t in tools if t.get("name")]
+        except Exception as exc:
+            logger.debug("robinhood tool discovery failed: %s", exc)
+            names = []
+        auto = auto_map_tools(names)
+        # explicit overrides take precedence over auto-mapped picks
+        self._tool_map = {op: explicit[op] or auto.get(op) for op in self._explicit}
+        return self._tool_map
+
+    async def _tool_for(self, op: str) -> str:
+        tool = (await self.resolve_tools()).get(op)
         if not tool:
             raise BrokerNotWired(
-                f"Robinhood '{op}' tool name not configured — run GET "
-                f"/api/bots/robinhood/tools to discover it, then set the "
-                f"ROBINHOOD_TOOL_* env var."
+                f"Robinhood '{op}' tool could not be resolved — set "
+                f"ROBINHOOD_TOOL_{op.upper()} explicitly (discover names via "
+                f"GET /api/bots/robinhood/tools)."
             )
         return tool
 
     async def get_account(self) -> Account | None:
-        tool = self._require_tool(settings.robinhood_tool_account, "account")
-        raw = await self.call_tool(tool, {})
+        raw = await self.call_tool(await self._tool_for("account"), {})
         return _coerce_account(raw)
 
     async def get_positions(self) -> List[Position]:
-        tool = self._require_tool(settings.robinhood_tool_positions, "positions")
-        raw = await self.call_tool(tool, {})
+        raw = await self.call_tool(await self._tool_for("positions"), {})
         return _coerce_positions(raw)
 
     async def place_order(self, order: OrderRequest) -> Order:
-        # Real money: refuse unless the place-order tool is explicitly mapped.
-        tool = self._require_tool(settings.robinhood_tool_place_order, "place_order")
+        tool = await self._tool_for("place_order")  # raises if unresolved — no blind real-money order
         raw = await self.call_tool(tool, {
             "symbol": order.symbol, "qty": order.qty, "side": order.side,
             "type": order.type, "time_in_force": order.time_in_force,
@@ -157,8 +237,7 @@ class RobinhoodMcpBroker:
         return _coerce_order(raw, order)
 
     async def cancel_order(self, order_id: str) -> bool:
-        tool = self._require_tool(settings.robinhood_tool_cancel_order, "cancel_order")
-        await self.call_tool(tool, {"order_id": order_id})
+        await self.call_tool(await self._tool_for("cancel_order"), {"order_id": order_id})
         return True
 
 

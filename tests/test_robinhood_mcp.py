@@ -106,6 +106,32 @@ def test_place_order_refused_without_tool_mapping(monkeypatch):
         asyncio.run(broker.place_order(OrderRequest(symbol="AAPL", qty=1, side="buy")))
 
 
+def test_auto_map_tools_typical_names():
+    tools = ["get_account", "list_positions", "place_order", "cancel_order", "get_orders"]
+    m = rh.auto_map_tools(tools)
+    assert m["account"] == "get_account"
+    assert m["positions"] == "list_positions"
+    assert m["place_order"] == "place_order"
+    assert m["cancel_order"] == "cancel_order"
+
+
+def test_auto_map_does_not_mistake_getter_for_placer():
+    # only read tools for orders → place_order must NOT be auto-mapped
+    tools = ["get_account", "get_positions", "get_orders", "cancel_order"]
+    m = rh.auto_map_tools(tools)
+    assert m["place_order"] is None        # no place/submit/buy/sell tool → refuse
+    assert m["cancel_order"] == "cancel_order"
+
+
+def test_auto_map_alt_naming():
+    tools = ["account_balance", "portfolio_holdings", "submit_equity_order", "cancel_open_order"]
+    m = rh.auto_map_tools(tools)
+    assert m["account"] == "account_balance"
+    assert m["positions"] == "portfolio_holdings"
+    assert m["place_order"] == "submit_equity_order"
+    assert m["cancel_order"] == "cancel_open_order"
+
+
 def test_get_account_maps_configured_tool(monkeypatch):
     monkeypatch.setattr(settings, "robinhood_tool_account", "get_account", raising=False)
 
