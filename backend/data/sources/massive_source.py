@@ -108,6 +108,47 @@ class MassiveSource:
     async def market_status(self) -> dict:
         return await self._get("/v1/marketstatus/now") or {}
 
+    # ── futures (Polygon futures API; entitlement depends on the plan) ────
+
+    async def futures_contracts(self, product_code: str, *, limit: int = 12) -> list[dict]:
+        """Active futures contracts for a product, soonest expiration first.
+        Returns [] when the plan isn't entitled to futures (non-200 → None)."""
+        today = datetime.now(timezone.utc).date().isoformat()
+        data = await self._get(
+            "/futures/vX/contracts",
+            {
+                "product_code": product_code,
+                "active": "true",
+                "expiration_date.gte": today,
+                "order": "asc",
+                "sort": "expiration_date",
+                "limit": limit,
+            },
+        )
+        if not data:
+            return []
+        out: list[dict] = []
+        for c in data.get("results") or []:
+            ticker = c.get("ticker")
+            if ticker:
+                out.append({"ticker": ticker, "expiration": c.get("expiration_date"), "name": c.get("name")})
+        return out
+
+    async def futures_recent_closes(self, ticker: str, *, limit: int = 2) -> list[float]:
+        """Most-recent daily closes (newest first) for a futures contract."""
+        data = await self._get(
+            f"/futures/vX/aggs/{ticker}",
+            {"resolution": "1_day", "order": "desc", "limit": limit},
+        )
+        if not data:
+            return []
+        closes: list[float] = []
+        for r in data.get("results") or []:
+            c = _f(r.get("close"))
+            if c:
+                closes.append(c)
+        return closes
+
     async def ticker_details(self, symbol: str) -> dict:
         data = await self._get(f"/v3/reference/tickers/{symbol.upper()}")
         return (data or {}).get("results") or {}

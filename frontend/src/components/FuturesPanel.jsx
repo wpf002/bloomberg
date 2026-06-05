@@ -17,17 +17,18 @@ import { useTranslation } from "../i18n/index.jsx";
 const ROOTS = [
   { id: "CL", label: "WTI Crude" },
   { id: "NG", label: "Nat Gas" },
+  { id: "GC", label: "Gold" },
+  { id: "ES", label: "S&P E-mini" },
 ];
 
-// The backend tags each tile with its raw source (e.g. "CL=F (FRED:DCOILWTICO)").
-// Show a clean desk name instead.
+// The backend tags each tile with its source (e.g. "CL · CLZ24" from Massive
+// or "CL=F (FRED:DCOILWTICO)" from the FRED fallback). Show a clean desk name.
+const ROOT_NAME = { CL: "WTI Crude", NG: "Nat Gas", GC: "Gold", ES: "S&P E-mini", ZC: "Corn", ZS: "Soybeans" };
 function friendlyContract(raw) {
   if (!raw) return "—";
-  const up = raw.toUpperCase();
-  if (up.startsWith("CL")) return "WTI Crude · CL";
-  if (up.startsWith("NG")) return "Nat Gas · NG";
-  if (up.startsWith("GC")) return "Gold · GC";
-  return raw.split(" ")[0];
+  const root = raw.toUpperCase().slice(0, 2);
+  const name = ROOT_NAME[root];
+  return name ? `${name} · ${root}` : raw.split(" ")[0];
 }
 
 function fmt(v, digits = 2) {
@@ -134,9 +135,9 @@ export default function FuturesPanel() {
           <div className="mt-2 text-xs text-terminal-muted">{t("p.futures.loading")}</div>
         ) : points.length === 0 ? (
           <div className="mt-2 text-xs leading-relaxed text-terminal-muted">
-            Forward curve unavailable for {root}. The free data feed (FRED) carries
-            front-month spot only — the back-month term structure needs a paid
-            futures source. The tiles above show live front-month prices.
+            No forward curve for {root}. A full term structure needs a futures
+            data plan entitled to {root}; without it, only front-month spot is
+            available (shown in the tiles above).
           </div>
         ) : (
           <div className="mt-2 flex flex-1 min-h-0 flex-col">
