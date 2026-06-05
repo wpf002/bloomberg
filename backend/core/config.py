@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     # Live (real-money) Alpaca trading host. Per-user live keys are stored
     # encrypted; this is just the endpoint they hit.
     alpaca_live_base_url: str = "https://api.alpaca.markets"
+    # Optional env-based LIVE Alpaca keys (single-user convenience — mirrors
+    # how ALPACA_API_KEY/SECRET drive paper). When set, live bots without
+    # per-user keys fall back to these. Alpaca issues DISTINCT paper vs live
+    # keys, so these must be your *live* keys, not the paper ones above.
+    alpaca_live_api_key: str | None = Field(default=None, alias="ALPACA_LIVE_API_KEY")
+    alpaca_live_api_secret: str | None = Field(default=None, alias="ALPACA_LIVE_API_SECRET")
 
     # ── trading-bot broker controls ──────────────────────────────────────
     # Master switch for live (real-money) bot execution. OFF by default —

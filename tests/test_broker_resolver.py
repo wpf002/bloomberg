@@ -41,7 +41,30 @@ def test_live_blocked_without_master_switch():
 
 def test_live_enabled_but_no_live_keys_raises(monkeypatch):
     monkeypatch.setattr(settings, "bots_allow_live", True, raising=False)
-    # no per-user live keys (DB unavailable) → refuse (never fall back to env for live)
+    monkeypatch.setattr(settings, "alpaca_live_api_key", None, raising=False)
+    monkeypatch.setattr(settings, "alpaca_live_api_secret", None, raising=False)
+    # no per-user live keys, no env live keys → refuse (never fall back to PAPER env)
+    with pytest.raises(BrokerNotConfigured):
+        asyncio.run(resolver.resolve_execution_broker(1, "alpaca", "live"))
+
+
+def test_live_uses_env_live_keys_when_set(monkeypatch):
+    monkeypatch.setattr(settings, "bots_allow_live", True, raising=False)
+    monkeypatch.setattr(settings, "alpaca_live_api_key", "LIVEKEY", raising=False)
+    monkeypatch.setattr(settings, "alpaca_live_api_secret", "LIVESECRET", raising=False)
+    broker = asyncio.run(resolver.resolve_execution_broker(1, "alpaca", "live"))
+    assert isinstance(broker, AlpacaSource)
+    assert broker.mode == "live"
+    assert broker._api_key == "LIVEKEY"
+
+
+def test_live_does_not_use_paper_env_keys(monkeypatch):
+    # paper env keys present, live env keys absent → live must still refuse
+    monkeypatch.setattr(settings, "bots_allow_live", True, raising=False)
+    monkeypatch.setattr(settings, "alpaca_api_key", "PAPERKEY", raising=False)
+    monkeypatch.setattr(settings, "alpaca_api_secret", "PAPERSECRET", raising=False)
+    monkeypatch.setattr(settings, "alpaca_live_api_key", None, raising=False)
+    monkeypatch.setattr(settings, "alpaca_live_api_secret", None, raising=False)
     with pytest.raises(BrokerNotConfigured):
         asyncio.run(resolver.resolve_execution_broker(1, "alpaca", "live"))
 

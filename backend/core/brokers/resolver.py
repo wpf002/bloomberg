@@ -69,12 +69,22 @@ async def resolve_execution_broker(
         key, secret = creds
         return AlpacaSource(api_key=key, api_secret=secret, base_url=base)
 
-    # No per-user keys → env fallback (paper only). Live demands explicit keys.
+    # No per-user keys → env fallback.
     if mode == "live":
+        # Live never falls back to the PAPER env keys. It uses the dedicated
+        # ALPACA_LIVE_API_KEY/SECRET env pair when set (single-user Railway
+        # workflow), else demands explicit keys.
+        if settings.alpaca_live_api_key and settings.alpaca_live_api_secret:
+            return AlpacaSource(
+                api_key=settings.alpaca_live_api_key,
+                api_secret=settings.alpaca_live_api_secret,
+                base_url=base,
+            )
         raise BrokerNotConfigured(
-            "no live Alpaca keys configured for this account — add them in Settings"
+            "no live Alpaca keys configured — set ALPACA_LIVE_API_KEY/SECRET in "
+            "the environment, or add live keys in Settings"
         )
-    src = AlpacaSource(base_url=base)  # uses env keys
+    src = AlpacaSource(base_url=base)  # uses env (paper) keys
     if not src.credentials_configured():
         raise BrokerNotConfigured("no Alpaca paper credentials configured")
     return src

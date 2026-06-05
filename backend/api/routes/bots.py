@@ -66,6 +66,7 @@ async def bots_status() -> dict:
         "paper": is_paper(),
         "alpaca_configured": alpaca.credentials_configured(),
         "live_enabled": bool(settings.bots_allow_live),
+        "live_keys_present": bool(settings.alpaca_live_api_key and settings.alpaca_live_api_secret),
         "robinhood_enabled": bool(settings.robinhood_enabled),
         "mode": "paper",
     }
