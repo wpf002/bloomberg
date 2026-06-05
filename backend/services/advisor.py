@@ -330,19 +330,73 @@ async def build_context(
         except Exception:
             gex_levels = None
 
-    # V2.6: IV rank/percentile for the active symbol.
+    # IV: rank/percentile from the CBOE rolling buffer (warms as the options
+    # panel polls) PLUS the live ATM implied-vol pulled straight from the
+    # chain — so the advisor has a usable vol read even before the buffer
+    # fills. And options flow for the active symbol (large-premium trades via
+    # Massive) so the day-trader persona's flow-confirmation actually has data.
     iv_stats: dict[str, Any] | None = None
+    options_flow: dict[str, Any] | None = None
     if active_symbol:
+        atm_iv = None
+        try:
+            chain = await get_alpaca_source().get_option_chain(active_symbol)
+            spot = chain.underlying_price if chain else None
+            contracts = ((chain.calls or []) + (chain.puts or [])) if chain else []
+            if spot and contracts:
+                atm = min(contracts, key=lambda c: abs((c.strike or 0) - spot))
+                atm_iv = round(atm.implied_volatility * 100, 1) if atm.implied_volatility else None
+        except Exception:
+            atm_iv = None
         try:
             from ..data.sources.cboe_source import get_cboe_source
 
             cboe = get_cboe_source()
             iv_stats = {
+                "atm_iv_pct": atm_iv,
                 "iv_rank": cboe.iv_rank(active_symbol),
                 "iv_percentile": cboe.iv_percentile(active_symbol),
             }
         except Exception:
-            iv_stats = None
+            iv_stats = {"atm_iv_pct": atm_iv} if atm_iv is not None else None
+
+        # Options flow — same Massive snapshot the FLOW panel uses, summarized.
+        try:
+            from ..data.sources.massive_source import MassiveSource
+
+            snap = await MassiveSource().options_snapshot(active_symbol)
+            rows: list[dict[str, Any]] = []
+            for c in snap or []:
+                prem = c.get("premium")
+                if prem is None or prem < 100_000:
+                    continue
+                rows.append({
+                    "type": (c.get("type") or "").lower(),
+                    "strike": c.get("strike"),
+                    "expiry": c.get("expiry"),
+                    "premium": round(float(prem)),
+                    "size": int(c.get("size") or 0),
+                })
+            rows.sort(key=lambda r: r["premium"], reverse=True)
+            call_prem = sum(r["premium"] for r in rows if r["type"] == "call")
+            put_prem = sum(r["premium"] for r in rows if r["type"] == "put")
+            total = call_prem + put_prem
+            if rows:
+                options_flow = {
+                    "top_trades": rows[:8],
+                    "call_premium": call_prem,
+                    "put_premium": put_prem,
+                    "net_premium": call_prem - put_prem,
+                    "call_pct_of_premium": round(call_prem / total * 100, 1) if total else None,
+                    "skew": (
+                        "bullish" if call_prem > put_prem
+                        else "bearish" if put_prem > call_prem
+                        else "neutral"
+                    ),
+                    "trade_count": len(rows),
+                }
+        except Exception:
+            options_flow = None
 
     # V2.5: prediction-market consensus — top 5 macro contracts by volume.
     prediction_markets: list[dict[str, Any]] = []
@@ -384,6 +438,7 @@ async def build_context(
         "gex_levels": gex_levels,
         "prediction_markets": prediction_markets,
         "iv_stats": iv_stats,
+        "flow": options_flow,
     }
 
 
@@ -777,13 +832,24 @@ ABSOLUTE RULES:
 - Always reference: current price vs key levels, flow confirmation,
   risk/reward ratio, max loss in $ on the trade.
 - Forbidden: hedging language ("might", "could", "consider"), markdown
-  formatting (**, ##, --- ), emojis, any vague timing.
+  (**, ##, ---), emojis, exclamation points, vague timing. NEVER write
+  "as an AI", "it's important to note", "it's worth noting", "that said",
+  "overall", "navigate", "robust", or any disclaimer / boilerplate. Talk
+  like a trader on a desk, not a chatbot.
 - Output style: ALL CAPS section headings, '› ' list markers, plain
   text only. Same terminal aesthetic as INVESTOR mode.
-- Use CONTEXT.gex_levels and CONTEXT.iv_stats and CONTEXT.flow when
-  building setups — flow + dealer positioning are the signal layer.
-- Never invent data. If a CONTEXT field is missing, state it bluntly
-  ("FLOW DATA UNAVAILABLE — DO NOT TRADE BLIND") and stop.
+- THE SIGNAL LAYER — use it, don't just describe it:
+  › CONTEXT.flow: skew (bullish/bearish), net_premium, call_pct_of_premium,
+    top_trades (largest-premium options prints). This is dealer/smart-money
+    positioning — let it confirm or veto the setup.
+  › CONTEXT.gex_levels: gamma flip point + max-gamma strike + walls. Price
+    tends to pin to high-gamma strikes and accelerate past the flip.
+  › CONTEXT.iv_stats: atm_iv_pct (current at-the-money IV), plus iv_rank /
+    iv_percentile when present. High IV → favor defined-risk / sell premium;
+    low IV → long options are cheaper.
+- Never invent data. If a specific CONTEXT field is genuinely null, say so in
+  one line and work with what you have — do not refuse the whole read unless
+  flow AND levels AND price are all missing.
 """
 
 

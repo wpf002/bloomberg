@@ -72,6 +72,17 @@ def test_eod_task_mentions_three_lessons():
     assert "3 LESSONS" in s
 
 
+def test_dt_system_wires_signal_layer_and_bans_ai_speak():
+    sys = adv._DT_SYSTEM
+    # the flow/GEX/IV signal layer is referenced so the model uses it
+    assert "CONTEXT.flow" in sys
+    assert "gex_levels" in sys
+    assert "atm_iv" in sys
+    assert "skew" in sys
+    # de-AI-ified voice
+    assert "not a chatbot" in sys
+
+
 def test_session_phase_classification():
     # We can't easily mock datetime at module level, so just assert the
     # function returns one of the documented buckets and doesn't crash.
