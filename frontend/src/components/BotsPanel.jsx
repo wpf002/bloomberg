@@ -12,6 +12,9 @@ import { useTranslation } from "../i18n/index.jsx";
 // key → display label, e.g. "threshold_dca" → "Threshold DCA" (shared with the builder)
 const STRATEGY_LABEL = Object.fromEntries(STRATEGIES.map((s) => [s.key, s.label]));
 
+// Capitalize a status word: "open" → "Open", "reconnecting" → "Reconnecting".
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 const STATUS_TONE = {
   active: "text-terminal-green border-terminal-green/60",
   paused: "text-terminal-amber border-terminal-amber/60",
@@ -102,7 +105,7 @@ export default function BotsPanel({ activeSymbol }) {
           </span>{" "}
           {t("p.bots.ws")}{" "}
           <span className={stream.status === "open" ? "text-terminal-green" : "text-terminal-muted"}>
-            {stream.status}
+            {cap(stream.status)}
           </span>{" "}
           · {t("p.bots.count", { count: bots.length })}
         </span>
