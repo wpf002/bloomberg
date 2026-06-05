@@ -100,6 +100,64 @@ CREATE INDEX IF NOT EXISTS manual_positions_user_idx
 """
 
 
+# Trading bots (paper-first automated execution). Plain relational tables —
+# not hypertables: bot/order/pending rows are low-volume and edited
+# interactively; bot_events is append-only but small enough not to need
+# time-series partitioning. user_id mirrors the user_alert_rules pattern.
+BOT_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS bots (
+    id               TEXT PRIMARY KEY,
+    user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'draft',
+    mode             TEXT NOT NULL DEFAULT 'paper',
+    decision_mode    TEXT NOT NULL DEFAULT 'rule',
+    require_approval BOOLEAN NOT NULL DEFAULT TRUE,
+    config           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    guardrails       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bots_user_idx ON bots(user_id);
+
+CREATE TABLE IF NOT EXISTS bot_orders (
+    id              TEXT PRIMARY KEY,
+    bot_id          TEXT NOT NULL,
+    user_id         BIGINT,
+    alpaca_order_id TEXT,
+    client_order_id TEXT,
+    symbol          TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    qty             DOUBLE PRECISION,
+    intent          JSONB,
+    status          TEXT,
+    submitted_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bot_orders_bot_idx ON bot_orders(bot_id, submitted_at DESC);
+
+CREATE TABLE IF NOT EXISTS bot_events (
+    id       BIGSERIAL PRIMARY KEY,
+    bot_id   TEXT NOT NULL,
+    user_id  BIGINT,
+    ts       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    kind     TEXT NOT NULL,
+    detail   JSONB
+);
+CREATE INDEX IF NOT EXISTS bot_events_bot_idx ON bot_events(bot_id, ts DESC);
+
+CREATE TABLE IF NOT EXISTS bot_pending_actions (
+    id          TEXT PRIMARY KEY,
+    bot_id      TEXT NOT NULL,
+    user_id     BIGINT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    intent      JSONB NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS bot_pending_user_idx ON bot_pending_actions(user_id, status);
+"""
+
+
 # AURORA Module 5: time-series tables. Each gets converted to a hypertable
 # below with an explicit chunk interval. Time-bucket choices reflect the
 # natural cadence of the data: 1-week chunks for tick data (small chunks,
@@ -256,6 +314,9 @@ async def ensure_schema() -> None:
 
     # 2. Phase-6 base schema (always runs).
     await _execute_isolated(BASE_SCHEMA_SQL, label="base schema")
+
+    # 2b. Trading-bot tables (depend on users existing — run after base).
+    await _execute_isolated(BOT_SCHEMA_SQL, label="bot schema")
 
     # 3. AURORA tables. These are plain CREATE TABLE statements that work
     #    even without TimescaleDB — promotion to hypertable happens in

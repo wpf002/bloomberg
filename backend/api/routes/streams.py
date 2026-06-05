@@ -200,3 +200,21 @@ async def ws_alerts(ws: WebSocket) -> None:
         pass
     finally:
         await hub.unsubscribe(topic, queue)
+
+
+@router.websocket("/bots")
+async def ws_bots(ws: WebSocket) -> None:
+    """Per-user trading-bot activity feed (events, orders, pending approvals,
+    auto-pauses). Same cookie→JWT handshake as the alerts stream."""
+    await ws.accept()
+    cookie = ws.cookies.get(settings.session_cookie_name)
+    user_id = user_from_token(cookie)
+    topic = f"bots:user:{user_id}" if user_id else "bots"
+    queue = await hub.subscribe(topic)
+    try:
+        await ws.send_text(json.dumps({"type": "ready", "scope": "user" if user_id else "global"}))
+        await _pump(ws, [queue])
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await hub.unsubscribe(topic, queue)

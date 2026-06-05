@@ -398,6 +398,7 @@ const QUICK_ACTIONS = [
   { mnemonic: "PORT",    label: "PORT · portfolio",        title: "Paper portfolio" },
   { mnemonic: "TRADE",   label: "TRADE · order ticket",    title: "Submit a paper order via Alpaca" },
   { mnemonic: "ALRT",    label: "ALRT · alerts",           title: "Create / monitor rule-based alerts" },
+  { mnemonic: "BOTS",    label: "BOTS · auto-trade",       title: "Automated trading bots (paper, hybrid rules + AI)" },
   { mnemonic: "PAYOFF",  label: "PAYOFF · option strategy", title: "Multi-leg options payoff diagram" },
   { mnemonic: "SQL",     label: "SQL · workbench",         title: "DuckDB SQL workbench (bars / macro / filings)" },
   { mnemonic: "SRCH",    label: "SRCH · filings search",   title: "Full-text filings search via Meilisearch" },

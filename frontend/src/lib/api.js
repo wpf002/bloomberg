@@ -136,6 +136,34 @@ export const api = {
   optionsPayoff: (body) =>
     request(`/api/options/payoff`, { method: "POST", body: JSON.stringify(body) }),
 
+  // ── trading bots (paper-first, Alpaca) ────────────────────────────────
+  botsStatus: () => request(`/api/bots/status`),
+  bots: () => request(`/api/bots`),
+  getBot: (id) => request(`/api/bots/${encodeURIComponent(id)}`),
+  createBot: (body) =>
+    request(`/api/bots`, { method: "POST", body: JSON.stringify(body) }),
+  updateBot: (id, body) =>
+    request(`/api/bots/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteBot: (id) =>
+    request(`/api/bots/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  validateBot: (body) =>
+    request(`/api/bots/validate`, { method: "POST", body: JSON.stringify(body) }),
+  backtestBot: (body) =>
+    request(`/api/bots/backtest`, { method: "POST", body: JSON.stringify(body) }),
+  startBot: (id) => request(`/api/bots/${encodeURIComponent(id)}/start`, { method: "POST" }),
+  pauseBot: (id) => request(`/api/bots/${encodeURIComponent(id)}/pause`, { method: "POST" }),
+  stopBot: (id) => request(`/api/bots/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+  killBot: (id) => request(`/api/bots/${encodeURIComponent(id)}/kill`, { method: "POST" }),
+  botEvents: (id, limit = 100) =>
+    request(`/api/bots/${encodeURIComponent(id)}/events?limit=${limit}`),
+  botOrders: (id, limit = 100) =>
+    request(`/api/bots/${encodeURIComponent(id)}/orders?limit=${limit}`),
+  botPending: (id) => request(`/api/bots/${encodeURIComponent(id)}/pending`),
+  approveBotPending: (id, actionId) =>
+    request(`/api/bots/${encodeURIComponent(id)}/pending/${encodeURIComponent(actionId)}/approve`, { method: "POST" }),
+  rejectBotPending: (id, actionId) =>
+    request(`/api/bots/${encodeURIComponent(id)}/pending/${encodeURIComponent(actionId)}/reject`, { method: "POST" }),
+
   // ── auth ──────────────────────────────────────────────────────────────
   authMe: () => request(`/api/auth/me`),
   authStatus: () => request(`/api/auth/status`),

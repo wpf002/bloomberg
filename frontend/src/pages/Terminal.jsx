@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import AlertsPanel from "../components/AlertsPanel.jsx";
+import BotsPanel from "../components/BotsPanel.jsx";
 import CalendarPanel from "../components/CalendarPanel.jsx";
 import Chart from "../components/Chart.jsx";
 import CommandBar, { MnemonicHelp } from "../components/CommandBar.jsx";
@@ -88,6 +89,7 @@ const INTENT_TO_PANEL = {
   calendar: "calendar",
   trade: "trade",
   alerts: "alerts",
+  bots: "bots",
   payoff: "payoff",
   sql: "sql",
   search: "search",
@@ -133,7 +135,8 @@ const DEFAULT_LAYOUTS = {
     { i: "trade",        x: 0,  y: 40, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "alerts",       x: 4,  y: 40, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "payoff",       x: 8,  y: 40, w: 4, h: 10, minW: 3, minH: 6 },
-    { i: "sql",          x: 0,  y: 50, w: 8, h: 12, minW: 4, minH: 6 },
+    { i: "bots",         x: 0,  y: 50, w: 12, h: 11, minW: 4, minH: 7 },
+    { i: "sql",          x: 0,  y: 61, w: 8, h: 12, minW: 4, minH: 6 },
     { i: "search",       x: 8,  y: 50, w: 4, h: 12, minW: 3, minH: 6 },
     { i: "factors",      x: 0,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
@@ -162,7 +165,8 @@ const DEFAULT_LAYOUTS = {
     { i: "trade",        x: 0,  y: 62, w: 6, h: 10 },
     { i: "alerts",       x: 6,  y: 62, w: 6, h: 10 },
     { i: "payoff",       x: 0,  y: 72, w: 12, h: 10 },
-    { i: "sql",          x: 0,  y: 82, w: 12, h: 12 },
+    { i: "bots",         x: 0,  y: 82, w: 12, h: 11 },
+    { i: "sql",          x: 0,  y: 93, w: 12, h: 12 },
     { i: "search",       x: 0,  y: 94, w: 12, h: 10 },
     { i: "factors",      x: 0,  y: 104, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 111, w: 12, h: 7 },
@@ -192,7 +196,8 @@ const DEFAULT_LAYOUTS = {
     { i: "trade",        x: 0, y: 103, w: 6, h: 10 },
     { i: "alerts",       x: 0, y: 113, w: 6, h: 10 },
     { i: "payoff",       x: 0, y: 123, w: 6, h: 10 },
-    { i: "sql",          x: 0, y: 133, w: 6, h: 12 },
+    { i: "bots",         x: 0, y: 133, w: 6, h: 12 },
+    { i: "sql",          x: 0, y: 145, w: 6, h: 12 },
     { i: "search",       x: 0, y: 145, w: 6, h: 10 },
     { i: "factors",      x: 0, y: 155, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 162, w: 6, h: 7 },
@@ -524,6 +529,7 @@ export default function Terminal() {
       { id: "compare",      render: () => <ComparePanel symbols={compareSymbols} /> },
       { id: "trade",        render: () => <OrderTicket symbol={activeSymbol} /> },
       { id: "alerts",       render: () => <AlertsPanel symbol={activeSymbol} /> },
+      { id: "bots",         render: () => <BotsPanel activeSymbol={activeSymbol} /> },
       { id: "payoff",       render: () => <PayoffPanel symbol={activeSymbol} /> },
       { id: "sql",          render: () => <SqlPanel /> },
       { id: "search",       render: () => <FilingsSearchPanel symbol={activeSymbol} /> },

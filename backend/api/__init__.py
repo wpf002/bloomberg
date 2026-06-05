@@ -5,6 +5,7 @@ from .routes import (
     alerts,
     audit,
     auth,
+    bots,
     calendar,
     compare,
     crypto,
@@ -55,6 +56,7 @@ api_router.include_router(explain.router, prefix="/explain", tags=["explain"])
 api_router.include_router(compare.router, prefix="/compare", tags=["compare"])
 api_router.include_router(orders.router, prefix="/orders", tags=["orders"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(bots.router, prefix="/bots", tags=["bots"])
 api_router.include_router(streams.router, prefix="/ws", tags=["streams"])
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(me.router, prefix="/me", tags=["me"])

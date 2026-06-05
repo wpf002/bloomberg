@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api import api_router
 from .core.alerts import engine as alert_engine
+from .core.bots import manager as bot_manager
 from .core.config import settings
 from .core.database import cache, database
 from .core.observability import RequestLoggingMiddleware, configure_logging
@@ -41,6 +42,7 @@ async def lifespan(app: FastAPI):
     try:
         await streamer.start()
         await alert_engine.start()
+        await bot_manager.start()
     except Exception as exc:
         logger.warning("stream/alert background tasks failed to start: %s", exc)
     # Meilisearch index bootstrap + DuckDB warm-up are best-effort and run
@@ -55,6 +57,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_sql_warm_cron())
     yield
     try:
+        await bot_manager.stop()
         await alert_engine.stop()
         await streamer.stop()
     except Exception as exc:

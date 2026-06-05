@@ -63,6 +63,9 @@ export const MNEMONICS = {
   VEX:         { intent: "gex",          description: "Vanna exposure profile (V2.4)" },
   PRED:        { intent: "predictions",  description: "Prediction-market consensus (V2.5)" },
   DT:          { intent: "daytrader",    description: "AI Day Trader mode (V2.7)" },
+  BOT:         { intent: "bots",         description: "Automated trading bots (paper)" },
+  BOTS:        { intent: "bots",         description: "Automated trading bots (paper)" },
+  ALGO:        { intent: "bots",         description: "Algo / bot manager (paper)" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

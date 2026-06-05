@@ -64,6 +64,7 @@ MODULES = [
     "backend.api.routes.compare",
     "backend.api.routes.orders",
     "backend.api.routes.alerts",
+    "backend.api.routes.bots",
     "backend.api.routes.streams",
     "backend.api.routes.auth",
     "backend.api.routes.factors",
@@ -351,9 +352,19 @@ EXPECTED = [
     ("GET", "/api/fixed_income/trace"),
     ("GET", "/api/futures/dashboard"),
     ("GET", "/api/futures/curve/{root}"),
+    ("GET", "/api/bots"),
+    ("POST", "/api/bots"),
+    ("GET", "/api/bots/status"),
+    ("POST", "/api/bots/validate"),
+    ("POST", "/api/bots/backtest"),
+    ("POST", "/api/bots/{bot_id}/start"),
+    ("POST", "/api/bots/{bot_id}/kill"),
+    ("GET", "/api/bots/{bot_id}/events"),
+    ("GET", "/api/bots/{bot_id}/orders"),
+    ("POST", "/api/bots/{bot_id}/pending/{action_id}/approve"),
 ]
 # WebSocket routes don't expose `methods` like HTTP routes do; check by path.
-WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts"]
+WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts", "/api/ws/bots"]
 ws_paths_registered = {route.path for route in app.routes if hasattr(route, "path")}
 for method, path in EXPECTED:
     check(f"{method} {path}", (method, path) in registered)

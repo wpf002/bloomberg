@@ -1,0 +1,64 @@
+import clsx from "clsx";
+import { useTranslation } from "../i18n/index.jsx";
+
+// Color per event kind so the user can scan why a bot did or didn't act.
+const KIND_TONE = {
+  order: "text-terminal-green",
+  fill: "text-terminal-green",
+  signal: "text-terminal-amber",
+  llm: "text-terminal-blue",
+  reject: "text-terminal-muted",
+  error: "text-terminal-red",
+  lifecycle: "text-terminal-blue",
+  eval: "text-terminal-muted",
+};
+
+function summarize(ev) {
+  const d = ev.detail || {};
+  const intent = d.intent || {};
+  const size = intent.qty != null ? `${intent.qty} sh` : intent.notional != null ? `$${intent.notional}` : "";
+  switch (ev.kind) {
+    case "order":
+      return `${(d.side || intent.side || "").toUpperCase()} ${d.symbol || intent.symbol} ${size} · ${d.status || ""}`;
+    case "signal":
+      return `${(intent.side || "").toUpperCase()} ${intent.symbol} ${size}${d.awaiting_approval ? " · awaiting approval" : ""}`;
+    case "reject":
+      return `${intent.symbol || ""} rejected · ${d.reason || ""}`;
+    case "llm":
+      return d.note || "advisor note";
+    case "lifecycle":
+      return `${d.action || ""}${d.reason ? ` · ${d.reason}` : ""}`;
+    case "error":
+      return d.reason || "error";
+    default:
+      return JSON.stringify(d).slice(0, 80);
+  }
+}
+
+export default function BotActivityFeed({ events }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-3">
+      <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
+        {t("p.bots.activity")}
+      </div>
+      {!events || events.length === 0 ? (
+        <div className="text-xs text-terminal-muted">{t("p.bots.no_activity")}</div>
+      ) : (
+        <ul className="mt-1 space-y-0.5">
+          {events.slice(0, 30).map((ev, i) => (
+            <li key={`${ev.ts}-${i}`} className="flex items-baseline gap-2 border-b border-terminal-border/30 py-0.5 text-[11px]">
+              <span className={clsx("w-14 shrink-0 uppercase tracking-wider", KIND_TONE[ev.kind] || "text-terminal-muted")}>
+                {ev.kind}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-terminal-text">{summarize(ev)}</span>
+              <span className="shrink-0 text-terminal-muted">
+                {ev.ts ? new Date(ev.ts).toLocaleTimeString() : ""}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
