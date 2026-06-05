@@ -77,6 +77,9 @@ def _install(monkeypatch, broker, data):
     monkeypatch.setattr(manager_mod, "resolve_execution_broker",
                         lambda *a, **k: _async(broker))
     monkeypatch.setattr(manager_mod, "market_data_source", lambda: data)
+    # Pin market-open so the pipeline is deterministic regardless of when the
+    # suite runs (the guardrail would otherwise block trades outside RTH).
+    monkeypatch.setattr(manager_mod, "market_open", lambda *a, **k: True)
     # leader lock: force leader without redis
     monkeypatch.setattr(leader_lock, "_is_leader", True, raising=False)
 

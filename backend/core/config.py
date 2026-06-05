@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     # with callback URL "<api>/api/auth/github/callback".
     github_client_id: str | None = None
     github_client_secret: str | None = None
+    # Optional explicit public base for the OAuth callback (e.g.
+    # https://backend-production-4975.up.railway.app). When unset, the callback
+    # is derived from the request and force-upgraded to https for non-local hosts.
+    oauth_callback_base: str | None = Field(default=None, alias="OAUTH_CALLBACK_BASE")
 
     # Session JWT signing. Auto-generated on first boot if unset; persisted
     # tokens become invalid across restarts in that case (acceptable for dev).

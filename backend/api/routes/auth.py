@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -38,6 +38,36 @@ OAUTH_STATE_COOKIE = "bt_oauth_state"
 
 def _oauth_configured() -> bool:
     return bool(settings.github_client_id and settings.github_client_secret)
+
+
+def _callback_url(request: Request) -> str:
+    """Public callback URL GitHub redirects back to.
+
+    Railway (and most PaaS) terminate TLS at a proxy and forward to the app
+    over plain HTTP, so Starlette's `request.url_for(...)` yields an `http://`
+    URL. GitHub requires the redirect_uri to exactly match the registered
+    HTTPS callback, so we upgrade the scheme to https for any non-local host
+    (honoring X-Forwarded-Proto when the proxy sets it). An explicit
+    OAUTH_CALLBACK_BASE override wins when configured.
+    """
+    if settings.oauth_callback_base:
+        base = settings.oauth_callback_base.rstrip("/")
+        return f"{base}/api/auth/github/callback"
+    return _public_https(
+        str(request.url_for("github_callback")),
+        request.headers.get("x-forwarded-proto"),
+    )
+
+
+def _public_https(raw_url: str, forwarded_proto: str | None) -> str:
+    """Force the scheme to https for any non-local host (honoring
+    X-Forwarded-Proto when present). Pure + unit-testable."""
+    parts = urlparse(raw_url)
+    scheme = forwarded_proto.split(",")[0].strip() if forwarded_proto else parts.scheme
+    host = parts.hostname or ""
+    if host not in ("localhost", "127.0.0.1") and scheme != "https":
+        scheme = "https"
+    return urlunparse(parts._replace(scheme=scheme))
 
 
 def _cookie_security() -> tuple[str, bool]:
@@ -65,7 +95,7 @@ async def github_login(request: Request) -> Response:
             ),
         )
     state = secrets.token_urlsafe(24)
-    callback_url = str(request.url_for("github_callback"))
+    callback_url = _callback_url(request)
     params = {
         "client_id": settings.github_client_id,
         "redirect_uri": callback_url,
@@ -97,7 +127,7 @@ async def github_callback(request: Request, code: str | None = None, state: str 
     if not expected_state or expected_state != state:
         raise HTTPException(status_code=400, detail="invalid oauth state")
 
-    callback_url = str(request.url_for("github_callback"))
+    callback_url = _callback_url(request)
     async with httpx.AsyncClient(timeout=10.0) as client:
         token_resp = await client.post(
             GITHUB_TOKEN_URL,
