@@ -40,6 +40,21 @@ export default defineConfig({
   build: {
     outDir: "dist",
     sourcemap: true,
+    // Split the heavy vendors into their own chunks so no single file trips
+    // Vite's 500 kB advisory (the Railway build "warning") — and so a code
+    // change doesn't bust the cache for react/recharts/grid on every deploy.
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("recharts") || id.includes("/d3-")) return "charts";
+          if (id.includes("react-grid-layout") || id.includes("react-resizable")) return "grid";
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "react";
+          return "vendor";
+        },
+      },
+    },
   },
   test: {
     environment: "jsdom",
