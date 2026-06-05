@@ -95,11 +95,26 @@ def _stream_response(generator) -> StreamingResponse:
     """
 
     async def _agen():
-        gen = await generator if hasattr(generator, "__await__") else generator
-        async for chunk in gen:
-            yield chunk
+        # An exception raised mid-stream (transient Anthropic/network hiccup,
+        # rate limit, etc.) otherwise aborts the HTTP response, which the
+        # browser surfaces as an opaque "network error". Catch it and emit a
+        # readable message instead so the user (and we) see the real reason and
+        # whatever streamed so far is preserved.
+        try:
+            gen = await generator if hasattr(generator, "__await__") else generator
+            async for chunk in gen:
+                yield chunk
+        except Exception as exc:  # noqa: BLE001 - last line of defense for the stream
+            logger.warning("advisor stream failed mid-flight: %s", exc)
+            yield f"\n\n[advisor unavailable — {type(exc).__name__}: {exc}. Please try again.]"
 
-    return StreamingResponse(_agen(), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(
+        _agen(),
+        media_type="text/plain; charset=utf-8",
+        # Disable proxy buffering so tokens flush immediately (Railway/nginx);
+        # a long silent TTFB is what makes some proxies drop the connection.
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 
 def _503_if_no_llm():
