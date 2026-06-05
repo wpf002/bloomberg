@@ -81,7 +81,13 @@ def cached(
 
             sig_args = args[1:] if (strip_first_arg and args) else args
             signature = _hash_args(sig_args, kwargs)
-            key = f"bt:{namespace}:{signature}"
+            # Per-instance salt: when an instance method exposes a
+            # `_cache_key_salt` (e.g. an AlpacaSource built from a specific
+            # account's keys), fold it into the key so two accounts with the
+            # SAME method+args (e.g. get_account() with no args) don't collide
+            # on one cached value. Without a salt the key is unchanged.
+            salt = getattr(args[0], "_cache_key_salt", None) if (strip_first_arg and args) else None
+            key = f"bt:{namespace}:{salt}:{signature}" if salt else f"bt:{namespace}:{signature}"
 
             try:
                 hit = await client.get(key)

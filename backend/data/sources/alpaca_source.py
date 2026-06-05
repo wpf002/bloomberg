@@ -123,6 +123,19 @@ class AlpacaSource:
             "APCA-API-SECRET-KEY": self._api_secret or "",
             "Accept": "application/json",
         }
+        # Cache-key salt so account-specific cached calls (get_account /
+        # get_positions) don't collide across accounts in the shared Redis
+        # cache. Derived from a hash of the key + host, so the SAME account
+        # still shares (and dedupes) cache entries while a DIFFERENT account
+        # (e.g. a per-user live source) gets its own keyspace. Never stores
+        # the raw key. None when no creds → preserves the legacy keyspace.
+        if self._api_key:
+            import hashlib
+            self._cache_key_salt = hashlib.sha1(
+                f"{self._api_key}|{self._base_url}".encode("utf-8")
+            ).hexdigest()[:10]
+        else:
+            self._cache_key_salt = None
 
     @property
     def mode(self) -> str:

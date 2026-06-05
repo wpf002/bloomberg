@@ -56,10 +56,21 @@ class Settings(BaseSettings):
     # Encryption key for per-user broker credentials at rest. When unset we
     # derive a stable key from SECRET_KEY/JWT_SECRET (see core/encryption.py).
     broker_enc_key: str | None = Field(default=None, alias="BROKER_ENC_KEY")
-    # Robinhood agentic-trading (MCP) — scaffold; see core/brokers/robinhood_mcp.py.
+    # Robinhood agentic-trading (MCP). The client is implemented (MCP JSON-RPC
+    # over HTTP) but OFF by default. To activate: set the endpoint + token,
+    # run tool discovery (GET /api/bots/robinhood/tools) to learn the exact
+    # tool names Robinhood exposes, map them below, then flip ROBINHOOD_ENABLED.
     robinhood_enabled: bool = Field(default=False, alias="ROBINHOOD_ENABLED")
     robinhood_mcp_endpoint: str | None = Field(default=None, alias="ROBINHOOD_MCP_ENDPOINT")
     robinhood_mcp_token: str | None = Field(default=None, alias="ROBINHOOD_MCP_TOKEN")
+    robinhood_protocol_version: str = "2025-06-18"
+    # Tool-name mapping — discovered per Robinhood's MCP docs. Order placement
+    # refuses to run until the place-order tool name is set (no guessing with
+    # real money).
+    robinhood_tool_account: str | None = Field(default=None, alias="ROBINHOOD_TOOL_ACCOUNT")
+    robinhood_tool_positions: str | None = Field(default=None, alias="ROBINHOOD_TOOL_POSITIONS")
+    robinhood_tool_place_order: str | None = Field(default=None, alias="ROBINHOOD_TOOL_PLACE_ORDER")
+    robinhood_tool_cancel_order: str | None = Field(default=None, alias="ROBINHOOD_TOOL_CANCEL_ORDER")
     # Stable per-process id used for the bot leader-lock (multi-instance).
     # Auto-generated when unset.
     bot_instance_id: str | None = None

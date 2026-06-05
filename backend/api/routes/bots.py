@@ -71,6 +71,25 @@ async def bots_status() -> dict:
     }
 
 
+@router.get("/robinhood/tools")
+async def robinhood_tools(user: User = Depends(require_user)) -> dict:
+    """Discover the tools Robinhood's MCP server exposes — the safe, read-only
+    way to learn the exact tool names before mapping them for execution.
+    Requires ROBINHOOD_MCP_ENDPOINT + ROBINHOOD_MCP_TOKEN to be set."""
+    if not (settings.robinhood_mcp_endpoint and settings.robinhood_mcp_token):
+        raise HTTPException(status_code=503, detail="ROBINHOOD_MCP_ENDPOINT/TOKEN not configured")
+    from ...core.brokers.robinhood_mcp import RobinhoodMcpBroker
+    broker = RobinhoodMcpBroker()
+    try:
+        tools = await broker.list_tools()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"robinhood MCP discovery failed: {exc}")
+    return {
+        "tools": [{"name": t.get("name"), "description": t.get("description")} for t in tools],
+        "hint": "Map these to ROBINHOOD_TOOL_ACCOUNT/POSITIONS/PLACE_ORDER/CANCEL_ORDER, then set ROBINHOOD_ENABLED=true.",
+    }
+
+
 @router.get("", response_model=List[Bot])
 async def list_bots(user: User = Depends(require_user)) -> List[Bot]:
     return await store.list_bots(user_id=user.id)
