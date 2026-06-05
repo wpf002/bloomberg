@@ -164,6 +164,18 @@ export const api = {
   rejectBotPending: (id, actionId) =>
     request(`/api/bots/${encodeURIComponent(id)}/pending/${encodeURIComponent(actionId)}/reject`, { method: "POST" }),
 
+  // ── per-user broker credentials (encrypted) ───────────────────────────
+  brokerCreds: () => request(`/api/me/brokers`),
+  putBrokerCreds: (broker, mode, body) =>
+    request(`/api/me/brokers/${encodeURIComponent(broker)}/${encodeURIComponent(mode)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  deleteBrokerCreds: (broker, mode) =>
+    request(`/api/me/brokers/${encodeURIComponent(broker)}/${encodeURIComponent(mode)}`, {
+      method: "DELETE",
+    }),
+
   // ── auth ──────────────────────────────────────────────────────────────
   authMe: () => request(`/api/auth/me`),
   authStatus: () => request(`/api/auth/status`),

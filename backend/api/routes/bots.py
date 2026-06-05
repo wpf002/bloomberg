@@ -27,10 +27,16 @@ from ...core.bots.schemas import (
     PendingAction,
 )
 from ...core.bots.store import store
+from ...core.brokers import resolve_execution_broker
+from ...core.brokers.base import BrokerError
+from ...core.config import settings
 from ...core.streaming import streamer
 from ...data.sources.alpaca_source import get_alpaca_source
 
 router = APIRouter()
+
+_VALID_BROKERS = {"alpaca", "robinhood"}
+_VALID_MODES = {"paper", "live"}
 
 
 def _validate_config(config: BotConfig) -> None:
@@ -40,14 +46,27 @@ def _validate_config(config: BotConfig) -> None:
         raise HTTPException(status_code=400, detail="too many symbols (max 25)")
 
 
+def _validate_broker(broker: str, mode: str) -> tuple[str, str]:
+    broker, mode = (broker or "alpaca").lower(), (mode or "paper").lower()
+    if broker not in _VALID_BROKERS:
+        raise HTTPException(status_code=400, detail=f"unknown broker '{broker}'")
+    if mode not in _VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"unknown mode '{mode}'")
+    if broker == "robinhood" and not settings.robinhood_enabled:
+        raise HTTPException(status_code=400, detail="Robinhood broker is not enabled on this server")
+    return broker, mode
+
+
 @router.get("/status")
 async def bots_status() -> dict:
-    """Engine status — surfaces the paper/live posture so the UI can show the
-    PAPER badge and whether Alpaca creds are present."""
+    """Engine status — paper/live posture + which brokers are available, so
+    the UI can gate the Live option and show the PAPER badge."""
     alpaca = get_alpaca_source()
     return {
         "paper": is_paper(),
         "alpaca_configured": alpaca.credentials_configured(),
+        "live_enabled": bool(settings.bots_allow_live),
+        "robinhood_enabled": bool(settings.robinhood_enabled),
         "mode": "paper",
     }
 
@@ -60,6 +79,7 @@ async def list_bots(user: User = Depends(require_user)) -> List[Bot]:
 @router.post("", response_model=Bot)
 async def create_bot(req: BotCreateRequest, user: User = Depends(require_user)) -> Bot:
     _validate_config(req.config)
+    broker, mode = _validate_broker(req.broker, req.mode)
     bot = Bot(
         user_id=user.id,
         name=req.name,
@@ -68,7 +88,8 @@ async def create_bot(req: BotCreateRequest, user: User = Depends(require_user)) 
         config=req.config,
         guardrails=req.guardrails,
         status=BotStatus.draft,
-        mode="paper",
+        broker=broker,
+        mode=mode,
     )
     return await store.create_bot(bot)
 
@@ -108,6 +129,9 @@ async def update_bot(bot_id: str, req: BotUpdateRequest, user: User = Depends(re
         bot.decision_mode = req.decision_mode
     if req.require_approval is not None:
         bot.require_approval = req.require_approval
+    if req.broker is not None or req.mode is not None:
+        broker, mode = _validate_broker(req.broker or bot.broker, req.mode or bot.mode)
+        bot.broker, bot.mode = broker, mode
     if req.config is not None:
         _validate_config(req.config)
         bot.config = req.config
@@ -134,10 +158,13 @@ async def _transition(bot_id: str, status: BotStatus, user: User) -> Bot:
     if not bot:
         raise HTTPException(status_code=404, detail="bot not found")
     if status == BotStatus.active:
-        if not get_alpaca_source().credentials_configured():
-            raise HTTPException(status_code=503, detail="Alpaca paper credentials not configured")
-        if not is_paper():
-            raise HTTPException(status_code=403, detail="live trading is disabled in this build")
+        # Resolving the broker proves the bot can actually trade: paper falls
+        # back to env keys; live requires BOTS_ALLOW_LIVE + per-user live keys;
+        # robinhood requires it be enabled. Surface the precise reason.
+        try:
+            await resolve_execution_broker(user.id, bot.broker, bot.mode)
+        except BrokerError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
     bot.status = status
     await store.update_bot(bot)
     await store.record_event(BotEvent(

@@ -66,6 +66,8 @@ export const MNEMONICS = {
   BOT:         { intent: "bots",         description: "Automated trading bots (paper)" },
   BOTS:        { intent: "bots",         description: "Automated trading bots (paper)" },
   ALGO:        { intent: "bots",         description: "Algo / bot manager (paper)" },
+  SET:         { intent: "settings",     description: "Settings — broker API keys" },
+  KEYS:        { intent: "settings",     description: "Broker API keys (Alpaca)" },
   HELP:    { intent: "help",      description: "Show mnemonics" },
 };
 

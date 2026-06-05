@@ -74,7 +74,8 @@ class Bot(BaseModel):
     user_id: Optional[int] = None
     name: str
     status: BotStatus = BotStatus.draft
-    mode: str = "paper"  # hard-pinned to paper in this build
+    broker: str = "alpaca"        # alpaca | robinhood (robinhood = scaffold)
+    mode: str = "paper"           # paper | live (live gated by BOTS_ALLOW_LIVE + keys)
     decision_mode: DecisionMode = DecisionMode.rule
     require_approval: bool = True
     config: BotConfig
@@ -120,6 +121,8 @@ class PendingAction(BaseModel):
 
 class BotCreateRequest(BaseModel):
     name: str
+    broker: str = "alpaca"
+    mode: str = "paper"
     decision_mode: DecisionMode = DecisionMode.rule
     require_approval: bool = True
     config: BotConfig
@@ -128,6 +131,8 @@ class BotCreateRequest(BaseModel):
 
 class BotUpdateRequest(BaseModel):
     name: Optional[str] = None
+    broker: Optional[str] = None
+    mode: Optional[str] = None
     decision_mode: Optional[DecisionMode] = None
     require_approval: Optional[bool] = None
     config: Optional[BotConfig] = None

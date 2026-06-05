@@ -44,6 +44,25 @@ class Settings(BaseSettings):
     alpaca_api_key: str | None = None
     alpaca_api_secret: str | None = None
     alpaca_base_url: str = "https://paper-api.alpaca.markets"
+    # Live (real-money) Alpaca trading host. Per-user live keys are stored
+    # encrypted; this is just the endpoint they hit.
+    alpaca_live_base_url: str = "https://api.alpaca.markets"
+
+    # ── trading-bot broker controls ──────────────────────────────────────
+    # Master switch for live (real-money) bot execution. OFF by default —
+    # live trading also requires per-user live keys. Set BOTS_ALLOW_LIVE=true
+    # only when you've deliberately decided to trade real money.
+    bots_allow_live: bool = Field(default=False, alias="BOTS_ALLOW_LIVE")
+    # Encryption key for per-user broker credentials at rest. When unset we
+    # derive a stable key from SECRET_KEY/JWT_SECRET (see core/encryption.py).
+    broker_enc_key: str | None = Field(default=None, alias="BROKER_ENC_KEY")
+    # Robinhood agentic-trading (MCP) — scaffold; see core/brokers/robinhood_mcp.py.
+    robinhood_enabled: bool = Field(default=False, alias="ROBINHOOD_ENABLED")
+    robinhood_mcp_endpoint: str | None = Field(default=None, alias="ROBINHOOD_MCP_ENDPOINT")
+    robinhood_mcp_token: str | None = Field(default=None, alias="ROBINHOOD_MCP_TOKEN")
+    # Stable per-process id used for the bot leader-lock (multi-instance).
+    # Auto-generated when unset.
+    bot_instance_id: str | None = None
 
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-sonnet-4-6"

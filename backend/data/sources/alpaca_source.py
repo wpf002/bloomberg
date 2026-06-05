@@ -99,17 +99,38 @@ def _of(value) -> float | None:
 
 
 class AlpacaSource:
-    """HTTP client for Alpaca Market Data + News + Trading (v2 / v1beta1)."""
+    """HTTP client for Alpaca Market Data + News + Trading (v2 / v1beta1).
 
-    def __init__(self) -> None:
+    Credentials + base URL default to the process env (`settings.*`) so the
+    shared `get_alpaca_source()` singleton keeps its existing behaviour. They
+    can also be passed explicitly so the broker resolver can build a
+    per-user / per-mode (paper vs live) source without touching globals.
+    """
+
+    name = "alpaca"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
+        self._api_key = api_key if api_key is not None else settings.alpaca_api_key
+        self._api_secret = api_secret if api_secret is not None else settings.alpaca_api_secret
+        self._base_url = (base_url or settings.alpaca_base_url).rstrip("/")
         self._headers = {
-            "APCA-API-KEY-ID": settings.alpaca_api_key or "",
-            "APCA-API-SECRET-KEY": settings.alpaca_api_secret or "",
+            "APCA-API-KEY-ID": self._api_key or "",
+            "APCA-API-SECRET-KEY": self._api_secret or "",
             "Accept": "application/json",
         }
 
+    @property
+    def mode(self) -> str:
+        """`paper` or `live`, inferred from the trading host."""
+        return "paper" if "paper" in self._base_url.lower() else "live"
+
     def _enabled(self) -> bool:
-        return bool(settings.alpaca_api_key and settings.alpaca_api_secret)
+        return bool(self._api_key and self._api_secret)
 
     def credentials_configured(self) -> bool:
         return self._enabled()
@@ -318,7 +339,7 @@ class AlpacaSource:
         """
         if not self._enabled():
             return []
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/assets"
+        url = f"{self._base_url}/v2/assets"
         params = {"status": "active", "asset_class": "us_equity"}
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.get(url, headers=self._headers, params=params)
@@ -342,7 +363,7 @@ class AlpacaSource:
     async def get_account(self) -> Account | None:
         if not self._enabled():
             return None
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/account"
+        url = f"{self._base_url}/v2/account"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=self._headers)
         if resp.status_code != 200:
@@ -369,7 +390,7 @@ class AlpacaSource:
     async def get_positions(self) -> List[Position]:
         if not self._enabled():
             return []
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/positions"
+        url = f"{self._base_url}/v2/positions"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=self._headers)
         if resp.status_code != 200:
@@ -442,7 +463,7 @@ class AlpacaSource:
     async def list_orders(self, status: str = "all", limit: int = 50) -> List[Order]:
         if not self._enabled():
             return []
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders"
+        url = f"{self._base_url}/v2/orders"
         params = {"status": status, "limit": limit, "direction": "desc"}
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, headers=self._headers, params=params)
@@ -463,7 +484,7 @@ class AlpacaSource:
         """
         if not self._enabled():
             raise RuntimeError("alpaca credentials not configured")
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders"
+        url = f"{self._base_url}/v2/orders"
         payload: dict = {
             "symbol": order.symbol.upper(),
             "qty": str(order.qty),
@@ -521,7 +542,7 @@ class AlpacaSource:
             return []
         # /v2/options/contracts lives on the trading host (paper-api.alpaca.markets
         # in dev, api.alpaca.markets in live) — same host as orders/positions.
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/options/contracts"
+        url = f"{self._base_url}/v2/options/contracts"
         today = datetime.now(timezone.utc).date().isoformat()
         params: dict = {
             "underlying_symbols": symbol.upper(),
@@ -693,7 +714,7 @@ class AlpacaSource:
     async def cancel_order(self, order_id: str) -> bool:
         if not self._enabled():
             return False
-        url = f"{settings.alpaca_base_url.rstrip('/')}/v2/orders/{order_id}"
+        url = f"{self._base_url}/v2/orders/{order_id}"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.delete(url, headers=self._headers)
         # 204 = canceled, 207 = multi-status (filled/canceled before delete).

@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS bots (
     user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name             TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'draft',
+    broker           TEXT NOT NULL DEFAULT 'alpaca',
     mode             TEXT NOT NULL DEFAULT 'paper',
     decision_mode    TEXT NOT NULL DEFAULT 'rule',
     require_approval BOOLEAN NOT NULL DEFAULT TRUE,
@@ -119,6 +120,8 @@ CREATE TABLE IF NOT EXISTS bots (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS bots_user_idx ON bots(user_id);
+-- Additive column for DBs created before the broker abstraction landed.
+ALTER TABLE bots ADD COLUMN IF NOT EXISTS broker TEXT NOT NULL DEFAULT 'alpaca';
 
 CREATE TABLE IF NOT EXISTS bot_orders (
     id              TEXT PRIMARY KEY,
@@ -155,6 +158,21 @@ CREATE TABLE IF NOT EXISTS bot_pending_actions (
     resolved_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS bot_pending_user_idx ON bot_pending_actions(user_id, status);
+
+-- Per-user broker credentials (encrypted at rest; see core/encryption.py).
+-- One row per (user, broker, mode) so a user can hold e.g. alpaca/paper and
+-- alpaca/live keys independently. enc_key / enc_secret are Fernet tokens —
+-- secrets are NEVER stored or returned in plaintext.
+CREATE TABLE IF NOT EXISTS user_broker_credentials (
+    user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    broker_name  TEXT NOT NULL DEFAULT 'alpaca',
+    mode         TEXT NOT NULL DEFAULT 'paper',
+    enc_key      TEXT NOT NULL,
+    enc_secret   TEXT NOT NULL,
+    key_last4    TEXT,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, broker_name, mode)
+);
 """
 
 

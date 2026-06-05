@@ -78,7 +78,7 @@ function Num({ label, value, onChange, step }) {
   );
 }
 
-export default function BotBuilder({ defaultSymbol, onCreated, onCancel }) {
+export default function BotBuilder({ defaultSymbol, status = {}, onCreated, onCancel }) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [strategy, setStrategy] = useState("threshold_dca");
@@ -86,6 +86,8 @@ export default function BotBuilder({ defaultSymbol, onCreated, onCancel }) {
   const [params, setParams] = useState(defaultsFor("threshold_dca"));
   const [hybrid, setHybrid] = useState(false);
   const [requireApproval, setRequireApproval] = useState(true);
+  const [broker, setBroker] = useState("alpaca");
+  const [mode, setMode] = useState("paper");
   // guardrails
   const [maxPos, setMaxPos] = useState(1000);
   const [dailyLoss, setDailyLoss] = useState(200);
@@ -117,6 +119,8 @@ export default function BotBuilder({ defaultSymbol, onCreated, onCancel }) {
     Object.entries(params).forEach(([k, v]) => (numericParams[k] = Number(v)));
     return {
       name: name.trim() || `${strat.label} bot`,
+      broker,
+      mode,
       decision_mode: hybrid ? "hybrid" : "rule",
       require_approval: requireApproval,
       config: { strategy, symbols: symList, params: numericParams },
@@ -201,6 +205,36 @@ export default function BotBuilder({ defaultSymbol, onCreated, onCancel }) {
             placeholder="AAPL"
             className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 uppercase tabular text-terminal-text focus:outline-none focus:border-terminal-amber"
           />
+        </label>
+      </div>
+
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[10px] uppercase tracking-wider text-terminal-muted">{t("p.bots.broker")}</span>
+          <select
+            value={broker}
+            onChange={(e) => setBroker(e.target.value)}
+            className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
+          >
+            <option value="alpaca">Alpaca</option>
+            <option value="robinhood" disabled={!status.robinhood_enabled}>
+              Robinhood {status.robinhood_enabled ? "" : `· ${t("p.bots.unavailable")}`}
+            </option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-0.5">
+          <span className="text-[10px] uppercase tracking-wider text-terminal-muted">{t("p.bots.mode")}</span>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value)}
+            title={status.live_enabled ? undefined : t("p.bots.live_disabled_hint")}
+            className="w-full border border-terminal-border bg-terminal-bg px-2 py-0.5 text-terminal-text focus:outline-none focus:border-terminal-amber"
+          >
+            <option value="paper">{t("p.bots.paper")}</option>
+            <option value="live" disabled={!status.live_enabled}>
+              {t("p.bots.live")} {status.live_enabled ? "" : `· ${t("p.bots.unavailable")}`}
+            </option>
+          </select>
         </label>
       </div>
 

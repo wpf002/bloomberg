@@ -49,11 +49,11 @@ class BotStore:
                 async with database.acquire() as conn:
                     await conn.execute(
                         """
-                        INSERT INTO bots (id, user_id, name, status, mode, decision_mode,
+                        INSERT INTO bots (id, user_id, name, status, broker, mode, decision_mode,
                                           require_approval, config, guardrails)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb)
                         """,
-                        bot.id, bot.user_id, bot.name, bot.status.value, bot.mode,
+                        bot.id, bot.user_id, bot.name, bot.status.value, bot.broker, bot.mode,
                         bot.decision_mode.value, bot.require_approval,
                         bot.config.model_dump_json(), bot.guardrails.model_dump_json(),
                     )
@@ -111,12 +111,13 @@ class BotStore:
                         """
                         UPDATE bots SET name=$3, status=$4, decision_mode=$5,
                             require_approval=$6, config=$7::jsonb, guardrails=$8::jsonb,
-                            updated_at=NOW()
+                            broker=$9, mode=$10, updated_at=NOW()
                         WHERE id=$1 AND user_id=$2
                         """,
                         bot.id, bot.user_id, bot.name, bot.status.value,
                         bot.decision_mode.value, bot.require_approval,
                         bot.config.model_dump_json(), bot.guardrails.model_dump_json(),
+                        bot.broker, bot.mode,
                     )
                 return bot
             except Exception as exc:
@@ -319,8 +320,10 @@ def _jsonb(value) -> dict:
 
 
 def _row_to_bot(row) -> Bot:
+    keys = row.keys()
     return Bot(
         id=row["id"], user_id=row["user_id"], name=row["name"], status=row["status"],
+        broker=row["broker"] if "broker" in keys else "alpaca",
         mode=row["mode"], decision_mode=row["decision_mode"],
         require_approval=row["require_approval"],
         config=_jsonb(row["config"]), guardrails=_jsonb(row["guardrails"]),

@@ -1,24 +1,35 @@
 """The BotManager — the live trigger loop.
 
-Mirrors AlertEngine: subscribes to the in-process `quotes` topic and, on each
-tick, evaluates every active bot watching that symbol through the full
-pipeline (strategy → optional LLM advisor → guardrails → executor). A slow
-60s interval loop drives time-based strategies (rebalance) that don't depend
-on a fresh tick. Single in-process instance, matching the app's model.
+Subscribes to the in-process `quotes` topic and, on each tick, evaluates every
+active bot watching that symbol through the full pipeline (strategy → optional
+LLM advisor → guardrails → executor). A 60s interval loop drives time-based
+strategies (rebalance).
+
+Durability + multi-instance (see coordination.py):
+  - Only the leader instance evaluates bots (`leader_lock`), so >1 replica
+    won't double-trade.
+  - Per-symbol cooldowns live in Redis (`cooldowns`) so they survive restarts.
+  - Active bots reload from Postgres each tick, so they resume after a restart.
+
+Market data (quotes/bars) comes from the shared env feed; account/positions
+and order placement go through the bot's resolved broker so sizing and
+execution hit the right account.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from ..brokers import market_data_source, resolve_execution_broker
+from ..brokers.base import BrokerError
 from ..streaming import hub, iter_topic, streamer
 from . import advisor as advisor_mod
 from . import executor as executor_mod
 from . import guardrails as guardrails_mod
+from .coordination import cooldowns, leader_lock
 from .guardrails import GuardrailContext
 from .schemas import Bot, BotEvent, BotStatus, DecisionMode, StrategyKind
 from .store import store
@@ -28,14 +39,13 @@ logger = logging.getLogger(__name__)
 
 _ET = ZoneInfo("America/New_York")
 _INTERVAL_SECONDS = 60
+_LEADER_RENEW_SECONDS = 10
 _BARS_STRATEGIES = {StrategyKind.ma_crossover, StrategyKind.rsi_reversion}
 _INTERVAL_STRATEGIES = {StrategyKind.rebalance}
 
 
 def market_open(now: datetime | None = None) -> bool:
-    """US equity regular session: Mon–Fri, 09:30–16:00 America/New_York.
-    Holidays are not modelled — Alpaca rejects holiday orders anyway, which
-    surfaces as an error event."""
+    """US equity regular session: Mon–Fri, 09:30–16:00 America/New_York."""
     dt = (now or datetime.now(tz=_ET)).astimezone(_ET)
     if dt.weekday() >= 5:
         return False
@@ -47,26 +57,40 @@ class BotManager:
     def __init__(self) -> None:
         self._task: asyncio.Task | None = None
         self._interval_task: asyncio.Task | None = None
-        self._last_fired: dict[str, float] = {}  # f"{bot_id}:{symbol}" → monotonic
+        self._leader_task: asyncio.Task | None = None
         self._prices: dict[str, float] = {}
 
     async def start(self) -> None:
         if self._task is not None:
             return
+        await leader_lock.acquire_or_renew()
+        self._leader_task = asyncio.create_task(self._leader_run(), name="bot-leader")
         self._task = asyncio.create_task(self._run(), name="bot-manager")
         self._interval_task = asyncio.create_task(self._interval_run(), name="bot-interval")
         await self.sync_symbols()
 
     async def stop(self) -> None:
-        for t in (self._task, self._interval_task):
+        for t in (self._task, self._interval_task, self._leader_task):
             if t and not t.done():
                 t.cancel()
-        self._task = None
-        self._interval_task = None
+        self._task = self._interval_task = self._leader_task = None
+        try:
+            await leader_lock.release()
+        except Exception:
+            pass
+
+    async def _leader_run(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(_LEADER_RENEW_SECONDS)
+                await leader_lock.acquire_or_renew()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("leader renew error: %s", exc)
 
     async def sync_symbols(self) -> None:
-        """Ensure the upstream streamer is watching every active bot's symbols
-        so the eval loop actually sees ticks. Call after any start/config change."""
+        """Ensure the streamer watches every active bot's symbols."""
         try:
             bots = await store.list_active_bots()
             syms = sorted({s.upper() for b in bots for s in b.config.symbols})
@@ -101,6 +125,8 @@ class BotManager:
         return sym, self._prices.get(sym)
 
     async def _on_tick(self, msg: dict) -> None:
+        if not leader_lock.is_leader():
+            return  # a non-leader replica stays passive — no double-trading
         sym, price = self._ingest_price(msg)
         if not sym or not price:
             return
@@ -111,47 +137,60 @@ class BotManager:
         ]
         if not bots:
             return
-        from ...data.sources.alpaca_source import get_alpaca_source
-        alpaca = get_alpaca_source()
-        account = await alpaca.get_account()
-        if account is None:
-            return
-        positions = await alpaca.get_positions()
-        posmap = {p.symbol: p for p in positions}
+        data = market_data_source()
         for bot in bots:
-            await self._eval(bot, sym, price, account, posmap, alpaca)
+            broker = await self._broker_for(bot)
+            if broker is None:
+                continue
+            account = await broker.get_account()
+            if account is None:
+                continue
+            positions = await broker.get_positions()
+            posmap = {p.symbol: p for p in positions}
+            await self._eval(bot, sym, price, account, posmap, broker, data)
 
-    # ── interval loop (rebalance etc.) ────────────────────────────────────
+    # ── interval loop (rebalance) ─────────────────────────────────────────
 
     async def _interval_run(self) -> None:
         while True:
             try:
                 await asyncio.sleep(_INTERVAL_SECONDS)
+                if not leader_lock.is_leader():
+                    continue
                 bots = [b for b in await store.list_active_bots()
                         if b.config.strategy in _INTERVAL_STRATEGIES]
                 if not bots:
                     continue
-                from ...data.sources.alpaca_source import get_alpaca_source
-                alpaca = get_alpaca_source()
-                account = await alpaca.get_account()
-                if account is None:
-                    continue
-                positions = await alpaca.get_positions()
-                posmap = {p.symbol: p for p in positions}
+                data = market_data_source()
                 for bot in bots:
+                    broker = await self._broker_for(bot)
+                    if broker is None:
+                        continue
+                    account = await broker.get_account()
+                    if account is None:
+                        continue
+                    positions = await broker.get_positions()
+                    posmap = {p.symbol: p for p in positions}
                     for sym in {s.upper() for s in bot.config.symbols}:
-                        quote = await alpaca.get_stock_quote(sym)
+                        quote = await data.get_stock_quote(sym)
                         price = quote.price if quote else self._prices.get(sym)
                         if price:
-                            await self._eval(bot, sym, price, account, posmap, alpaca)
+                            await self._eval(bot, sym, price, account, posmap, broker, data)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.debug("bot interval eval error: %s", exc)
 
+    async def _broker_for(self, bot: Bot):
+        try:
+            return await resolve_execution_broker(bot.user_id, bot.broker, bot.mode)
+        except BrokerError as exc:
+            logger.debug("bot %s broker unresolved (%s) — skipping", bot.id, exc)
+            return None
+
     # ── per-bot evaluation ────────────────────────────────────────────────
 
-    async def _eval(self, bot: Bot, symbol: str, price: float, account, posmap, alpaca) -> None:
+    async def _eval(self, bot: Bot, symbol: str, price: float, account, posmap, broker, data) -> None:
         pos = posmap.get(symbol)
         pos_qty = pos.qty if pos else 0.0
         pos_avg = pos.avg_entry_price if pos else 0.0
@@ -160,7 +199,7 @@ class BotManager:
         closes: list[float] = []
         if bot.config.strategy in _BARS_STRATEGIES:
             try:
-                bars = await alpaca.get_stock_bars(symbol, period="3mo", interval="1d")
+                bars = await data.get_stock_bars(symbol, period="3mo", interval="1d")
                 closes = [b.close for b in bars if b.close]
             except Exception:
                 closes = []
@@ -177,7 +216,6 @@ class BotManager:
         if not intents:
             return
 
-        rationale = ""
         if bot.decision_mode == DecisionMode.hybrid:
             context = {
                 "symbol": symbol, "price": price, "position_qty": pos_qty,
@@ -188,8 +226,7 @@ class BotManager:
                 await store.record_event(BotEvent(bot_id=bot.id, user_id=bot.user_id, kind="llm", detail={"note": rationale}))
 
         orders_today = await store.count_orders_today(bot.id)
-        key = f"{bot.id}:{symbol}"
-        age = (time.monotonic() - self._last_fired[key]) if key in self._last_fired else None
+        age = await cooldowns.age_seconds(bot.id, symbol)
         gctx = GuardrailContext(
             price=price, equity=account.equity, buying_power=account.buying_power,
             position_qty=pos_qty, position_market_value=pos_mv,
@@ -206,8 +243,8 @@ class BotManager:
                 if decision.kill:
                     await self._auto_pause(bot, decision.reason)
                 continue
-            self._last_fired[key] = time.monotonic()
-            await executor_mod.execute(bot, decision.intent or intent, alpaca=alpaca)
+            await cooldowns.mark(bot.id, symbol, bot.guardrails.per_symbol_cooldown_seconds)
+            await executor_mod.execute(bot, decision.intent or intent, broker=broker)
             gctx.orders_today += 1  # reflect within this tick
 
     async def _auto_pause(self, bot: Bot, reason: str) -> None:

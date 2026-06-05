@@ -122,6 +122,7 @@ export default function BotsPanel({ activeSymbol }) {
           {building && (
             <BotBuilder
               defaultSymbol={activeSymbol}
+              status={status}
               onCreated={() => {
                 setBuilding(false);
                 refresh();

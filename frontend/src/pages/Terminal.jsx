@@ -29,6 +29,7 @@ import ProvenancePanel from "../components/ProvenancePanel.jsx";
 import RiskPanel from "../components/RiskPanel.jsx";
 import IntelligencePanel from "../components/IntelligencePanel.jsx";
 import AdvisorPanel from "../components/AdvisorPanel.jsx";
+import SettingsDialog from "../components/SettingsDialog.jsx";
 import ShareLayoutDialog from "../components/ShareLayoutDialog.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
 import SqlPanel from "../components/SqlPanel.jsx";
@@ -277,6 +278,7 @@ export default function Terminal() {
   const [resetKey, setResetKey] = useState(0);
   const [helpOpen, setHelpOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [lastCommand, setLastCommand] = useState(null);
   const [flash, setFlash] = useState(null);
   const flashTimer = useRef(null);
@@ -432,6 +434,9 @@ export default function Terminal() {
           return;
         case "reset":
           setResetKey((k) => k + 1);
+          return;
+        case "settings":
+          setSettingsOpen(true);
           return;
         case "share":
           if (user) setShareOpen(true);
@@ -689,6 +694,18 @@ export default function Terminal() {
           </button>
           <span className="shrink-0">·</span>
           {user ? (
+            <>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="shrink-0 text-terminal-muted hover:text-terminal-text"
+                title={t("footer.settingsTitle")}
+              >
+                {t("footer.settings")}
+              </button>
+              <span className="shrink-0">·</span>
+            </>
+          ) : null}
+          {user ? (
             <button onClick={logout} className="shrink-0 text-terminal-muted hover:text-terminal-text">
               {t("footer.logout")}
             </button>
@@ -705,6 +722,7 @@ export default function Terminal() {
         <span className="absolute right-4 top-1/2 -translate-y-1/2 hidden 2xl:inline max-w-[28%] truncate" title={t("app.phase")}>{t("app.phase")}</span>
       </footer>
       <ShareLayoutDialog open={shareOpen} onClose={() => setShareOpen(false)} />
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {helpOpen ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6"

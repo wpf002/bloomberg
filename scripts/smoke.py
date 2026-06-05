@@ -362,6 +362,9 @@ EXPECTED = [
     ("GET", "/api/bots/{bot_id}/events"),
     ("GET", "/api/bots/{bot_id}/orders"),
     ("POST", "/api/bots/{bot_id}/pending/{action_id}/approve"),
+    ("GET", "/api/me/brokers"),
+    ("PUT", "/api/me/brokers/{broker}/{mode}"),
+    ("DELETE", "/api/me/brokers/{broker}/{mode}"),
 ]
 # WebSocket routes don't expose `methods` like HTTP routes do; check by path.
 WS_PATHS = ["/api/ws/quotes", "/api/ws/news", "/api/ws/alerts", "/api/ws/bots"]

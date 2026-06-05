@@ -22,7 +22,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe("<BotBuilder>", () => {
   it("renders the paper badge and a strategy selector", () => {
     renderWithI18n(<BotBuilder defaultSymbol="AAPL" />);
-    expect(screen.getByText("Paper")).toBeInTheDocument();
+    // "Paper" appears as the badge and the mode dropdown option
+    expect(screen.getAllByText("Paper").length).toBeGreaterThan(0);
     expect(screen.getByText("Threshold DCA")).toBeInTheDocument();
   });
 
@@ -87,10 +88,44 @@ describe("<BotBuilder>", () => {
     renderWithI18n(<BotBuilder defaultSymbol="AAPL" />);
     // threshold_dca shows a "Drop %" field
     expect(screen.getByText("Drop %")).toBeInTheDocument();
-    await user.selectOptions(screen.getByRole("combobox"), "rsi_reversion");
+    // strategy is the first combobox (broker/mode follow)
+    const strategySelect = screen.getAllByRole("combobox")[0];
+    await user.selectOptions(strategySelect, "rsi_reversion");
     // rsi shows the "Oversold <" param label (exact match — the blurb also
     // mentions "oversold")
     expect(screen.getByText("Oversold <")).toBeInTheDocument();
     expect(screen.queryByText("Drop %")).not.toBeInTheDocument();
+  });
+
+  it("disables the Live mode option unless the server enables it", () => {
+    renderWithI18n(<BotBuilder defaultSymbol="AAPL" status={{ live_enabled: false }} />);
+    const liveOption = screen.getByRole("option", { name: /live/i });
+    expect(liveOption).toBeDisabled();
+  });
+
+  it("enables the Live mode option when the server allows it", () => {
+    renderWithI18n(<BotBuilder defaultSymbol="AAPL" status={{ live_enabled: true }} />);
+    const liveOption = screen.getByRole("option", { name: /live/i });
+    expect(liveOption).toBeEnabled();
+  });
+
+  it("includes broker + mode (paper) in the create payload", async () => {
+    fetchMock.mockImplementation((url) => {
+      if (url.includes("/backtest")) return jsonResp({ pnl: 1, pnl_pct: 0.1, max_drawdown_pct: 0, num_trades: 1, bars: 50, trades: [] });
+      if (url.endsWith("/api/bots")) return jsonResp({ id: "bot1" });
+      return jsonResp({});
+    });
+    const user = userEvent.setup();
+    renderWithI18n(<BotBuilder defaultSymbol="AAPL" onCreated={() => {}} />);
+    await user.click(screen.getByRole("button", { name: /dry-run/i }));
+    await screen.findByText(/0\.1%/);
+    await user.click(screen.getByRole("button", { name: /create bot/i }));
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(([u, o]) => u.endsWith("/api/bots") && o?.method === "POST");
+      expect(post).toBeTruthy();
+      const body = JSON.parse(post[1].body);
+      expect(body.broker).toBe("alpaca");
+      expect(body.mode).toBe("paper");
+    });
   });
 });

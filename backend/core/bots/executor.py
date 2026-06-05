@@ -1,18 +1,27 @@
-"""Turns an approved intent into a paper order (or a pending approval).
+"""Turns an approved intent into an order (or a pending approval).
 
-Hard safety invariant: this build is **paper only**. `is_paper()` checks the
-configured Alpaca base URL and the executor refuses to place an order against
-a live endpoint. Every action — order, pending, or error — writes a
-bot_event, an audit row, and publishes to the bot's per-user WS topic.
+Execution routes through the broker resolver, so the bot's `broker`/`mode`
+decide where the order goes: Alpaca paper (default), Alpaca live (gated by
+BOTS_ALLOW_LIVE + per-user live keys), or Robinhood (scaffold). Paper is
+always allowed; anything requiring missing config is refused with a clear
+event rather than silently dropped.
+
+Every action — order, pending, refusal, error — writes a bot_event, an audit
+row, and publishes to the bot's per-user WS topic. Order client_order_ids are
+deterministic per (bot, symbol, side, cooldown-bucket) so a duplicate eval
+after a restart re-uses the id and the broker rejects the dupe — idempotency.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import math
+import time
 
 from ...models.schemas import OrderRequest
 from ..audit import persist_audit
+from ..brokers import resolve_execution_broker
+from ..brokers.base import BrokerError
 from ..config import settings
 from ..streaming import hub
 from .schemas import Bot, BotEvent, BotOrder, Intent, PendingAction
@@ -22,9 +31,17 @@ logger = logging.getLogger(__name__)
 
 
 def is_paper() -> bool:
-    """True when the configured Alpaca endpoint is a paper account. The bot
-    executor only ever runs against paper in this build."""
+    """Whether the default/env Alpaca endpoint is a paper account (used by the
+    status route)."""
     return "paper" in (settings.alpaca_base_url or "").lower()
+
+
+def _client_order_id(bot: Bot, intent: Intent) -> str:
+    """Deterministic, coarse-bucketed id → natural idempotency across a
+    restart or a double-eval within the same cooldown window."""
+    cooldown = max(1, int(bot.guardrails.per_symbol_cooldown_seconds or 60))
+    bucket = int(time.time()) // cooldown
+    return f"bot-{bot.id}-{intent.symbol}-{intent.side}-{bucket}"
 
 
 async def _emit(bot: Bot, kind: str, detail: dict) -> None:
@@ -34,36 +51,36 @@ async def _emit(bot: Bot, kind: str, detail: dict) -> None:
     await hub.publish(topic, {"type": "bot_event", **event.model_dump(mode="json")})
 
 
-async def execute(bot: Bot, intent: Intent, *, alpaca=None) -> dict:
+async def execute(bot: Bot, intent: Intent, *, broker=None) -> dict:
     """Execute (or queue for approval) a single guardrail-approved intent.
 
-    `alpaca` is injected for tests; defaults to the shared singleton.
-    Returns a small dict describing what happened.
+    `broker` may be injected (tests / a manager that already resolved it);
+    otherwise it's resolved from the bot's broker/mode.
     """
     intent = intent.normalized()
 
-    if not is_paper():
-        await _emit(bot, "error", {"reason": "executor refused: not a paper account", "intent": intent.model_dump()})
-        return {"status": "refused", "reason": "live trading is disabled in this build"}
-
-    # Approval gate — queue instead of placing.
+    # Approval gate — queue without needing a broker.
     if bot.require_approval:
         action = await store.create_pending(PendingAction(bot_id=bot.id, user_id=bot.user_id, intent=intent))
         await _emit(bot, "signal", {"intent": intent.model_dump(), "pending_id": action.id, "awaiting_approval": True})
         return {"status": "pending", "pending_id": action.id}
 
-    return await place(bot, intent, alpaca=alpaca)
+    return await place(bot, intent, broker=broker)
 
 
-async def place(bot: Bot, intent: Intent, *, alpaca=None) -> dict:
-    """Place the order on Alpaca paper and record it. Assumes the intent has
-    already passed guardrails (qty resolved)."""
-    if alpaca is None:
-        from ...data.sources.alpaca_source import get_alpaca_source
-        alpaca = get_alpaca_source()
+async def place(bot: Bot, intent: Intent, *, broker=None) -> dict:
+    """Place the order through the bot's resolved broker and record it.
+    Assumes the intent already passed guardrails (qty resolved)."""
+    intent = intent.normalized()
+    if broker is None:
+        try:
+            broker = await resolve_execution_broker(bot.user_id, bot.broker, bot.mode)
+        except BrokerError as exc:
+            await _emit(bot, "error", {"reason": str(exc)[:300], "intent": intent.model_dump()})
+            return {"status": "refused", "reason": str(exc)[:300]}
 
     qty = intent.qty
-    if qty is None or qty <= 0:
+    if qty is None or qty <= 0 or math.isnan(qty):
         await _emit(bot, "reject", {"reason": "no resolved qty", "intent": intent.model_dump()})
         return {"status": "rejected", "reason": "no resolved qty"}
 
@@ -74,10 +91,10 @@ async def place(bot: Bot, intent: Intent, *, alpaca=None) -> dict:
         type=intent.type or "market",
         time_in_force="day",
         limit_price=intent.limit_price,
-        client_order_id=f"bot-{bot.id}-{int(datetime.now(timezone.utc).timestamp())}",
+        client_order_id=_client_order_id(bot, intent),
     )
     try:
-        order = await alpaca.place_order(req)
+        order = await broker.place_order(req)
     except Exception as exc:
         await _emit(bot, "error", {"reason": str(exc)[:300], "intent": intent.model_dump()})
         return {"status": "error", "reason": str(exc)[:300]}
@@ -90,10 +107,11 @@ async def place(bot: Bot, intent: Intent, *, alpaca=None) -> dict:
     await store.record_order(bot_order)
     await persist_audit(
         record_id=order.id, source="bot", symbol=order.symbol,
-        endpoint_called=f"bot:{bot.id}:order", user_id=bot.user_id,
+        endpoint_called=f"bot:{bot.id}:order:{bot.mode}", user_id=bot.user_id,
     )
     await _emit(bot, "order", {
         "intent": intent.model_dump(), "order_id": order.id, "symbol": order.symbol,
-        "side": order.side, "qty": order.qty, "status": order.status, "reason": intent.reason,
+        "side": order.side, "qty": order.qty, "status": order.status,
+        "mode": bot.mode, "broker": bot.broker, "reason": intent.reason,
     })
     return {"status": "placed", "order_id": order.id, "bot_order_id": bot_order.id}

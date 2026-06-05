@@ -20,9 +20,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...core.auth import User, current_user, require_user
+from ...core.brokers import credentials as broker_creds
 from ...core.database import database
+from ...core.encryption import encryption_available
 
 router = APIRouter()
+
+_VALID_BROKERS = {"alpaca", "robinhood"}
+_VALID_MODES = {"paper", "live"}
+
+
+class BrokerCredsPayload(BaseModel):
+    key: str = Field(min_length=1, max_length=256)
+    secret: str = Field(min_length=1, max_length=256)
 
 
 class WatchlistPayload(BaseModel):
@@ -144,6 +154,50 @@ async def put_layout(
             json.dumps(body.hidden),
         )
     return body
+
+
+# ── per-user broker credentials (encrypted) ────────────────────────────────
+
+
+def _validate_slot(broker: str, mode: str) -> tuple[str, str]:
+    broker, mode = broker.lower(), mode.lower()
+    if broker not in _VALID_BROKERS:
+        raise HTTPException(status_code=400, detail=f"unknown broker '{broker}'")
+    if mode not in _VALID_MODES:
+        raise HTTPException(status_code=400, detail=f"unknown mode '{mode}'")
+    return broker, mode
+
+
+@router.get("/brokers")
+async def list_brokers(user: User = Depends(require_user)) -> dict:
+    """Masked view of which broker/mode credential slots are configured.
+    Never returns secrets — only broker, mode, key last-4, updated_at."""
+    _ensure_db()
+    return {"brokers": await broker_creds.list_credentials(user.id)}
+
+
+@router.put("/brokers/{broker}/{mode}")
+async def put_broker(
+    broker: str, mode: str, body: BrokerCredsPayload, user: User = Depends(require_user)
+) -> dict:
+    _ensure_db()
+    broker, mode = _validate_slot(broker, mode)
+    if not encryption_available():
+        raise HTTPException(
+            status_code=503,
+            detail="encryption key unavailable — set SECRET_KEY (or BROKER_ENC_KEY) on the server",
+        )
+    return await broker_creds.save_credentials(user.id, broker, mode, body.key.strip(), body.secret.strip())
+
+
+@router.delete("/brokers/{broker}/{mode}")
+async def delete_broker(broker: str, mode: str, user: User = Depends(require_user)) -> dict:
+    _ensure_db()
+    broker, mode = _validate_slot(broker, mode)
+    ok = await broker_creds.delete_credentials(user.id, broker, mode)
+    if not ok:
+        raise HTTPException(status_code=404, detail="no credentials for that broker/mode")
+    return {"broker": broker, "mode": mode, "deleted": True}
 
 
 # ── shared layouts (Phase 7) ───────────────────────────────────────────────
