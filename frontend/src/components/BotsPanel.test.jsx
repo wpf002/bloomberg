@@ -61,7 +61,8 @@ describe("<BotsPanel>", () => {
       return jsonResp([]);
     });
     renderWithI18n(<BotsPanel activeSymbol="AAPL" />);
-    expect(await screen.findByText(/sign in/i)).toBeInTheDocument();
+    // the login state offers a GitHub sign-in link
+    expect(await screen.findByRole("link", { name: /sign in with github/i })).toBeInTheDocument();
   });
 
   it("pauses an active bot via its control", async () => {

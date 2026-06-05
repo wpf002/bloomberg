@@ -19,6 +19,17 @@ const ROOTS = [
   { id: "NG", label: "Nat Gas" },
 ];
 
+// The backend tags each tile with its raw source (e.g. "CL=F (FRED:DCOILWTICO)").
+// Show a clean desk name instead.
+function friendlyContract(raw) {
+  if (!raw) return "—";
+  const up = raw.toUpperCase();
+  if (up.startsWith("CL")) return "WTI Crude · CL";
+  if (up.startsWith("NG")) return "Nat Gas · NG";
+  if (up.startsWith("GC")) return "Gold · GC";
+  return raw.split(" ")[0];
+}
+
 function fmt(v, digits = 2) {
   if (v == null) return "--";
   return Number(v).toLocaleString(undefined, {
@@ -80,8 +91,8 @@ export default function FuturesPanel() {
               key={c.contract_symbol}
               className="border border-terminal-border bg-terminal-panelAlt p-1"
             >
-              <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
-                {c.contract_symbol}
+              <div className="text-[10px] uppercase tracking-widest text-terminal-muted" title={c.contract_symbol}>
+                {friendlyContract(c.contract_symbol)}
               </div>
               <div className="text-sm font-bold tabular text-terminal-text">
                 {fmt(c.price)}
@@ -122,8 +133,10 @@ export default function FuturesPanel() {
         ) : busy && !curve ? (
           <div className="mt-2 text-xs text-terminal-muted">{t("p.futures.loading")}</div>
         ) : points.length === 0 ? (
-          <div className="mt-2 text-xs text-terminal-muted">
-            {t("p.futures.empty", { root })}
+          <div className="mt-2 text-xs leading-relaxed text-terminal-muted">
+            Forward curve unavailable for {root}. The free data feed (FRED) carries
+            front-month spot only — the back-month term structure needs a paid
+            futures source. The tiles above show live front-month prices.
           </div>
         ) : (
           <div className="mt-2 flex flex-1 min-h-0 flex-col">

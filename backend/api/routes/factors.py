@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...core.factor_analysis import factor_regression
 from ...data.sources import get_alpaca_source
+from ...data.sources.french_source import FrenchSource
 from ...models.schemas import FactorReport
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,23 @@ async def portfolio_factors(
         raise HTTPException(status_code=502, detail=f"factor regression error: {exc}") from exc
 
     if result is None:
+        # Distinguish the common causes so the user isn't told to "add more
+        # history" when the real problem is the academic factor feed being down.
+        try:
+            french = await FrenchSource().load()
+        except Exception:
+            french = None
+        if not french:
+            msg = (
+                "factor data feed (Ken French Data Library) is unavailable right now — "
+                "it refreshes from Dartmouth and is cached 24h; try again shortly"
+            )
+        else:
+            msg = (
+                "not enough overlapping daily history between your holdings and the "
+                "factor series (need ≥30 aligned trading days) — newly-listed tickers "
+                "or a very short lookback can cause this"
+            )
         return FactorReport(
             alpha_annual=0.0,
             alpha_daily=0.0,
@@ -88,7 +106,7 @@ async def portfolio_factors(
             last_date="",
             weights=weights,
             insufficient_data=True,
-            message="not enough overlapping data — need ≥30 trading days of bars + factors",
+            message=msg,
         )
 
     return FactorReport(

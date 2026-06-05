@@ -184,6 +184,7 @@ export default {
       new_bot: "New bot",
       none_yet: "No bots yet. Create one to automate paper trades.",
       login_required: "Sign in to create and run trading bots.",
+      sign_in_github: "Sign in with GitHub",
       no_creds: "Alpaca paper credentials not configured — bots can be built but not started.",
       name: "Name",
       strategy: "Strategy",

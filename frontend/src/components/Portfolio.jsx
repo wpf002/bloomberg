@@ -65,9 +65,9 @@ export default function Portfolio() {
       title={t("p.portfolio.title")}
       accent="amber"
       actions={
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           {account ? (
-            <span className="tabular text-terminal-muted">
+            <span className="min-w-0 truncate tabular text-terminal-muted">
               NAV {fmt(account.portfolio_value)}{" "}
               <span
                 className={
@@ -78,7 +78,8 @@ export default function Portfolio() {
               </span>
             </span>
           ) : null}
-          <div className="flex items-center gap-1">
+          {/* shrink-0 so the Manage tab is never pushed off the header edge */}
+          <div className="flex shrink-0 items-center gap-1">
             <TabButton active={tab === "positions"} onClick={() => setTab("positions")}>
               {t("p.portfolio.tabs.positions")}
             </TabButton>

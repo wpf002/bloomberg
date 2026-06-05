@@ -106,7 +106,15 @@ export default function BotsPanel({ activeSymbol }) {
       }
     >
       {needsLogin ? (
-        <div className="text-xs text-terminal-muted">{t("p.bots.login_required")}</div>
+        <div className="text-xs text-terminal-muted">
+          <p className="mb-2">{t("p.bots.login_required")}</p>
+          <a
+            href={api.authLoginUrl()}
+            className="inline-block border border-terminal-amber px-3 py-1 text-[11px] uppercase tracking-wider text-terminal-amber hover:bg-terminal-amber/10"
+          >
+            {t("p.bots.sign_in_github")}
+          </a>
+        </div>
       ) : status.alpaca_configured === false ? (
         <div className="mb-2 border border-terminal-amber/40 bg-terminal-amber/5 px-2 py-1 text-[11px] text-terminal-amber">
           {t("p.bots.no_creds")}
