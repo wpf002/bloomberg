@@ -107,7 +107,11 @@ export default function Chart({ symbol }) {
             locale: tvLocale(locale),
             timezone: "Etc/UTC",
             style: "1", // candles
-            hide_top_toolbar: false,
+            // Display-only: no in-widget editing surface. The panel's own
+            // timeframe buttons drive the interval; symbol follows the
+            // terminal's active symbol. Keeps the OHLC legend (read-only).
+            hide_top_toolbar: true,   // no in-widget interval/indicators/settings
+            hide_side_toolbar: true,  // no drawing tools
             hide_legend: false,
             save_image: false,
             allow_symbol_change: false,
