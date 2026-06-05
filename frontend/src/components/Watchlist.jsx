@@ -79,7 +79,7 @@ export default function Watchlist({ symbols, activeSymbol, onSelect, onRemove, o
                 : "text-terminal-muted"
             }
           >
-            ws {wsStatus === "open" ? t("watchlist.wsOpen") : wsStatus === "error" ? t("watchlist.wsError") : t("watchlist.wsClosed")}
+            WS {wsStatus === "open" ? t("watchlist.wsOpen") : wsStatus === "error" ? t("watchlist.wsError") : t("watchlist.wsClosed")}
           </span>
         </span>
       }

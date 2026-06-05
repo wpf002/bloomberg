@@ -9,6 +9,9 @@ import { useTranslation } from "../i18n/index.jsx";
 const FIELDS = ["price", "change_percent", "day_high", "day_low"];
 const OPS = [">", "<", ">=", "<=", "=="];
 
+// Capitalize a connection-status word: "open" → "Open", "reconnecting" → "Reconnecting".
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
 function fmt(value, digits = 2) {
   if (value == null || Number.isNaN(value)) return "--";
   return Number(value).toLocaleString(undefined, {
@@ -98,7 +101,7 @@ export default function AlertsPanel({ symbol }) {
                 : "text-terminal-muted"
             }
           >
-            {stream.status}
+            {cap(stream.status)}
           </span>{" "}
           · {t("p.alerts.rules_count", { count: rules.length })}
         </span>

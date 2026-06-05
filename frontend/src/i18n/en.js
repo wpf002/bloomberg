@@ -101,10 +101,10 @@ export default {
   },
   watchlist: {
     columns: { sym: "SYM", last: "LAST", chg: "CHG", pct: "%", vol: "VOL" },
-    syms: "{count} syms",
-    wsOpen: "open",
-    wsClosed: "closed",
-    wsError: "error",
+    syms: "{count} Sym(s)",
+    wsOpen: "Open",
+    wsClosed: "Closed",
+    wsError: "Error",
     loading: "Loading quotes…",
   },
   shared: {
@@ -413,8 +413,8 @@ export default {
     },
     alerts: {
       title: "Alerts",
-      ws: "WS:",
-      rules_count: "{count} rules",
+      ws: "WS",
+      rules_count: "{count} Rule(s)",
       new_for: "New rule for {sym}",
       add_for: "Add rule for {sym}",
       placeholder_value: "value",
