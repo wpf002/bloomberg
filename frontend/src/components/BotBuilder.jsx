@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import clsx from "clsx";
+import { Line, LineChart, ResponsiveContainer, Tooltip, YAxis } from "recharts";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
 
@@ -33,6 +34,25 @@ const STRATEGIES = [
       { key: "period", label: "Period", default: 14, step: 1 },
       { key: "low", label: "Oversold <", default: 30, step: 1 },
       { key: "high", label: "Overbought >", default: 70, step: 1 },
+      { key: "qty", label: "Shares", default: 1, step: 1 },
+    ],
+  },
+  {
+    key: "bollinger",
+    label: "Bollinger reversion",
+    blurb: "Buy when price closes below the lower band; sell the position above the upper band.",
+    params: [
+      { key: "period", label: "Period", default: 20, step: 1 },
+      { key: "std", label: "Std-dev mult", default: 2, step: 0.1 },
+      { key: "qty", label: "Shares", default: 1, step: 1 },
+    ],
+  },
+  {
+    key: "breakout",
+    label: "Donchian breakout",
+    blurb: "Buy when price breaks the N-day high; sell the position when it breaks the N-day low.",
+    params: [
+      { key: "lookback", label: "Lookback (days)", default: 20, step: 1 },
       { key: "qty", label: "Shares", default: 1, step: 1 },
     ],
   },
@@ -275,6 +295,28 @@ export default function BotBuilder({ defaultSymbol, status = {}, onCreated, onCa
             <Stat label={t("p.bots.max_dd")} value={`-${backtest.max_drawdown_pct}%`} tone="red" />
             <Stat label={t("p.bots.bars")} value={backtest.bars} />
           </div>
+          {backtest.equity_curve?.length > 1 && (
+            <div className="mt-2 h-24">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={backtest.equity_curve} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                  <YAxis hide domain={["dataMin", "dataMax"]} />
+                  <Tooltip
+                    contentStyle={{ background: "#1a1a1a", border: "1px solid #333", fontSize: 11 }}
+                    formatter={(v) => [`$${v}`, "equity"]}
+                    labelFormatter={() => ""}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="equity"
+                    stroke={backtest.pnl >= 0 ? "#26d07c" : "#ff5c5c"}
+                    dot={false}
+                    strokeWidth={1.5}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
 

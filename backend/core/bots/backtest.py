@@ -9,7 +9,7 @@ close. It tracks cash + a single position and reports P&L and max drawdown.
 
 from __future__ import annotations
 
-from .schemas import BacktestResult, BacktestTrade, BotConfig, StrategyKind
+from .schemas import BacktestResult, BacktestTrade, BotConfig, EquityPoint, StrategyKind
 from .strategies import StrategyContext, evaluate
 
 
@@ -91,6 +91,12 @@ def run_backtest(
             max_dd = max(max_dd, (peak - e) / peak)
 
     pnl = end_equity - start_cash
+    # Downsample the equity curve to ~60 points so the UI chart stays light.
+    step = max(1, len(equity_curve) // 60)
+    curve = [EquityPoint(i=i, equity=round(e, 2)) for i, e in enumerate(equity_curve) if i % step == 0]
+    if curve and curve[-1].i != len(equity_curve) - 1:
+        curve.append(EquityPoint(i=len(equity_curve) - 1, equity=round(equity_curve[-1], 2)))
+
     return BacktestResult(
         symbol=sym,
         strategy=config.strategy if isinstance(config.strategy, StrategyKind) else StrategyKind(config.strategy),
@@ -102,4 +108,5 @@ def run_backtest(
         num_trades=len(trades),
         bars=n,
         trades=trades,
+        equity_curve=curve,
     )

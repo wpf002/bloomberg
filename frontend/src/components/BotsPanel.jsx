@@ -48,6 +48,11 @@ export default function BotsPanel({ activeSymbol }) {
     10_000,
     [selectedId, refreshKey]
   );
+  const ordersQ = usePolling(
+    () => (selectedId ? api.botOrders(selectedId, 25) : Promise.resolve([])),
+    20_000,
+    [selectedId, refreshKey]
+  );
 
   const stream = useStream("/api/ws/bots", {
     onMessage: (msg) => {
@@ -157,12 +162,41 @@ export default function BotsPanel({ activeSymbol }) {
           {selected && (
             <>
               <BotApprovals pending={pendingQ.data || []} onResolved={refresh} />
+              <BotOrders orders={ordersQ.data || []} t={t} />
               <BotActivityFeed events={mergedEvents} />
             </>
           )}
         </>
       )}
     </Panel>
+  );
+}
+
+function BotOrders({ orders, t }) {
+  if (!Array.isArray(orders) || orders.length === 0) return null;
+  return (
+    <div className="mt-3">
+      <div className="text-[10px] uppercase tracking-widest text-terminal-muted">
+        {t("p.bots.orders", { count: orders.length })}
+      </div>
+      <table className="mt-1 w-full text-[11px] tabular">
+        <tbody>
+          {orders.slice(0, 12).map((o) => (
+            <tr key={o.id} className="border-b border-terminal-border/30">
+              <td className={clsx("py-0.5 pr-2 uppercase", o.side === "buy" ? "text-terminal-green" : "text-terminal-red")}>
+                {o.side}
+              </td>
+              <td className="py-0.5 pr-2 font-bold text-terminal-amber">{o.symbol}</td>
+              <td className="py-0.5 pr-2 text-right text-terminal-text">{o.qty}</td>
+              <td className="py-0.5 pr-2 text-terminal-muted">{o.status}</td>
+              <td className="py-0.5 text-right text-terminal-muted">
+                {o.submitted_at ? new Date(o.submitted_at).toLocaleTimeString() : ""}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

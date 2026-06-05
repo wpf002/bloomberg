@@ -18,6 +18,8 @@ class StrategyKind(str, Enum):
     threshold_dca = "threshold_dca"      # buy $X every -N% from a reference
     ma_crossover = "ma_crossover"        # fast/slow SMA cross → enter/exit
     rsi_reversion = "rsi_reversion"      # RSI < lo buy, > hi sell
+    bollinger = "bollinger"              # buy below lower band, sell above upper
+    breakout = "breakout"                # buy on N-day high break, sell on low break
     rebalance = "rebalance"              # drift positions toward target weights
     take_profit_stop = "take_profit_stop"  # exit rules on an open position
 
@@ -148,6 +150,11 @@ class BacktestTrade(BaseModel):
     reason: str = ""
 
 
+class EquityPoint(BaseModel):
+    i: int       # bar index
+    equity: float
+
+
 class BacktestResult(BaseModel):
     symbol: str
     strategy: StrategyKind
@@ -159,3 +166,4 @@ class BacktestResult(BaseModel):
     num_trades: int
     bars: int
     trades: list[BacktestTrade] = Field(default_factory=list)
+    equity_curve: list[EquityPoint] = Field(default_factory=list)

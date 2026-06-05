@@ -9,6 +9,7 @@ strategies and the LLM advisor only *propose*; guardrails *dispose*.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from .schemas import Guardrails, Intent
@@ -70,7 +71,7 @@ def check(intent: Intent, gr: Guardrails, ctx: GuardrailContext,
     if not ctx.market_open and not gr.allow_extended_hours:
         return Decision(False, "market closed and extended-hours disabled")
 
-    if ctx.price <= 0:
+    if ctx.price <= 0 or not math.isfinite(ctx.price):
         return Decision(False, "no live price")
 
     # Sells that reduce an existing position bypass the position-size / buying
@@ -86,7 +87,7 @@ def check(intent: Intent, gr: Guardrails, ctx: GuardrailContext,
 
     # 6. Buy-side sizing. Resolve to a notional, then to a fractional qty.
     notional = _notional(intent, ctx.price)
-    if notional <= 0:
+    if notional <= 0 or not math.isfinite(notional):
         return Decision(False, "buy notional resolves to zero")
 
     # Position notional cap.
@@ -103,6 +104,6 @@ def check(intent: Intent, gr: Guardrails, ctx: GuardrailContext,
         return Decision(False, f"insufficient buying power ({notional:.0f} > {ctx.buying_power:.0f})")
 
     qty = round(notional / ctx.price, 4)
-    if qty <= 0:
+    if qty <= 0 or not math.isfinite(qty):
         return Decision(False, "buy qty resolves to zero")
     return Decision(True, intent=intent.model_copy(update={"qty": qty, "notional": None}))

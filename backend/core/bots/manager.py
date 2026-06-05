@@ -40,7 +40,10 @@ logger = logging.getLogger(__name__)
 _ET = ZoneInfo("America/New_York")
 _INTERVAL_SECONDS = 60
 _LEADER_RENEW_SECONDS = 10
-_BARS_STRATEGIES = {StrategyKind.ma_crossover, StrategyKind.rsi_reversion}
+_BARS_STRATEGIES = {
+    StrategyKind.ma_crossover, StrategyKind.rsi_reversion,
+    StrategyKind.bollinger, StrategyKind.breakout,
+}
 _INTERVAL_STRATEGIES = {StrategyKind.rebalance}
 
 
@@ -139,15 +142,20 @@ class BotManager:
             return
         data = market_data_source()
         for bot in bots:
-            broker = await self._broker_for(bot)
-            if broker is None:
-                continue
-            account = await broker.get_account()
-            if account is None:
-                continue
-            positions = await broker.get_positions()
-            posmap = {p.symbol: p for p in positions}
-            await self._eval(bot, sym, price, account, posmap, broker, data)
+            # Per-bot isolation: one bot's failure must not starve the others
+            # sharing this tick.
+            try:
+                broker = await self._broker_for(bot)
+                if broker is None:
+                    continue
+                account = await broker.get_account()
+                if account is None:
+                    continue
+                positions = await broker.get_positions()
+                posmap = {p.symbol: p for p in positions}
+                await self._eval(bot, sym, price, account, posmap, broker, data)
+            except Exception as exc:
+                logger.debug("bot %s eval failed: %s", bot.id, exc)
 
     # ── interval loop (rebalance) ─────────────────────────────────────────
 
@@ -205,11 +213,25 @@ class BotManager:
                 closes = []
             closes.append(price)
 
+        # Reference price for threshold-style strategies (DCA): the PRIOR
+        # close — never the current mark (which equals the live tick and would
+        # make a "drop vs reference" impossible to detect). Prefer the bar
+        # series' prior close; otherwise the latest quote's previous_close.
+        # Without this, threshold_dca could never fire in the live loop.
+        reference_price = closes[-2] if len(closes) >= 2 else None
+        if reference_price is None:
+            try:
+                q = await data.get_stock_quote(symbol)
+                if q and q.previous_close:
+                    reference_price = q.previous_close
+            except Exception:
+                reference_price = None
+
         ctx = StrategyContext(
             symbol=symbol, price=price, closes=closes or [price],
             position_qty=pos_qty, position_avg=pos_avg,
             equity=account.equity, position_market_value=pos_mv,
-            reference_price=(pos.current_price if pos else None) or (closes[-2] if len(closes) >= 2 else None),
+            reference_price=reference_price,
             params=bot.config.params,
         )
         intents = evaluate(bot.config.strategy, ctx)
@@ -241,7 +263,10 @@ class BotManager:
                     detail={"intent": intent.model_dump(), "reason": decision.reason},
                 ))
                 if decision.kill:
+                    # Daily-loss breach → pause the bot and stop processing any
+                    # further intents this tick (they'd all be killed anyway).
                     await self._auto_pause(bot, decision.reason)
+                    return
                 continue
             await cooldowns.mark(bot.id, symbol, bot.guardrails.per_symbol_cooldown_seconds)
             await executor_mod.execute(bot, decision.intent or intent, broker=broker)

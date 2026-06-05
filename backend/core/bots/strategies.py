@@ -64,6 +64,16 @@ def rsi(values: list[float], period: int = 14) -> float | None:
     return 100.0 - (100.0 / (1.0 + rs))
 
 
+def stddev(values: list[float], period: int) -> float | None:
+    """Population standard deviation of the last `period` values."""
+    if period <= 0 or len(values) < period:
+        return None
+    window = values[-period:]
+    mean = sum(window) / period
+    var = sum((v - mean) ** 2 for v in window) / period
+    return var ** 0.5
+
+
 def _p(params: dict[str, Any], key: str, default: float) -> float:
     try:
         v = params.get(key, default)
@@ -148,6 +158,44 @@ def take_profit_stop(ctx: StrategyContext) -> list[Intent]:
     return []
 
 
+def bollinger(ctx: StrategyContext) -> list[Intent]:
+    """Mean-reversion on Bollinger bands: buy when price closes below the lower
+    band; sell the position when it closes above the upper band."""
+    period = int(_p(ctx.params, "period", 20))
+    mult = _p(ctx.params, "std", 2.0)
+    qty = _p(ctx.params, "qty", 1.0)
+    mid = sma(ctx.closes, period)
+    sd = stddev(ctx.closes, period)
+    if mid is None or sd is None or sd == 0:
+        return []
+    lower, upper = mid - mult * sd, mid + mult * sd
+    if ctx.price < lower:
+        return [Intent(symbol=ctx.symbol, side="buy", qty=qty, type="market",
+                       reason=f"price {ctx.price:.2f} < lower band {lower:.2f}")]
+    if ctx.price > upper and ctx.position_qty > 0:
+        return [Intent(symbol=ctx.symbol, side="sell", qty=min(qty, ctx.position_qty), type="market",
+                       reason=f"price {ctx.price:.2f} > upper band {upper:.2f}")]
+    return []
+
+
+def breakout(ctx: StrategyContext) -> list[Intent]:
+    """Donchian breakout: buy when price exceeds the highest close of the prior
+    `lookback` bars; sell the position when it falls below the lowest."""
+    lookback = int(_p(ctx.params, "lookback", 20))
+    qty = _p(ctx.params, "qty", 1.0)
+    if len(ctx.closes) < lookback + 1:
+        return []
+    prior = ctx.closes[-(lookback + 1):-1]  # exclude the current close
+    hi, lo = max(prior), min(prior)
+    if ctx.price > hi:
+        return [Intent(symbol=ctx.symbol, side="buy", qty=qty, type="market",
+                       reason=f"breakout: {ctx.price:.2f} > {lookback}d high {hi:.2f}")]
+    if ctx.price < lo and ctx.position_qty > 0:
+        return [Intent(symbol=ctx.symbol, side="sell", qty=min(qty, ctx.position_qty), type="market",
+                       reason=f"breakdown: {ctx.price:.2f} < {lookback}d low {lo:.2f}")]
+    return []
+
+
 def rebalance(ctx: StrategyContext) -> list[Intent]:
     """Drift the position toward a target weight of equity. `target_weight`
     is this symbol's share of the account (0..1); `band_pct` is the no-trade
@@ -177,6 +225,8 @@ STRATEGIES: dict[StrategyKind, Callable[[StrategyContext], list[Intent]]] = {
     StrategyKind.threshold_dca: threshold_dca,
     StrategyKind.ma_crossover: ma_crossover,
     StrategyKind.rsi_reversion: rsi_reversion,
+    StrategyKind.bollinger: bollinger,
+    StrategyKind.breakout: breakout,
     StrategyKind.take_profit_stop: take_profit_stop,
     StrategyKind.rebalance: rebalance,
 }

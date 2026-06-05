@@ -94,3 +94,29 @@ def test_rebalance_silent_within_band():
                           position_qty=490, position_market_value=4_900.0,
                           params={"target_weight": 0.5, "band_pct": 5})
     assert evaluate(StrategyKind.rebalance, ctx) == []
+
+
+def test_bollinger_buys_below_lower_band():
+    from backend.core.bots.strategies import stddev
+    # flat then a sharp drop on the last bar → price below lower band
+    closes = [float(c) for c in ([100] * 25)]
+    closes[-1] = 90.0
+    ctx = StrategyContext(symbol="X", price=90.0, closes=closes,
+                          params={"period": 20, "std": 2, "qty": 1})
+    out = evaluate(StrategyKind.bollinger, ctx)
+    assert out and out[0].side == "buy"
+
+
+def test_breakout_buys_on_new_high():
+    closes = [float(c) for c in range(100, 130)]  # steadily rising
+    ctx = StrategyContext(symbol="X", price=131.0, closes=closes + [131.0],
+                          params={"lookback": 20, "qty": 1})
+    out = evaluate(StrategyKind.breakout, ctx)
+    assert out and out[0].side == "buy"
+
+
+def test_breakout_silent_inside_range():
+    closes = [float(c) for c in ([100, 105, 95, 102, 98] * 6)]
+    ctx = StrategyContext(symbol="X", price=101.0, closes=closes,
+                          params={"lookback": 20, "qty": 1})
+    assert evaluate(StrategyKind.breakout, ctx) == []

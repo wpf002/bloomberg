@@ -214,6 +214,7 @@ export default {
       reject: "Reject",
       activity: "Activity",
       no_activity: "No activity yet.",
+      orders: "Orders ({count})",
     },
     watchlist: {
       remove_title: "Remove {sym}",

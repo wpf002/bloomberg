@@ -61,6 +61,13 @@ async def execute(bot: Bot, intent: Intent, *, broker=None) -> dict:
 
     # Approval gate — queue without needing a broker.
     if bot.require_approval:
+        # Dedupe: if an identical (symbol, side) approval is already pending for
+        # this bot, don't stack another — otherwise an away-from-keyboard user
+        # returns to a wall of duplicate approvals for the same signal.
+        existing = await store.list_pending(bot_id=bot.id, user_id=bot.user_id)
+        for p in existing:
+            if p.intent.symbol == intent.symbol and p.intent.side == intent.side:
+                return {"status": "pending", "pending_id": p.id, "deduped": True}
         action = await store.create_pending(PendingAction(bot_id=bot.id, user_id=bot.user_id, intent=intent))
         await _emit(bot, "signal", {"intent": intent.model_dump(), "pending_id": action.id, "awaiting_approval": True})
         return {"status": "pending", "pending_id": action.id}

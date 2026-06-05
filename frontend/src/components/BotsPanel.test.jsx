@@ -24,6 +24,7 @@ function routeFetch(overrides = {}) {
     if (url.includes("/api/bots/status")) return jsonResp({ paper: true, alpaca_configured: true, mode: "paper" });
     if (url.match(/\/api\/bots\/[^/]+\/events/)) return jsonResp([]);
     if (url.match(/\/api\/bots\/[^/]+\/pending/)) return jsonResp([]);
+    if (url.match(/\/api\/bots\/[^/]+\/orders/)) return jsonResp([]);
     if (url.match(/\/api\/bots\/[^/]+\/(start|pause|stop|kill)/)) return jsonResp({ ...BOT });
     if (url.endsWith("/api/bots")) return jsonResp(overrides.bots ?? [BOT]);
     return jsonResp({});
