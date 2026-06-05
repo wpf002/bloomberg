@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import Panel from "./Panel.jsx";
-import BotBuilder from "./BotBuilder.jsx";
+import BotBuilder, { STRATEGIES } from "./BotBuilder.jsx";
 import BotApprovals from "./BotApprovals.jsx";
 import BotActivityFeed from "./BotActivityFeed.jsx";
 import usePolling from "../hooks/usePolling.js";
 import useStream from "../hooks/useStream.js";
 import { api } from "../lib/api.js";
 import { useTranslation } from "../i18n/index.jsx";
+
+// key → display label, e.g. "threshold_dca" → "Threshold DCA" (shared with the builder)
+const STRATEGY_LABEL = Object.fromEntries(STRATEGIES.map((s) => [s.key, s.label]));
 
 const STATUS_TONE = {
   active: "text-terminal-green border-terminal-green/60",
@@ -224,7 +227,7 @@ function BotRow({ bot, selected, onSelect, onStart, onPause, onStop, onKill, onD
         <span className={clsx("rounded border px-1 text-[9px] uppercase tracking-widest", tone)}>{bot.status}</span>
         <span className="font-bold text-terminal-amber">{bot.name}</span>
         <span className="truncate text-terminal-muted">
-          {bot.config?.strategy} · {(bot.config?.symbols || []).join(" ")}
+          {STRATEGY_LABEL[bot.config?.strategy] || bot.config?.strategy} · {(bot.config?.symbols || []).join(" ")}
           {bot.decision_mode === "hybrid" ? " · AI" : ""}
           {bot.require_approval ? "" : " · auto"}
         </span>

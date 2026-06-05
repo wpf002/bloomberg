@@ -13,6 +13,25 @@ const KIND_TONE = {
   eval: "text-terminal-muted",
 };
 
+// Human-readable label per event kind (e.g. "lifecycle" → "LIFE CYCLE").
+const KIND_LABEL = {
+  order: "ORDER",
+  fill: "FILL",
+  signal: "SIGNAL",
+  llm: "AI",
+  reject: "REJECT",
+  error: "ERROR",
+  lifecycle: "LIFE CYCLE",
+  eval: "EVAL",
+};
+
+// Title-case an enum value: "auto_paused" → "Auto paused", "active" → "Active".
+function prettify(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
 function summarize(ev) {
   const d = ev.detail || {};
   const intent = d.intent || {};
@@ -27,7 +46,7 @@ function summarize(ev) {
     case "llm":
       return d.note || "advisor note";
     case "lifecycle":
-      return `${d.action || ""}${d.reason ? ` · ${d.reason}` : ""}`;
+      return `${prettify(d.action)}${d.reason ? ` · ${d.reason}` : ""}`;
     case "error":
       return d.reason || "error";
     default:
@@ -48,8 +67,8 @@ export default function BotActivityFeed({ events }) {
         <ul className="mt-1 space-y-0.5">
           {events.slice(0, 30).map((ev, i) => (
             <li key={`${ev.ts}-${i}`} className="flex items-baseline gap-2 border-b border-terminal-border/30 py-0.5 text-[11px]">
-              <span className={clsx("w-14 shrink-0 uppercase tracking-wider", KIND_TONE[ev.kind] || "text-terminal-muted")}>
-                {ev.kind}
+              <span className={clsx("shrink-0 whitespace-nowrap uppercase tracking-wider", KIND_TONE[ev.kind] || "text-terminal-muted")}>
+                {KIND_LABEL[ev.kind] || ev.kind}:
               </span>
               <span className="min-w-0 flex-1 truncate text-terminal-text">{summarize(ev)}</span>
               <span className="shrink-0 text-terminal-muted">
