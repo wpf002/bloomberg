@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # live trading also requires per-user live keys. Set BOTS_ALLOW_LIVE=true
     # only when you've deliberately decided to trade real money.
     bots_allow_live: bool = Field(default=False, alias="BOTS_ALLOW_LIVE")
+    # Read-only monitor token. When set, GET /api/bots/monitor?token=… returns a
+    # heartbeat summary of all active bots without a user session — so an
+    # external watcher (or an assistant) can answer "how are my bots doing".
+    bots_monitor_token: str | None = Field(default=None, alias="BOTS_MONITOR_TOKEN")
     # Encryption key for per-user broker credentials at rest. When unset we
     # derive a stable key from SECRET_KEY/JWT_SECRET (see core/encryption.py).
     broker_enc_key: str | None = Field(default=None, alias="BROKER_ENC_KEY")

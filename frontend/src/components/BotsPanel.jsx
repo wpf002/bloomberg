@@ -59,6 +59,11 @@ export default function BotsPanel({ activeSymbol }) {
     20_000,
     [selectedId, refreshKey]
   );
+  const healthQ = usePolling(
+    () => (selectedId ? api.botHealth(selectedId) : Promise.resolve(null)),
+    15_000,
+    [selectedId, refreshKey]
+  );
 
   const stream = useStream("/api/ws/bots", {
     onMessage: (msg) => {
@@ -175,6 +180,7 @@ export default function BotsPanel({ activeSymbol }) {
 
           {selected && (
             <>
+              <Heartbeat data={healthQ.data} status={selected.status} />
               <BotApprovals pending={pendingQ.data || []} onResolved={refresh} />
               <BotOrders orders={ordersQ.data || []} t={t} />
               <BotActivityFeed events={mergedEvents} />
@@ -183,6 +189,41 @@ export default function BotsPanel({ activeSymbol }) {
         </>
       )}
     </Panel>
+  );
+}
+
+// Live heartbeat strip — turns "Active + empty feed" into a clear "alive &
+// waiting, N% from triggering" read. Green dot = checked within 5 min.
+function Heartbeat({ data, status }) {
+  const snap = data?.snapshot;
+  if (!snap) {
+    return (
+      <div className="mt-3 border border-terminal-border/50 bg-terminal-panelAlt/40 px-2 py-1 text-[11px] leading-relaxed text-terminal-muted">
+        <span className="uppercase tracking-widest">Heartbeat</span> — none yet.
+        {status === "active"
+          ? " The bot writes one on each evaluation tick (every few seconds while the market is open). Empty during market hours means the engine isn't reaching it."
+          : " Start the bot to begin evaluations."}
+      </div>
+    );
+  }
+  const checked = snap.ts ? new Date(snap.ts) : null;
+  const fresh = checked ? Date.now() - checked.getTime() < 5 * 60 * 1000 : false;
+  return (
+    <div className="mt-3 border border-terminal-border/50 bg-terminal-panelAlt/40 px-2 py-1 text-[11px]">
+      <div className="flex items-center gap-2">
+        <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", fresh ? "bg-terminal-green" : "bg-terminal-muted")} />
+        <span className="uppercase tracking-widest text-terminal-muted">Heartbeat</span>
+        <span className="ml-auto tabular text-terminal-muted">
+          {checked ? checked.toLocaleTimeString() : "—"}
+          {snap.market_open ? "" : " · mkt closed"}
+        </span>
+      </div>
+      <div className="mt-0.5 tabular text-terminal-text">{snap.note}</div>
+      <div className="mt-0.5 text-[10px] text-terminal-muted">
+        {snap.orders_today ?? 0} order(s) today
+        {data?.leader === false ? " · standby instance" : ""}
+      </div>
+    </div>
   );
 }
 

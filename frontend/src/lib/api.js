@@ -159,6 +159,7 @@ export const api = {
   botOrders: (id, limit = 100) =>
     request(`/api/bots/${encodeURIComponent(id)}/orders?limit=${limit}`),
   botPending: (id) => request(`/api/bots/${encodeURIComponent(id)}/pending`),
+  botHealth: (id) => request(`/api/bots/${encodeURIComponent(id)}/health`),
   approveBotPending: (id, actionId) =>
     request(`/api/bots/${encodeURIComponent(id)}/pending/${encodeURIComponent(actionId)}/approve`, { method: "POST" }),
   rejectBotPending: (id, actionId) =>

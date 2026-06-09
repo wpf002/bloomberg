@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...core.auth import User, require_user
+from ...core.bots import health as health_mod
 from ...core.bots import manager
 from ...core.bots.backtest import run_backtest
+from ...core.bots.coordination import leader_lock
 from ...core.bots.executor import is_paper, place
 from ...core.bots.schemas import (
     BacktestResult,
@@ -69,6 +71,39 @@ async def bots_status() -> dict:
         "live_keys_present": bool(settings.alpaca_live_api_key and settings.alpaca_live_api_secret),
         "robinhood_enabled": bool(settings.robinhood_enabled),
         "mode": "paper",
+    }
+
+
+@router.get("/monitor")
+async def bots_monitor(token: str = Query(default="")) -> dict:
+    """Sessionless heartbeat of every active bot — for an external watcher (or
+    an assistant) answering "how are my bots doing". Gated by BOTS_MONITOR_TOKEN
+    so it never leaks bot state to the public. Read-only; no secrets."""
+    expected = settings.bots_monitor_token
+    if not expected:
+        raise HTTPException(status_code=503, detail="BOTS_MONITOR_TOKEN not configured on this server")
+    if token != expected:
+        raise HTTPException(status_code=401, detail="invalid monitor token")
+    active = await store.list_active_bots()
+    health = await health_mod.read_many([b.id for b in active])
+    bots = []
+    for b in active:
+        snap = health.get(b.id) or {}
+        bots.append({
+            "id": b.id, "name": b.name, "status": b.status.value,
+            "strategy": b.config.strategy.value, "symbols": b.config.symbols,
+            "broker": b.broker, "mode": b.mode,
+            "last_checked": snap.get("ts"),
+            "last_price": snap.get("price"),
+            "note": snap.get("note"),
+            "orders_today": snap.get("orders_today", 0),
+        })
+    return {
+        "active_count": len(active),
+        "leader": leader_lock.is_leader(),
+        "paper": is_paper(),
+        "live_enabled": bool(settings.bots_allow_live),
+        "bots": bots,
     }
 
 
@@ -245,6 +280,23 @@ async def bot_orders(bot_id: str, limit: int = 100, user: User = Depends(require
     if not bot:
         raise HTTPException(status_code=404, detail="bot not found")
     return await store.list_orders(bot_id, limit=limit)
+
+
+@router.get("/{bot_id}/health")
+async def bot_health(bot_id: str, user: User = Depends(require_user)) -> dict:
+    """Latest heartbeat for one bot: when it last evaluated, the price it saw,
+    and how far it is from triggering. Lets the panel show 'alive & waiting'
+    instead of an ambiguous empty feed."""
+    bot = await store.get_bot(bot_id, user_id=user.id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="bot not found")
+    snap = await health_mod.read(bot_id)
+    return {
+        "bot_id": bot_id,
+        "status": bot.status.value,
+        "snapshot": snap,          # None until the first eval tick lands
+        "leader": leader_lock.is_leader(),
+    }
 
 
 @router.get("/{bot_id}/pending", response_model=List[PendingAction])

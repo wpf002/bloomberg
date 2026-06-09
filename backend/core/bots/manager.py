@@ -20,13 +20,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from ..brokers import market_data_source, resolve_execution_broker
 from ..brokers.base import BrokerError
 from ..streaming import hub, iter_topic, streamer
 from . import advisor as advisor_mod
+from . import health as health_mod
 from . import executor as executor_mod
 from . import guardrails as guardrails_mod
 from .coordination import cooldowns, leader_lock
@@ -62,6 +64,7 @@ class BotManager:
         self._interval_task: asyncio.Task | None = None
         self._leader_task: asyncio.Task | None = None
         self._prices: dict[str, float] = {}
+        self._last_health: dict[str, float] = {}
 
     async def start(self) -> None:
         if self._task is not None:
@@ -196,6 +199,42 @@ class BotManager:
             logger.debug("bot %s broker unresolved (%s) — skipping", bot.id, exc)
             return None
 
+    # ── heartbeat ─────────────────────────────────────────────────────────
+
+    def _status_note(self, bot: Bot, symbol: str, price: float, reference_price: float | None) -> str:
+        """Human-readable one-liner: how far is price from doing something."""
+        strat = bot.config.strategy
+        if strat == StrategyKind.threshold_dca and reference_price:
+            drop = float(bot.config.params.get("drop_pct", 2.0) or 2.0)
+            pct = (price / reference_price - 1.0) * 100.0
+            return f"{symbol} {price:.2f} · {pct:+.2f}% vs prior close (buys at -{drop:.1f}%)"
+        if strat == StrategyKind.take_profit_stop:
+            return f"{symbol} {price:.2f} · watching for take-profit / stop"
+        return f"{symbol} {price:.2f} · evaluating {strat.value}"
+
+    async def _heartbeat(self, bot: Bot, symbol: str, price: float, reference_price: float | None) -> None:
+        # Throttle to ~once / 15s per bot so we don't hammer Redis on every tick.
+        now = time.monotonic()
+        if (now - self._last_health.get(bot.id, 0.0)) < 15.0:
+            return
+        self._last_health[bot.id] = now
+        try:
+            orders_today = await store.count_orders_today(bot.id)
+        except Exception:
+            orders_today = 0
+        try:
+            await health_mod.write(bot.id, {
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "symbol": symbol,
+                "price": round(price, 4),
+                "note": self._status_note(bot, symbol, price, reference_price),
+                "orders_today": orders_today,
+                "market_open": market_open(),
+                "is_leader": leader_lock.is_leader(),
+            })
+        except Exception as exc:
+            logger.debug("heartbeat write failed for bot %s: %s", bot.id, exc)
+
     # ── per-bot evaluation ────────────────────────────────────────────────
 
     async def _eval(self, bot: Bot, symbol: str, price: float, account, posmap, broker, data) -> None:
@@ -235,6 +274,9 @@ class BotManager:
             params=bot.config.params,
         )
         intents = evaluate(bot.config.strategy, ctx)
+        # Heartbeat on EVERY eval (throttled), so "Active + empty feed" reads as
+        # alive-and-waiting, with how far price is from triggering.
+        await self._heartbeat(bot, symbol, price, reference_price)
         if not intents:
             return
 
