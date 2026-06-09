@@ -11,6 +11,7 @@ const KIND_TONE = {
   error: "text-terminal-red",
   lifecycle: "text-terminal-blue",
   eval: "text-terminal-muted",
+  warning: "text-terminal-amber",
 };
 
 // Human-readable label per event kind (e.g. "lifecycle" → "LIFE CYCLE").
@@ -23,6 +24,7 @@ const KIND_LABEL = {
   error: "ERROR",
   lifecycle: "LIFE CYCLE",
   eval: "EVAL",
+  warning: "WARNING",
 };
 
 // Title-case an enum value: "auto_paused" → "Auto paused", "active" → "Active".
@@ -49,6 +51,8 @@ function summarize(ev) {
       return `${prettify(d.action)}${d.reason ? ` · ${d.reason}` : ""}`;
     case "error":
       return d.reason || "error";
+    case "warning":
+      return d.note || prettify(d.action) || "warning";
     default:
       return JSON.stringify(d).slice(0, 80);
   }

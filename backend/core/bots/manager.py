@@ -42,6 +42,12 @@ logger = logging.getLogger(__name__)
 _ET = ZoneInfo("America/New_York")
 _INTERVAL_SECONDS = 60
 _LEADER_RENEW_SECONDS = 10
+# Watchdog: during market hours an active bot should heartbeat well within this
+# window. Past it, the engine isn't reaching the bot → flag it in the feed.
+_STALE_SECONDS = 300
+# Grace after a bot first appears active (or after a restart) before a missing
+# heartbeat counts as stale — gives the streamer time to warm up.
+_WARMUP_SECONDS = 150
 _BARS_STRATEGIES = {
     StrategyKind.ma_crossover, StrategyKind.rsi_reversion,
     StrategyKind.bollinger, StrategyKind.breakout,
@@ -65,6 +71,8 @@ class BotManager:
         self._leader_task: asyncio.Task | None = None
         self._prices: dict[str, float] = {}
         self._last_health: dict[str, float] = {}
+        self._stale_warned: set[str] = set()       # bots currently flagged stale
+        self._watch_since: dict[str, float] = {}    # first-seen-active (warmup grace)
 
     async def start(self) -> None:
         if self._task is not None:
@@ -168,8 +176,12 @@ class BotManager:
                 await asyncio.sleep(_INTERVAL_SECONDS)
                 if not leader_lock.is_leader():
                     continue
-                bots = [b for b in await store.list_active_bots()
-                        if b.config.strategy in _INTERVAL_STRATEGIES]
+                active = await store.list_active_bots()
+                # Always-on watchdog: flag any active bot whose heartbeat has
+                # gone stale during market hours, straight into its feed.
+                if market_open():
+                    await self._watchdog(active)
+                bots = [b for b in active if b.config.strategy in _INTERVAL_STRATEGIES]
                 if not bots:
                     continue
                 data = market_data_source()
@@ -234,6 +246,49 @@ class BotManager:
             })
         except Exception as exc:
             logger.debug("heartbeat write failed for bot %s: %s", bot.id, exc)
+
+    async def _watchdog(self, active: list[Bot]) -> None:
+        """Flag active bots whose heartbeat has gone stale during market hours
+        by recording a warning event (which streams to the activity feed) — one
+        warning per stale episode, plus a recovery note when it resumes. Runs
+        only on the leader, only when the market is open."""
+        now = datetime.now(timezone.utc)
+        mono = time.monotonic()
+        live_ids = {b.id for b in active}
+        snaps = await health_mod.read_many(list(live_ids))
+        # forget bots that are no longer active
+        self._stale_warned &= live_ids
+        for stale_id in list(self._watch_since):
+            if stale_id not in live_ids:
+                self._watch_since.pop(stale_id, None)
+
+        for bot in active:
+            snap = snaps.get(bot.id)
+            reason: str | None = None
+            if snap and snap.get("ts"):
+                self._watch_since.pop(bot.id, None)
+                try:
+                    ts = datetime.fromisoformat(snap["ts"])
+                    age = (now - ts).total_seconds()
+                except ValueError:
+                    age = 0.0
+                if age > _STALE_SECONDS:
+                    reason = f"no heartbeat for {int(age // 60)}m (last check {ts.strftime('%H:%M')} UTC) — engine not reaching this bot"
+            else:
+                first = self._watch_since.setdefault(bot.id, mono)
+                if (mono - first) > _WARMUP_SECONDS:
+                    reason = "no heartbeat since it went active — engine isn't evaluating this bot"
+
+            if reason and bot.id not in self._stale_warned:
+                self._stale_warned.add(bot.id)
+                logger.warning("bot %s stale: %s", bot.id, reason)
+                await executor_mod._emit(bot, "warning", {"action": "heartbeat_stale", "note": reason})
+            elif not reason and bot.id in self._stale_warned:
+                self._stale_warned.discard(bot.id)
+                await executor_mod._emit(bot, "warning", {
+                    "action": "heartbeat_recovered",
+                    "note": "heartbeat resumed — bot is evaluating again",
+                })
 
     # ── per-bot evaluation ────────────────────────────────────────────────
 
