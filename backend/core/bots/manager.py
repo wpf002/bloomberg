@@ -116,11 +116,21 @@ class BotManager:
     # ── tick loop ─────────────────────────────────────────────────────────
 
     async def _run(self) -> None:
-        async for msg in iter_topic("quotes"):
+        # Self-reconnecting: if the quote stream ends, loop back and re-subscribe
+        # rather than letting the tick loop die permanently.
+        while True:
             try:
-                await self._on_tick(msg)
+                async for msg in iter_topic("quotes"):
+                    try:
+                        await self._on_tick(msg)
+                    except Exception as exc:
+                        logger.debug("bot tick eval error: %s", exc)
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                logger.debug("bot tick eval error: %s", exc)
+                logger.debug("bot tick loop restart: %s", exc)
+                await asyncio.sleep(1)
 
     def _ingest_price(self, msg: dict) -> tuple[str, float | None]:
         sym = (msg.get("symbol") or "").upper()
@@ -177,32 +187,70 @@ class BotManager:
                 if not leader_lock.is_leader():
                     continue
                 active = await store.list_active_bots()
-                # Always-on watchdog: flag any active bot whose heartbeat has
-                # gone stale during market hours, straight into its feed.
-                if market_open():
-                    await self._watchdog(active)
-                bots = [b for b in active if b.config.strategy in _INTERVAL_STRATEGIES]
-                if not bots:
-                    continue
                 data = market_data_source()
-                for bot in bots:
-                    broker = await self._broker_for(bot)
-                    if broker is None:
-                        continue
-                    account = await broker.get_account()
-                    if account is None:
-                        continue
-                    positions = await broker.get_positions()
-                    posmap = {p.symbol: p for p in positions}
-                    for sym in {s.upper() for s in bot.config.symbols}:
-                        quote = await data.get_stock_quote(sym)
-                        price = quote.price if quote else self._prices.get(sym)
-                        if price:
-                            await self._eval(bot, sym, price, account, posmap, broker, data)
+                if market_open():
+                    # Flag any bot whose heartbeat went stale...
+                    await self._watchdog(active)
+                    # ...then RE-EVALUATE EVERY ACTIVE BOT via direct quote
+                    # polling. This is the reliability floor: a dead or
+                    # disconnected quote stream can never make a bot silently
+                    # stop — every bot trades on at least the interval cadence.
+                    # The tick loop stays the fast path; cooldowns + idempotent
+                    # order ids make the overlap safe.
+                    for bot in active:
+                        await self._eval_bot_once(bot, data)
+                else:
+                    # Market closed: nothing to trade, but keep the heartbeat
+                    # fresh so the bot visibly stays alive instead of looking off.
+                    for bot in active:
+                        await self._standby_heartbeat(bot, data)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.debug("bot interval eval error: %s", exc)
+
+    async def _eval_bot_once(self, bot: Bot, data) -> None:
+        """Evaluate one bot across its symbols via direct quote polling —
+        independent of the streaming pipeline. Per-bot isolation."""
+        try:
+            broker = await self._broker_for(bot)
+            if broker is None:
+                return
+            account = await broker.get_account()
+            if account is None:
+                return
+            positions = await broker.get_positions()
+            posmap = {p.symbol: p for p in positions}
+            for sym in {s.upper() for s in bot.config.symbols}:
+                quote = await data.get_stock_quote(sym)
+                price = quote.price if quote else self._prices.get(sym)
+                if price:
+                    await self._eval(bot, sym, price, account, posmap, broker, data)
+        except Exception as exc:
+            logger.debug("bot %s interval eval failed: %s", bot.id, exc)
+
+    async def _standby_heartbeat(self, bot: Bot, data) -> None:
+        """Off-hours heartbeat: prove the bot is alive and standing by without
+        running the strategy (which would only reject on 'market closed')."""
+        syms = sorted({s.upper() for s in bot.config.symbols})
+        sym = syms[0] if syms else ""
+        price = None
+        try:
+            quote = await data.get_stock_quote(sym) if sym else None
+            price = (quote.price if quote else None) or self._prices.get(sym)
+        except Exception:
+            price = self._prices.get(sym)
+        note = f"{sym} {price:.2f} · standing by (market closed)" if price else "standing by — market closed"
+        self._last_health[bot.id] = time.monotonic()
+        try:
+            await health_mod.write(bot.id, {
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "symbol": sym, "price": round(price, 4) if price else None,
+                "note": note, "orders_today": 0,
+                "market_open": False, "is_leader": leader_lock.is_leader(),
+            })
+        except Exception as exc:
+            logger.debug("standby heartbeat failed for bot %s: %s", bot.id, exc)
 
     async def _broker_for(self, bot: Bot):
         try:

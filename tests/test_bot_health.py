@@ -4,6 +4,7 @@ always-on watchdog that flags stale heartbeats."""
 import asyncio
 import time
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from backend.core.bots import executor as executor_real
 from backend.core.bots import health
@@ -102,3 +103,35 @@ def test_watchdog_warmup_grace_for_missing_heartbeat(monkeypatch):
     mgr._watch_since[bot.id] = time.monotonic() - 1000
     asyncio.run(mgr._watchdog([bot]))
     assert any(d.get("action") == "heartbeat_stale" for _, d in emitted)
+
+
+def test_interval_floor_evaluates_bot_without_any_stream(monkeypatch):
+    """The reliability floor: even with zero quote-stream ticks, the interval
+    loop must still evaluate an active bot via direct polling — proof the bot
+    can't silently stop if streaming dies."""
+    bot = _dca_bot()
+    mgr = BotManager()
+    seen = []
+
+    async def fake_eval(b, sym, price, account, posmap, broker, data):
+        seen.append((sym, price))
+
+    class FakeBroker:
+        async def get_account(self):
+            return SimpleNamespace(equity=1000.0, buying_power=1000.0, last_equity=1000.0)
+
+        async def get_positions(self):
+            return []
+
+    class FakeData:
+        async def get_stock_quote(self, sym):
+            return SimpleNamespace(price=601.0)
+
+    async def fake_broker_for(b):
+        return FakeBroker()
+
+    monkeypatch.setattr(mgr, "_eval", fake_eval)
+    monkeypatch.setattr(mgr, "_broker_for", fake_broker_for)
+
+    asyncio.run(mgr._eval_bot_once(bot, FakeData()))
+    assert seen == [("SPY", 601.0)]
