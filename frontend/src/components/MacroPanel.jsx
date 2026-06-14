@@ -16,6 +16,9 @@ import { useTranslation } from "../i18n/index.jsx";
 
 const DEFAULTS = ["DGS10", "FEDFUNDS", "CPIAUCSL", "UNRATE", "VIXCLS"];
 
+// Series the Prophet service can forecast (mirrors settings.prophet_macro_series).
+const FORECASTABLE = new Set(["CPIAUCSL", "UNRATE"]);
+
 const PERCENT_SERIES = new Set([
   "DGS10",
   "DGS2",
@@ -73,6 +76,25 @@ export default function MacroPanel() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showForecast, setShowForecast] = useState(false);
+  const [forecast, setForecast] = useState(null);
+
+  const canForecast = FORECASTABLE.has(active);
+
+  useEffect(() => {
+    if (!showForecast || !canForecast) {
+      setForecast(null);
+      return undefined;
+    }
+    let cancelled = false;
+    api
+      .macroForecast(active, 12, 80)
+      .then((payload) => !cancelled && setForecast(payload))
+      .catch(() => !cancelled && setForecast(null));
+    return () => {
+      cancelled = true;
+    };
+  }, [active, showForecast, canForecast]);
 
   useEffect(() => {
     api
@@ -122,6 +144,20 @@ export default function MacroPanel() {
     return { first, last, min, max, change, changePct, range };
   }, [points]);
 
+  // Merge history with the forecast: a bridge point joins the lines, and each
+  // projected point carries a [lo, hi] band recharts renders as a range Area.
+  const chartData = useMemo(() => {
+    const hist = points.map((p) => ({ ...p }));
+    if (!forecast?.points?.length) return hist;
+    if (hist.length) hist[hist.length - 1].forecast = hist[hist.length - 1].value;
+    const fc = forecast.points.map((p) => ({
+      t: new Date(p.date).getTime(),
+      forecast: p.value,
+      band: p.lo != null && p.hi != null ? [p.lo, p.hi] : undefined,
+    }));
+    return [...hist, ...fc];
+  }, [points, forecast]);
+
   const changeTone =
     summary == null
       ? "text-terminal-muted"
@@ -134,17 +170,34 @@ export default function MacroPanel() {
       title={t("panels.macro")}
       accent="green"
       actions={
-        <select
-          value={active}
-          onChange={(e) => setActive(e.target.value)}
-          className="bg-terminal-panelAlt text-terminal-text text-xs border border-terminal-border px-1 py-0.5"
-        >
-          {series.map((id) => (
-            <option key={id} value={id}>
-              {id}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          {canForecast ? (
+            <button
+              type="button"
+              onClick={() => setShowForecast((v) => !v)}
+              title="Forecast next 12 months (Prophet · AutoETS)"
+              className={clsx(
+                "text-xs border px-1.5 py-0.5",
+                showForecast
+                  ? "border-terminal-amber text-terminal-amber"
+                  : "border-terminal-border text-terminal-muted"
+              )}
+            >
+              {t("p.macro.forecast") || "Forecast"}
+            </button>
+          ) : null}
+          <select
+            value={active}
+            onChange={(e) => setActive(e.target.value)}
+            className="bg-terminal-panelAlt text-terminal-text text-xs border border-terminal-border px-1 py-0.5"
+          >
+            {series.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </div>
       }
     >
       {loading && !data ? (
@@ -193,7 +246,7 @@ export default function MacroPanel() {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart
-                  data={points}
+                  data={chartData}
                   margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
                 >
                   <defs>
@@ -256,6 +309,31 @@ export default function MacroPanel() {
                     activeDot={{ r: 3, fill: "#00d26a", stroke: "#0b0d10", strokeWidth: 1 }}
                     isAnimationActive={false}
                   />
+                  {forecast ? (
+                    <Area
+                      type="monotone"
+                      dataKey="band"
+                      stroke="none"
+                      fill="#f5a623"
+                      fillOpacity={0.14}
+                      connectNulls
+                      isAnimationActive={false}
+                      activeDot={false}
+                    />
+                  ) : null}
+                  {forecast ? (
+                    <Area
+                      type="monotone"
+                      dataKey="forecast"
+                      stroke="#f5a623"
+                      strokeWidth={1.75}
+                      strokeDasharray="4 3"
+                      fill="none"
+                      dot={false}
+                      connectNulls
+                      isAnimationActive={false}
+                    />
+                  ) : null}
                 </AreaChart>
               </ResponsiveContainer>
             )}

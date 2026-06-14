@@ -47,6 +47,10 @@ export const api = {
   macroSeries: () => request(`/api/macro/series`),
   macroSeriesData: (id, limit = 120) =>
     request(`/api/macro/series/${encodeURIComponent(id)}?limit=${limit}`),
+  macroForecast: (id, horizon = 12, level = 80) =>
+    request(
+      `/api/macro/forecast/${encodeURIComponent(id)}?horizon=${horizon}&level=${level}`
+    ),
   crypto: (symbols) =>
     request(
       `/api/crypto${symbols ? `?symbols=${encodeURIComponent(symbols.join(","))}` : ""}`
