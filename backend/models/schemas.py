@@ -49,6 +49,21 @@ class MacroSeries(BaseModel):
     observations: List[MacroSeriesPoint] = Field(default_factory=list)
 
 
+class MacroForecastPoint(BaseModel):
+    date: date
+    value: float
+    lo: Optional[float] = None  # lower interval bound (if requested)
+    hi: Optional[float] = None  # upper interval bound (if requested)
+
+
+class MacroForecast(BaseModel):
+    series_id: str
+    model: str  # e.g. "macro:AutoETS"
+    horizon: int
+    generated_at: Optional[str] = None
+    points: List[MacroForecastPoint] = Field(default_factory=list)
+
+
 class NewsItem(BaseModel):
     id: str
     headline: str

@@ -54,6 +54,15 @@ class Settings(BaseSettings):
     alpaca_live_api_key: str | None = Field(default=None, alias="ALPACA_LIVE_API_KEY")
     alpaca_live_api_secret: str | None = Field(default=None, alias="ALPACA_LIVE_API_SECRET")
 
+    # ── Prophet forecasting service ──────────────────────────────────────
+    # Read-only forecasting API (https://github.com/wpf002/prophet). Used to
+    # project macro series forward (GET /api/macro/forecast/{series_id}). The
+    # 'macro' model serves the forecastable FRED series below.
+    prophet_url: str = Field(
+        default="https://prophet-api-production.up.railway.app", alias="PROPHET_URL"
+    )
+    prophet_macro_series: tuple[str, ...] = ("CPIAUCSL", "UNRATE")
+
     # ── trading-bot broker controls ──────────────────────────────────────
     # Master switch for live (real-money) bot execution. OFF by default —
     # live trading also requires per-user live keys. Set BOTS_ALLOW_LIVE=true
