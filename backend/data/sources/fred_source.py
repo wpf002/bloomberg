@@ -29,6 +29,10 @@ DEFAULT_SERIES_METADATA = {
     "T10Y2Y": ("10Y-2Y Treasury Spread", "Percent", "Daily"),
     "VIXCLS": ("CBOE Volatility Index: VIX", "Index", "Daily"),
     "DCOILWTICO": ("Crude Oil Prices: WTI", "Dollars per Barrel", "Daily"),
+    # Forecastable monthly indicators (Prophet macro model serves these).
+    "RSAFS": ("Advance Retail Sales", "Millions of Dollars", "Monthly"),
+    "PCEPI": ("PCE Price Index", "Index 2017=100", "Monthly"),
+    "TOTALSA": ("Total Vehicle Sales", "Millions of Units", "Monthly"),
 }
 
 

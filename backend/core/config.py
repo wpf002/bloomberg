@@ -61,7 +61,13 @@ class Settings(BaseSettings):
     prophet_url: str = Field(
         default="https://prophet-api-production.up.railway.app", alias="PROPHET_URL"
     )
-    prophet_macro_series: tuple[str, ...] = ("CPIAUCSL", "UNRATE")
+    prophet_macro_series: tuple[str, ...] = (
+        "CPIAUCSL",
+        "UNRATE",
+        "RSAFS",
+        "PCEPI",
+        "TOTALSA",
+    )
 
     # ── trading-bot broker controls ──────────────────────────────────────
     # Master switch for live (real-money) bot execution. OFF by default —

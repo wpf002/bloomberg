@@ -17,7 +17,7 @@ import { useTranslation } from "../i18n/index.jsx";
 const DEFAULTS = ["DGS10", "FEDFUNDS", "CPIAUCSL", "UNRATE", "VIXCLS"];
 
 // Series the Prophet service can forecast (mirrors settings.prophet_macro_series).
-const FORECASTABLE = new Set(["CPIAUCSL", "UNRATE"]);
+const FORECASTABLE = new Set(["CPIAUCSL", "UNRATE", "RSAFS", "PCEPI", "TOTALSA"]);
 
 const PERCENT_SERIES = new Set([
   "DGS10",
