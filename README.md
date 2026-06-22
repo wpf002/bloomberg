@@ -10,6 +10,10 @@ feature-by-feature comparison against the commercial Bloomberg Terminal and
 the roadmap to parity (and beyond, on the things that actually matter to
 retail and prosumer users).
 
+See [PROJECT.md](./PROJECT.md) for a full architecture overview — stack, data
+layer, API surface, the four engines (intelligence, risk, advisor, trading
+bots), and deployment.
+
 ## Stack
 
 - **Backend:** Python 3.11, FastAPI, asyncpg (PostgreSQL), redis-py (Redis),
