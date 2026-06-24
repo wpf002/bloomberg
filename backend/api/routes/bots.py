@@ -17,6 +17,7 @@ from ...core.bots import manager
 from ...core.bots.backtest import run_backtest
 from ...core.bots.coordination import leader_lock
 from ...core.bots.executor import is_paper, place
+from ...core.bots.outcomes import outcome_store
 from ...core.bots.schemas import (
     BacktestResult,
     Bot,
@@ -26,9 +27,12 @@ from ...core.bots.schemas import (
     BotOrder,
     BotStatus,
     BotUpdateRequest,
+    LearnedParams,
     PendingAction,
+    TuneResult,
 )
 from ...core.bots.store import store
+from ...core.bots import tuner as tuner_mod
 from ...core.brokers import resolve_execution_broker
 from ...core.brokers.base import BrokerError
 from ...core.config import settings
@@ -330,6 +334,57 @@ async def reject_pending(bot_id: str, action_id: str, user: User = Depends(requi
         detail={"action": "rejected_pending", "pending_id": action_id},
     ))
     return {"rejected": True}
+
+
+# ── learning engine ───────────────────────────────────────────────────────
+
+
+@router.get("/{bot_id}/learned-params", response_model=list[LearnedParams])
+async def bot_learned_params(bot_id: str, user: User = Depends(require_user)) -> list[LearnedParams]:
+    """All learned parameter sets for this bot, one per regime that has been tuned.
+    Returns an empty list until the bot has accumulated enough trade outcomes."""
+    bot = await store.get_bot(bot_id, user_id=user.id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="bot not found")
+    return await outcome_store.list_learned(bot_id)
+
+
+@router.post("/{bot_id}/tune", response_model=TuneResult)
+async def tune_bot(
+    bot_id: str,
+    regime: str = Query(default="any"),
+    user: User = Depends(require_user),
+) -> TuneResult:
+    """Manually trigger a parameter grid-search for this bot over 3mo of history.
+    The best-scoring param set is saved and immediately applied. Regime defaults
+    to 'any'; pass ?regime=risk_on (or whatever your current regime label is) to
+    tune for a specific environment."""
+    bot = await store.get_bot(bot_id, user_id=user.id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="bot not found")
+    alpaca = get_alpaca_source()
+    symbol = bot.config.symbols[0].upper() if bot.config.symbols else None
+    if not symbol:
+        raise HTTPException(status_code=422, detail="bot has no symbols configured")
+    bars = await alpaca.get_stock_bars(symbol, period="3mo", interval="1d")
+    closes = [b.close for b in bars if b.close]
+    if len(closes) < tuner_mod.MIN_BARS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"not enough price history ({len(closes)} bars, need {tuner_mod.MIN_BARS})",
+        )
+    result = await tuner_mod.tune(bot, closes, regime=regime)
+    if result.improved:
+        await store.record_event(BotEvent(
+            bot_id=bot_id, user_id=user.id, kind="tune",
+            detail={
+                "regime": result.regime,
+                "score": result.score,
+                "params": result.params,
+                "note": f"manual tune — regime={result.regime} score={result.score:.3f}",
+            },
+        ))
+    return result
 
 
 # ── dry-run / backtest ─────────────────────────────────────────────────────

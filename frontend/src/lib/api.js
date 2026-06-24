@@ -164,6 +164,9 @@ export const api = {
     request(`/api/bots/${encodeURIComponent(id)}/orders?limit=${limit}`),
   botPending: (id) => request(`/api/bots/${encodeURIComponent(id)}/pending`),
   botHealth: (id) => request(`/api/bots/${encodeURIComponent(id)}/health`),
+  botLearnedParams: (id) => request(`/api/bots/${encodeURIComponent(id)}/learned-params`),
+  botTune: (id, regime = "any") =>
+    request(`/api/bots/${encodeURIComponent(id)}/tune?regime=${encodeURIComponent(regime)}`, { method: "POST" }),
   approveBotPending: (id, actionId) =>
     request(`/api/bots/${encodeURIComponent(id)}/pending/${encodeURIComponent(actionId)}/approve`, { method: "POST" }),
   rejectBotPending: (id, actionId) =>

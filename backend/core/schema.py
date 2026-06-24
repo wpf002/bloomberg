@@ -173,6 +173,37 @@ CREATE TABLE IF NOT EXISTS user_broker_credentials (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, broker_name, mode)
 );
+
+-- Bot learning engine — trade context snapshots and learned parameter sets.
+-- bot_trade_outcomes: one row per placed/queued order with the full indicator
+-- snapshot at the time the strategy fired (regime, price, closes window).
+-- bot_learned_params: one row per (bot, regime) with the param set that scored
+-- highest on recent price history; updated every TUNE_THRESHOLD new outcomes.
+CREATE TABLE IF NOT EXISTS bot_trade_outcomes (
+    id              TEXT PRIMARY KEY,
+    bot_id          TEXT NOT NULL,
+    user_id         BIGINT,
+    bot_order_id    TEXT,
+    symbol          TEXT NOT NULL,
+    side            TEXT NOT NULL,
+    price           DOUBLE PRECISION,
+    qty             DOUBLE PRECISION,
+    regime          TEXT,
+    indicator_snap  JSONB,
+    fired_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS bot_trade_outcomes_bot_idx
+    ON bot_trade_outcomes(bot_id, fired_at DESC);
+
+CREATE TABLE IF NOT EXISTS bot_learned_params (
+    bot_id     TEXT NOT NULL,
+    regime     TEXT NOT NULL DEFAULT 'any',
+    params     JSONB NOT NULL,
+    score      DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    trades     INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (bot_id, regime)
+);
 """
 
 

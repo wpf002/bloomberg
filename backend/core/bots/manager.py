@@ -31,9 +31,11 @@ from . import advisor as advisor_mod
 from . import health as health_mod
 from . import executor as executor_mod
 from . import guardrails as guardrails_mod
+from . import tuner as tuner_mod
 from .coordination import cooldowns, leader_lock
 from .guardrails import GuardrailContext
-from .schemas import Bot, BotEvent, BotStatus, DecisionMode, StrategyKind
+from .outcomes import outcome_store
+from .schemas import Bot, BotEvent, BotStatus, DecisionMode, StrategyKind, TradeOutcome
 from .store import store
 from .strategies import StrategyContext, evaluate
 
@@ -53,6 +55,7 @@ _BARS_STRATEGIES = {
     StrategyKind.bollinger, StrategyKind.breakout,
 }
 _INTERVAL_STRATEGIES = {StrategyKind.rebalance}
+_REGIME_TTL = 300   # seconds between regime refreshes in the interval loop
 
 
 def market_open(now: datetime | None = None) -> bool:
@@ -73,6 +76,10 @@ class BotManager:
         self._last_health: dict[str, float] = {}
         self._stale_warned: set[str] = set()       # bots currently flagged stale
         self._watch_since: dict[str, float] = {}    # first-seen-active (warmup grace)
+        # Learning engine state
+        self._current_regime: str = "any"           # cached regime label
+        self._regime_ts: float = 0.0                # monotonic time of last regime fetch
+        self._learned_overlay: dict[str, dict] = {} # bot_id → param overlay for current regime
 
     async def start(self) -> None:
         if self._task is not None:
@@ -188,6 +195,11 @@ class BotManager:
                     continue
                 active = await store.list_active_bots()
                 data = market_data_source()
+
+                # Refresh regime label and learned-param overlay periodically.
+                await self._refresh_regime()
+                await self._refresh_learned_overlay(active)
+
                 if market_open():
                     # Flag any bot whose heartbeat went stale...
                     await self._watchdog(active)
@@ -199,6 +211,10 @@ class BotManager:
                     # order ids make the overlap safe.
                     for bot in active:
                         await self._eval_bot_once(bot, data)
+                    # Learning engine: check whether any bot has accumulated
+                    # enough new outcomes to warrant a parameter tune.
+                    for bot in active:
+                        await self._maybe_tune_bot(bot, data)
                 else:
                     # Market closed: nothing to trade, but keep the heartbeat
                     # fresh so the bot visibly stays alive instead of looking off.
@@ -208,6 +224,57 @@ class BotManager:
                 raise
             except Exception as exc:
                 logger.debug("bot interval eval error: %s", exc)
+
+    async def _refresh_regime(self) -> None:
+        mono = time.monotonic()
+        if mono - self._regime_ts < _REGIME_TTL:
+            return
+        try:
+            from ...services.intelligence_engine import regime_now  # avoid circular at import time
+            payload = await regime_now()
+            self._current_regime = payload.get("regime", "any") or "any"
+        except Exception as exc:
+            logger.debug("regime refresh failed: %s", exc)
+        self._regime_ts = time.monotonic()
+
+    async def _refresh_learned_overlay(self, active: list[Bot]) -> None:
+        """Reload learned params for the current regime for every active bot."""
+        regime = self._current_regime
+        for bot in active:
+            try:
+                learned = await outcome_store.get_learned(bot.id, regime)
+                if learned and learned.params:
+                    self._learned_overlay[bot.id] = learned.params
+                else:
+                    self._learned_overlay.pop(bot.id, None)
+            except Exception as exc:
+                logger.debug("learned overlay refresh failed for bot %s: %s", bot.id, exc)
+
+    async def _maybe_tune_bot(self, bot: Bot, data) -> None:
+        """Run the parameter tuner for a bot if enough new outcomes have arrived."""
+        try:
+            syms = [s.upper() for s in bot.config.symbols]
+            sym = syms[0] if syms else None
+            if not sym:
+                return
+            bars = await data.get_stock_bars(sym, period="3mo", interval="1d")
+            closes = [b.close for b in bars if b.close]
+            if not closes:
+                return
+            result = await tuner_mod.maybe_tune(bot, closes, regime=self._current_regime)
+            if result and result.improved:
+                self._learned_overlay[bot.id] = result.params
+                await store.record_event(BotEvent(
+                    bot_id=bot.id, user_id=bot.user_id, kind="tune",
+                    detail={
+                        "regime": result.regime,
+                        "score": result.score,
+                        "params": result.params,
+                        "note": f"params updated for regime={result.regime} (score {result.score:.3f})",
+                    },
+                ))
+        except Exception as exc:
+            logger.debug("tune failed for bot %s: %s", bot.id, exc)
 
     async def _eval_bot_once(self, bot: Bot, data) -> None:
         """Evaluate one bot across its symbols via direct quote polling —
@@ -291,6 +358,8 @@ class BotManager:
                 "orders_today": orders_today,
                 "market_open": market_open(),
                 "is_leader": leader_lock.is_leader(),
+                "regime": self._current_regime,
+                "learned": bool(self._learned_overlay.get(bot.id)),
             })
         except Exception as exc:
             logger.debug("heartbeat write failed for bot %s: %s", bot.id, exc)
@@ -369,12 +438,18 @@ class BotManager:
             except Exception:
                 reference_price = None
 
+        # Apply learned param overlay for the current regime (if available).
+        active_params = dict(bot.config.params)
+        overlay = self._learned_overlay.get(bot.id)
+        if overlay:
+            active_params = {**active_params, **overlay}
+
         ctx = StrategyContext(
             symbol=symbol, price=price, closes=closes or [price],
             position_qty=pos_qty, position_avg=pos_avg,
             equity=account.equity, position_market_value=pos_mv,
             reference_price=reference_price,
-            params=bot.config.params,
+            params=active_params,
         )
         intents = evaluate(bot.config.strategy, ctx)
         # Heartbeat on EVERY eval (throttled), so "Active + empty feed" reads as
@@ -414,8 +489,32 @@ class BotManager:
                     return
                 continue
             await cooldowns.mark(bot.id, symbol, bot.guardrails.per_symbol_cooldown_seconds)
-            await executor_mod.execute(bot, decision.intent or intent, broker=broker)
+            fired_intent = decision.intent or intent
+            result = await executor_mod.execute(bot, fired_intent, broker=broker)
             gctx.orders_today += 1  # reflect within this tick
+            # Learning engine: log a trade-context snapshot for every fired intent.
+            try:
+                snap: dict = {
+                    "price": price,
+                    "reference_price": reference_price,
+                    "closes_tail": (closes or [])[-5:],
+                    "position_qty": pos_qty,
+                    "position_avg": pos_avg,
+                    "strategy": bot.config.strategy.value,
+                    "active_params": active_params,
+                    "regime": self._current_regime,
+                    "learned_overlay": bool(overlay),
+                }
+                await outcome_store.log_trade(TradeOutcome(
+                    bot_id=bot.id, user_id=bot.user_id,
+                    bot_order_id=result.get("bot_order_id") if isinstance(result, dict) else None,
+                    symbol=symbol, side=fired_intent.side,
+                    price=price, qty=fired_intent.qty or 0.0,
+                    regime=self._current_regime,
+                    indicator_snap=snap,
+                ))
+            except Exception as exc:
+                logger.debug("outcome log failed for bot %s: %s", bot.id, exc)
 
     async def _auto_pause(self, bot: Bot, reason: str) -> None:
         bot.status = BotStatus.paused

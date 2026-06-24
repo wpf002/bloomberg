@@ -64,6 +64,29 @@ export default function BotsPanel({ activeSymbol }) {
     15_000,
     [selectedId, refreshKey]
   );
+  const learnedQ = usePolling(
+    () => (selectedId ? api.botLearnedParams(selectedId) : Promise.resolve([])),
+    60_000,
+    [selectedId, refreshKey]
+  );
+  const [tuning, setTuning] = useState(false);
+  const [tuneResult, setTuneResult] = useState(null);
+
+  const runTune = async () => {
+    if (!selectedId) return;
+    setTuning(true);
+    setTuneResult(null);
+    try {
+      const regime = healthQ.data?.snapshot?.regime || "any";
+      const r = await api.botTune(selectedId, regime);
+      setTuneResult(r);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      setTuneResult({ error: e?.detail || e?.message || "tune failed" });
+    } finally {
+      setTuning(false);
+    }
+  };
 
   const stream = useStream("/api/ws/bots", {
     onMessage: (msg) => {
@@ -181,6 +204,13 @@ export default function BotsPanel({ activeSymbol }) {
           {selected && (
             <>
               <Heartbeat data={healthQ.data} status={selected.status} />
+              <Learning
+                learned={learnedQ.data || []}
+                regime={healthQ.data?.snapshot?.regime}
+                onTune={runTune}
+                tuning={tuning}
+                tuneResult={tuneResult}
+              />
               <BotApprovals pending={pendingQ.data || []} onResolved={refresh} />
               <BotOrders orders={ordersQ.data || []} t={t} />
               <BotActivityFeed events={mergedEvents} />
@@ -223,6 +253,63 @@ function Heartbeat({ data, status }) {
         {snap.orders_today ?? 0} order(s) today
         {data?.leader === false ? " · standby instance" : ""}
       </div>
+    </div>
+  );
+}
+
+function Learning({ learned, regime, onTune, tuning, tuneResult }) {
+  const active = learned?.find((l) => l.regime === regime || l.regime === "any");
+  return (
+    <div className="mt-2 border border-terminal-border/50 bg-terminal-panelAlt/40 px-2 py-1 text-[11px]">
+      <div className="flex items-center gap-2">
+        <span className="uppercase tracking-widest text-terminal-muted">Learning</span>
+        {regime && (
+          <span className="rounded border border-terminal-blue/50 px-1 text-[9px] uppercase tracking-widest text-terminal-blue">
+            {regime}
+          </span>
+        )}
+        <button
+          onClick={onTune}
+          disabled={tuning}
+          className="ml-auto border border-terminal-border/60 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-terminal-muted hover:border-terminal-amber/60 hover:text-terminal-amber disabled:opacity-40"
+        >
+          {tuning ? "tuning…" : "tune now"}
+        </button>
+      </div>
+
+      {tuneResult && (
+        <div className={clsx("mt-0.5 text-[10px]", tuneResult.error ? "text-terminal-red" : tuneResult.improved ? "text-terminal-green" : "text-terminal-muted")}>
+          {tuneResult.error
+            ? tuneResult.error
+            : tuneResult.improved
+            ? `Improved — score ${tuneResult.score.toFixed(3)}`
+            : `No improvement (score ${tuneResult.score.toFixed(3)})`}
+        </div>
+      )}
+
+      {learned?.length > 0 ? (
+        <div className="mt-1 space-y-0.5">
+          {learned.map((l) => (
+            <div key={l.regime} className="flex items-center gap-2 text-[10px]">
+              <span className={clsx("shrink-0 text-terminal-muted", l.regime === regime ? "text-terminal-text" : "")}>
+                {l.regime}
+              </span>
+              <span className="truncate text-terminal-muted">
+                {Object.entries(l.params || {})
+                  .map(([k, v]) => `${k}=${typeof v === "number" ? v.toFixed(2).replace(/\.?0+$/, "") : v}`)
+                  .join(" · ")}
+              </span>
+              <span className="ml-auto shrink-0 tabular text-terminal-muted">
+                score {l.score.toFixed(2)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-0.5 text-[10px] text-terminal-muted">
+          No learned params yet — accumulates after {20} trade outcomes.
+        </div>
+      )}
     </div>
   );
 }

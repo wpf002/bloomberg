@@ -167,3 +167,40 @@ class BacktestResult(BaseModel):
     bars: int
     trades: list[BacktestTrade] = Field(default_factory=list)
     equity_curve: list[EquityPoint] = Field(default_factory=list)
+
+
+# ── learning engine ────────────────────────────────────────────────────────
+
+
+class TradeOutcome(BaseModel):
+    """Context snapshot logged at the moment a strategy fires an order."""
+    id: str = Field(default_factory=_new_id)
+    bot_id: str
+    user_id: Optional[int] = None
+    bot_order_id: Optional[str] = None
+    symbol: str
+    side: str
+    price: float
+    qty: float = 0.0
+    regime: Optional[str] = None
+    indicator_snap: dict[str, Any] = Field(default_factory=dict)
+    fired_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LearnedParams(BaseModel):
+    """Best-scoring parameter set found by the tuner for a (bot, regime) pair."""
+    bot_id: str
+    regime: str = "any"
+    params: dict[str, Any] = Field(default_factory=dict)
+    score: float = 0.0
+    trades: int = 0
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TuneResult(BaseModel):
+    bot_id: str
+    regime: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    score: float
+    trades_used: int
+    improved: bool
