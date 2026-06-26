@@ -258,7 +258,9 @@ function Heartbeat({ data, status }) {
 }
 
 function Learning({ learned, regime, onTune, tuning, tuneResult }) {
-  const active = learned?.find((l) => l.regime === regime || l.regime === "any");
+  // Coerce defensively: the endpoint normally returns a list, but a non-array
+  // payload (e.g. an empty object) must not crash the whole panel.
+  const list = Array.isArray(learned) ? learned : [];
   return (
     <div className="mt-2 border border-terminal-border/50 bg-terminal-panelAlt/40 px-2 py-1 text-[11px]">
       <div className="flex items-center gap-2">
@@ -287,9 +289,9 @@ function Learning({ learned, regime, onTune, tuning, tuneResult }) {
         </div>
       )}
 
-      {learned?.length > 0 ? (
+      {list.length > 0 ? (
         <div className="mt-1 space-y-0.5">
-          {learned.map((l) => (
+          {list.map((l) => (
             <div key={l.regime} className="flex items-center gap-2 text-[10px]">
               <span className={clsx("shrink-0 text-terminal-muted", l.regime === regime ? "text-terminal-text" : "")}>
                 {l.regime}
