@@ -657,7 +657,7 @@ async def stream_advisor(
     user_message: str,
     context: dict[str, Any],
     history: list[dict[str, str]] | None = None,
-    max_tokens: int = 1200,
+    max_tokens: int = 2000,
 ) -> AsyncIterator[str]:
     """Stream Claude tokens as plain text chunks. The caller wraps these
     in a FastAPI StreamingResponse with media_type='text/plain'."""
@@ -940,7 +940,7 @@ async def stream_advisor_dt(
     user_message: str,
     context: dict[str, Any],
     history: list[dict[str, str]] | None = None,
-    max_tokens: int = 900,
+    max_tokens: int = 1500,
 ) -> AsyncIterator[str]:
     """Day-trader streaming wrapper. Mirrors stream_advisor but swaps in
     the day-trader system prompt + capability task block."""

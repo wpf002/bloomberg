@@ -100,7 +100,7 @@ async def _build_comparison(symbol_a: str, symbol_b: str) -> ComparisonBrief:
             "news_a_lines": _news_lines(news_a),
             "news_b_lines": _news_lines(news_b),
         },
-        max_tokens=700,
+        max_tokens=1500,
     )
     return ComparisonBrief(
         symbols=[symbol_a, symbol_b],
