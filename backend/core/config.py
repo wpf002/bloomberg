@@ -16,7 +16,11 @@ class Settings(BaseSettings):
 
     app_name: str = "Bloomberg Terminal"
     app_env: str = Field(default="development")
-    debug: bool = Field(default=True)
+    # Off by default: this drives FastAPI's debug flag (verbose tracebacks in
+    # error responses) and the DEBUG log level. Any deploy that forgets to set
+    # it should land in the safe state. Local dev opts in via .env — see
+    # .env.example, which sets DEBUG=true.
+    debug: bool = Field(default=False)
     api_prefix: str = "/api"
     app_version: str = "9.2.0"
 

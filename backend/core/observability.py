@@ -23,12 +23,37 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any, Callable
 
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+
+
+# ── secret redaction ────────────────────────────────────────────────────────
+
+# Several upstreams (FMP, FRED, Finnhub) authenticate with the key in the
+# query string rather than a header, and httpx logs the full request URL at
+# INFO — so without this the keys land in Railway's log stream verbatim on
+# every call. Redact at the formatter so it covers third-party loggers we
+# don't control, not just our own log_* helpers.
+_SECRET_QS = re.compile(
+    r"(?i)\b(apikey|api_key|access_token|auth_token|token|key|secret|password|signature)"
+    r"=([^&\s\"'<>]+)"
+)
+
+
+def redact(text: str) -> str:
+    """Mask credential-bearing query params, keeping enough to identify
+    which key was used when debugging."""
+    def _mask(m: re.Match[str]) -> str:
+        name, value = m.group(1), m.group(2)
+        keep = value[:3] if len(value) > 8 else ""
+        return f"{name}={keep}...[REDACTED]"
+
+    return _SECRET_QS.sub(_mask, text)
 
 
 # ── JSON formatter ──────────────────────────────────────────────────────────
@@ -56,18 +81,18 @@ class JsonFormatter(logging.Formatter):
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(record.created)),
             "level": record.levelname.lower(),
             "name": record.name,
-            "msg": record.getMessage(),
+            "msg": redact(record.getMessage()),
         }
         if record.exc_info:
-            payload["exc"] = self.formatException(record.exc_info)
+            payload["exc"] = redact(self.formatException(record.exc_info))
         for key, value in record.__dict__.items():
             if key in self._RESERVED or key.startswith("_"):
                 continue
             try:
                 json.dumps(value)
-                payload[key] = value
+                payload[key] = redact(value) if isinstance(value, str) else value
             except (TypeError, ValueError):
-                payload[key] = repr(value)
+                payload[key] = redact(repr(value))
         return json.dumps(payload, default=str)
 
 

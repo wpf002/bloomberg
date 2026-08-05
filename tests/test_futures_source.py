@@ -42,7 +42,15 @@ def test_dashboard_falls_back_to_fred(monkeypatch):
     class NoMassive:
         configured = False
 
+    class EmptyFmp:
+        async def commodities(self):
+            return {}
+
     monkeypatch.setattr(fs, "MassiveSource", lambda: NoMassive())
+    # FMP sits between Massive and FRED in the fallback chain. Without this
+    # stub the test reaches the live API — which both made it flaky and wrote
+    # our FMP key into the captured log output.
+    monkeypatch.setattr(fs, "FmpSource", lambda: EmptyFmp())
 
     async def fake_fred(root):
         return (50.0, 1.0, 2.0) if root in ("CL", "NG") else None
