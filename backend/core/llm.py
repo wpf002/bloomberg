@@ -63,7 +63,7 @@ def _client() -> AsyncAnthropic:
             "ANTHROPIC_API_KEY not set. Add it to .env (get a key at "
             "console.anthropic.com) and restart the backend."
         )
-    return AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return AsyncAnthropic(api_key=settings.anthropic_api_key, max_retries=2)
 
 
 async def synthesize(
@@ -72,6 +72,7 @@ async def synthesize(
     *,
     max_tokens: int = 1500,
     temperature: float = 0.3,
+    model: str | None = None,
 ) -> str:
     """Render a named prompt with `variables`, call Claude, return the text.
 
@@ -89,10 +90,10 @@ async def synthesize(
 
     client = _client()
     msg = await client.messages.create(
-        model=settings.anthropic_model,
+        model=model or settings.anthropic_model,
         max_tokens=max_tokens,
         temperature=temperature,
-        system=system,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user}],
     )
     # `content` is a list of content blocks; we only request text.

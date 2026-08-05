@@ -20,8 +20,9 @@ from backend.services.advisor import _system_for, ADVISOR_MODEL
 
 
 def test_advisor_model_id_pinned():
-    # Spec: claude-sonnet-4-20250514. If we ever bump it, do so in one place.
-    assert ADVISOR_MODEL == "claude-sonnet-4-20250514"
+    # Rolling alias, not a dated snapshot, so the advisor picks up patches.
+    # If we ever bump it, do so in one place.
+    assert ADVISOR_MODEL == "claude-sonnet-4-6"
 
 
 @pytest.mark.parametrize(

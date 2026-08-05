@@ -36,8 +36,9 @@ async def refine(bot: Bot, intents: list[Intent], context: dict) -> tuple[list[I
                 "context_json": json.dumps(context, default=str),
                 "intents_json": json.dumps([i.model_dump() for i in intents], default=str),
             },
-            max_tokens=600,
+            max_tokens=150,
             temperature=0.0,
+            model="claude-haiku-4-5-20251001",
         )
     except LLMNotConfigured:
         return intents, ""

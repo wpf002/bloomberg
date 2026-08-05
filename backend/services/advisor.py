@@ -38,10 +38,11 @@ from . import intelligence_engine, risk_engine
 
 logger = logging.getLogger(__name__)
 
-# Model ID locked per the spec. Settings.anthropic_model stays intact for the
-# legacy explain/compare endpoints; the advisor pins its own model so prompt-
+# Rolling alias rather than a dated snapshot, so the advisor picks up patch
+# releases. Settings.anthropic_model stays intact for the legacy
+# explain/compare endpoints; the advisor names its own model so prompt
 # engineering stays predictable.
-ADVISOR_MODEL = "claude-sonnet-4-20250514"
+ADVISOR_MODEL = "claude-sonnet-4-6"
 
 
 def _client() -> AsyncAnthropic:
@@ -50,7 +51,7 @@ def _client() -> AsyncAnthropic:
             "ANTHROPIC_API_KEY not set. Add it to .env (get a key at "
             "console.anthropic.com) and restart the backend."
         )
-    return AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return AsyncAnthropic(api_key=settings.anthropic_api_key, max_retries=2)
 
 
 # ── context builder ────────────────────────────────────────────────────
@@ -656,12 +657,17 @@ async def stream_advisor(
     user_message: str,
     context: dict[str, Any],
     history: list[dict[str, str]] | None = None,
-    max_tokens: int = 2000,
+    max_tokens: int = 1200,
 ) -> AsyncIterator[str]:
     """Stream Claude tokens as plain text chunks. The caller wraps these
     in a FastAPI StreamingResponse with media_type='text/plain'."""
     client = _client()
-    system = _system_for(capability)
+    system: list[dict] = [
+        {"type": "text", "text": _BASE_SYSTEM, "cache_control": {"type": "ephemeral"}},
+    ]
+    task = _CAPABILITY_TASKS.get(capability, "")
+    if task:
+        system.append({"type": "text", "text": task})
     messages = _build_messages(context, user_message, history)
     try:
         async with client.messages.stream(
@@ -934,12 +940,17 @@ async def stream_advisor_dt(
     user_message: str,
     context: dict[str, Any],
     history: list[dict[str, str]] | None = None,
-    max_tokens: int = 1500,
+    max_tokens: int = 900,
 ) -> AsyncIterator[str]:
     """Day-trader streaming wrapper. Mirrors stream_advisor but swaps in
     the day-trader system prompt + capability task block."""
     client = _client()
-    system = _system_for_dt(capability)
+    system: list[dict] = [
+        {"type": "text", "text": _DT_SYSTEM, "cache_control": {"type": "ephemeral"}},
+    ]
+    task = _DT_TASKS.get(capability, "")
+    if task:
+        system.append({"type": "text", "text": task})
     messages = _build_messages(context, user_message, history)
     try:
         async with client.messages.stream(

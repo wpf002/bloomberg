@@ -106,7 +106,7 @@ async def _build_brief(symbol: str) -> Brief:
             "news_lines": _news_lines(news),
             "filings_lines": _filings_lines(filings or []),
         },
-        max_tokens=1200,
+        max_tokens=500,
     )
     return Brief(symbol=symbol, body=body, model=settings.anthropic_model)
 
