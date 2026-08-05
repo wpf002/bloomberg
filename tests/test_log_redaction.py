@@ -60,6 +60,52 @@ def test_does_not_eat_following_params():
     assert "symbol=SPY" in redact("?apikey=AAAAAAAAAA&symbol=SPY")
 
 
+# ── DSN userinfo ───────────────────────────────────────────────────────────
+# Postgres/Redis creds live in the URL userinfo, not a query param, and driver
+# connection errors embed the full DSN.
+
+def test_redacts_postgres_password():
+    out = redact("could not connect: postgresql://appuser:Sup3rSecret!@db.internal:5432/railway")
+    assert "Sup3rSecret!" not in out
+    assert "appuser" in out          # username is useful context, not a secret
+    assert "db.internal:5432" in out  # host survives for debugging
+
+
+def test_redacts_redis_password_only_form():
+    # Redis DSNs commonly omit the user: redis://:password@host
+    out = redact("redis://:H1ddenRedisPw@redis.internal:6379/0")
+    assert "H1ddenRedisPw" not in out
+    assert "redis.internal:6379" in out
+
+
+def test_redacts_any_scheme():
+    for scheme in ("postgresql", "postgres", "redis", "rediss", "amqp", "mongodb"):
+        out = redact(f"{scheme}://u:TOPSECRETVALUE@h/db")
+        assert "TOPSECRETVALUE" not in out, scheme
+
+
+def test_leaves_credential_free_urls_intact():
+    for url in (
+        "https://paper-api.alpaca.markets/v2/positions",
+        "https://docs.example.com/guide",
+        "postgresql://db.internal:5432/railway",  # no userinfo at all
+    ):
+        assert redact(url) == url
+
+
+def test_formatter_redacts_dsn_in_exception_text():
+    try:
+        raise ConnectionError("connect to postgresql://u:LiveDbPassword@h:5432/db failed")
+    except ConnectionError:
+        import sys
+        rec = logging.LogRecord(
+            name="database", level=logging.ERROR, pathname=__file__, lineno=1,
+            msg="db connect failed", args=(), exc_info=sys.exc_info(),
+        )
+        line = JsonFormatter().format(rec)
+    assert "LiveDbPassword" not in line
+
+
 # ── formatter integration ──────────────────────────────────────────────────
 
 def _record(msg: str, **extra) -> logging.LogRecord:

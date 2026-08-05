@@ -44,16 +44,32 @@ _SECRET_QS = re.compile(
     r"=([^&\s\"'<>]+)"
 )
 
+# Postgres/Redis credentials ride in the URL's userinfo section rather than a
+# query param, and driver connection errors routinely embed the whole DSN —
+# so `_SECRET_QS` alone leaves the database password exposed. Matches both
+# `scheme://user:pw@host` and Redis' password-only `scheme://:pw@host`.
+_SECRET_DSN = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]*)(:)([^/\s@]+)(@)")
+
+
+def _keep_prefix(value: str) -> str:
+    """First 3 chars when the value is long enough that a prefix doesn't
+    meaningfully narrow it down; otherwise nothing."""
+    return value[:3] if len(value) > 8 else ""
+
 
 def redact(text: str) -> str:
-    """Mask credential-bearing query params, keeping enough to identify
-    which key was used when debugging."""
-    def _mask(m: re.Match[str]) -> str:
+    """Mask credentials in query params and URL userinfo, keeping enough to
+    identify which credential was used when debugging."""
+    def _mask_qs(m: re.Match[str]) -> str:
         name, value = m.group(1), m.group(2)
-        keep = value[:3] if len(value) > 8 else ""
-        return f"{name}={keep}...[REDACTED]"
+        return f"{name}={_keep_prefix(value)}...[REDACTED]"
 
-    return _SECRET_QS.sub(_mask, text)
+    def _mask_dsn(m: re.Match[str]) -> str:
+        scheme, user, colon, _pw, at = m.groups()
+        # Keep the username — it's useful context and not a secret.
+        return f"{scheme}{user}{colon}...[REDACTED]{at}"
+
+    return _SECRET_DSN.sub(_mask_dsn, _SECRET_QS.sub(_mask_qs, text))
 
 
 # ── JSON formatter ──────────────────────────────────────────────────────────
