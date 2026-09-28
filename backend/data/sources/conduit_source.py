@@ -16,6 +16,23 @@ Market data goes vendor -> bridge -> this process's pipe, all on one machine.
 
 Timestamps arrive as decimal strings. JSON has no 64-bit integer type and a
 nanosecond epoch does not fit a double, so the bridge sends them as text.
+
+Prices are the same numbers ``AlpacaSource`` already returns. Both read
+``prevDailyBar.c`` from Alpaca's snapshot on ``feed=iex``, so switching a caller
+to Conduit does not move any displayed price. Verified independently on
+2026-09-28: Conduit's ``lastPx`` is within 0.01% of Yahoo across AAPL, MSFT, SPY,
+NVDA and BRK.B, with no scaling or field-mapping error.
+
+One caveat that predates Conduit and is unchanged by it: on the free IEX plan
+``previous_close`` sits 0-5 cents from the official close, because IEX is one
+venue and its daily bar cannot contain the closing auction where the official
+close is struck. ``change`` and ``change_pct`` are computed from it, so both are
+a few cents off what other sources show. A paid SIP plan resolves it; no
+computation does.
+
+The bridge refuses to start against Alpaca's test stream, which quotes a symbol
+called FAKEPACA at invented prices, so a misconfiguration cannot silently feed
+this application fiction.
 """
 
 from __future__ import annotations
