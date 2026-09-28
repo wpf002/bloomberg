@@ -4,12 +4,13 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...data.sources import FinnhubSource, get_alpaca_source
+from ...data.sources import FinnhubSource, get_alpaca_source, get_conduit_source
 from ...models.schemas import Quote, QuoteHistoryPoint
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _alpaca = get_alpaca_source()
+_conduit = get_conduit_source()
 _finnhub = FinnhubSource()
 
 # Indices Alpaca doesn't carry. For history (charts) we substitute the
@@ -28,11 +29,26 @@ INDEX_PROXY_ETF: dict[str, str] = {
 
 
 async def _best_quote(symbol: str) -> Quote:
-    """Alpaca first (real-time, rate-limit-free for paper accounts);
-    fall back to the index-ETF proxy for `^GSPC` etc. (Finnhub free
-    tier blocks CFD indices); Finnhub last for any remaining non-US
-    ticker. This fully retires the yfinance scraper path."""
+    """Conduit first when it is configured, then Alpaca (real-time,
+    rate-limit-free for paper accounts); fall back to the index-ETF proxy
+    for `^GSPC` etc. (Finnhub free tier blocks CFD indices); Finnhub last
+    for any remaining non-US ticker. This fully retires the yfinance
+    scraper path.
+
+    Conduit is ahead of Alpaca rather than behind it because the point of
+    running it is to find out whether it can carry the primary quote path.
+    Behind a working source it would never be exercised. It returns None
+    whenever CONDUIT_BRIDGE is unset or the bridge fails, so with nothing
+    configured this function behaves exactly as it did before.
+    """
     sym = symbol.upper()
+    if _conduit.credentials_configured():
+        try:
+            conduit_quote = await _conduit.get_stock_quote(sym)
+            if conduit_quote is not None:
+                return conduit_quote
+        except Exception as exc:
+            logger.warning("conduit snapshot failed for %s: %s", sym, exc)
     try:
         alpaca_quote = await _alpaca.get_stock_quote(sym)
         if alpaca_quote is not None:
