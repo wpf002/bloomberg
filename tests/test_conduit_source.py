@@ -264,3 +264,51 @@ class TestAgainstStubBridge:
         await source.aclose()
         await source.aclose()
         assert source._proc is None
+
+
+class TestBridgeEnvironment:
+    """The bridge is a separate program with its own variable names.
+
+    This repo has held Alpaca credentials as ALPACA_API_KEY / ALPACA_API_SECRET since long before
+    Conduit existed. Conduit's bridge reads ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY. Nothing
+    translated between them, so setting CONDUIT_BRIDGE and nothing else produced a bridge that
+    started with no providers and exited 1 — "no provider keys in the environment" — which looked
+    like a broken bridge rather than a naming mismatch. Copying the keys into a second set of
+    variables would work and would also mean two places to rotate them.
+    """
+
+    def test_maps_this_repos_variable_names_to_the_bridges(self, monkeypatch):
+        monkeypatch.setenv("ALPACA_API_KEY", "PKREPOKEY0000000000")
+        monkeypatch.setenv("ALPACA_API_SECRET", "repo-secret-value-0123456789")
+        monkeypatch.delenv("ALPACA_API_KEY_ID", raising=False)
+        monkeypatch.delenv("ALPACA_API_SECRET_KEY", raising=False)
+
+        env = ConduitSource()._bridge_env()
+        assert env["ALPACA_API_KEY_ID"] == "PKREPOKEY0000000000"
+        assert env["ALPACA_API_SECRET_KEY"] == "repo-secret-value-0123456789"
+
+    def test_an_explicit_conduit_variable_wins(self, monkeypatch):
+        """Someone who set the bridge's own names meant it; do not overwrite them."""
+        monkeypatch.setenv("ALPACA_API_KEY", "PKREPOKEY0000000000")
+        monkeypatch.setenv("ALPACA_API_KEY_ID", "PKEXPLICIT000000000")
+        env = ConduitSource()._bridge_env()
+        assert env["ALPACA_API_KEY_ID"] == "PKEXPLICIT000000000"
+
+    def test_absent_credentials_are_not_invented(self, monkeypatch):
+        for name in ("ALPACA_API_KEY", "ALPACA_API_SECRET", "ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY"):
+            monkeypatch.delenv(name, raising=False)
+        env = ConduitSource()._bridge_env()
+        assert "ALPACA_API_KEY_ID" not in env
+        assert "ALPACA_API_SECRET_KEY" not in env
+
+    def test_the_rest_of_the_environment_survives(self, monkeypatch):
+        monkeypatch.setenv("PATH_MARKER_FOR_TEST", "kept")
+        env = ConduitSource()._bridge_env()
+        assert env["PATH_MARKER_FOR_TEST"] == "kept"
+
+    def test_a_feed_name_pointing_at_the_sandbox_is_not_forwarded(self, monkeypatch):
+        """Alpaca's test stream quotes FAKEPACA at invented prices. The bridge refuses it, but this
+        application should not be asking for it in the first place."""
+        monkeypatch.setenv("ALPACA_FEED", "test")
+        env = ConduitSource()._bridge_env()
+        assert env.get("ALPACA_FEED") != "test"

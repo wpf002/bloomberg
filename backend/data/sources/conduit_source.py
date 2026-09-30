@@ -81,6 +81,44 @@ class ConduitSource:
         self._spawn_lock = asyncio.Lock()
         self._ready: dict[str, Any] | None = None
 
+    # ------------------------------------------------------------ environment
+
+    #: This repo's credential variable names, mapped to the ones Conduit's bridge reads.
+    _ENV_ALIASES = {
+        "ALPACA_API_KEY_ID": "ALPACA_API_KEY",
+        "ALPACA_API_SECRET_KEY": "ALPACA_API_SECRET",
+    }
+
+    #: Alpaca feed names that serve invented prices. ``test`` quotes a symbol called FAKEPACA.
+    _SYNTHETIC_FEEDS = frozenset({"test", "sandbox"})
+
+    def _bridge_env(self) -> dict[str, str]:
+        """The environment the bridge is spawned with.
+
+        The bridge is a separate program and reads ``ALPACA_API_KEY_ID`` /
+        ``ALPACA_API_SECRET_KEY``; this repo has held the same credentials as
+        ``ALPACA_API_KEY`` / ``ALPACA_API_SECRET`` since before Conduit existed.
+        Translating here means one place to rotate a key instead of two, and it
+        means setting ``CONDUIT_BRIDGE`` is genuinely all that turning Conduit on
+        requires. Without it the bridge starts with no providers and exits.
+
+        A name the caller set explicitly is left alone — they meant it.
+        """
+        env = dict(os.environ)
+        for bridge_name, local_name in self._ENV_ALIASES.items():
+            if env.get(bridge_name):
+                continue
+            value = env.get(local_name)
+            if value:
+                env[bridge_name] = value
+
+        # The bridge refuses a sandbox feed on its own. Not forwarding one means this application
+        # never even asks for prices nobody traded at.
+        if env.get("ALPACA_FEED", "").strip().lower() in self._SYNTHETIC_FEEDS:
+            env.pop("ALPACA_FEED", None)
+
+        return env
+
     # ------------------------------------------------------------------ status
 
     def _enabled(self) -> bool:
@@ -112,6 +150,7 @@ class ConduitSource:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self._bridge_env(),
             )
             self._reader_task = asyncio.create_task(self._read_loop(self._proc))
 
