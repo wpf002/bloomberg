@@ -1,5 +1,6 @@
 from .alpaca_source import AlpacaSource, get_alpaca_source
 from .cboe_source import CboeSource, get_cboe_source
+from .conduit_source import ConduitSource, get_conduit_source
 from .finnhub_source import FinnhubSource
 from .kalshi_source import KalshiSource
 from .massive_source import MassiveSource
@@ -29,7 +30,9 @@ __all__ = [
     "MeilisearchSource",
     "PolymarketSource",
     "CboeSource",
+    "ConduitSource",
     "get_cboe_source",
+    "get_conduit_source",
     "RssSource",
     "SecEdgarSource",
     "TreasurySource",
