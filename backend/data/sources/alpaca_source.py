@@ -199,6 +199,77 @@ class AlpacaSource:
             )
         return out
 
+    async def get_bars_multi(
+        self,
+        symbols: list[str],
+        *,
+        days: int = 400,
+        chunk: int = 200,
+    ) -> dict[str, list[QuoteHistoryPoint]]:
+        """Daily bars for many symbols via /v2/stocks/bars (the multi-symbol
+        endpoint), which the screener ingest needs — fetching 12k symbols one
+        at a time through `get_stock_bars` would be 12k round trips.
+
+        Alpaca caps the response, so we page on `next_page_token` and chunk the
+        symbol list. Returns {symbol: [bars]}; symbols the feed doesn't carry
+        are simply absent. Uncached: the caller writes straight to DuckDB.
+        """
+        out: dict[str, list[QuoteHistoryPoint]] = {}
+        if not self._enabled() or not symbols:
+            return out
+
+        start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+        url = f"{ALPACA_DATA_BASE}/stocks/bars"
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for i in range(0, len(symbols), chunk):
+                batch = symbols[i:i + chunk]
+                page: str | None = None
+                while True:
+                    params = {
+                        "symbols": ",".join(batch),
+                        "timeframe": "1Day",
+                        "start": start,
+                        "limit": 10000,
+                        "feed": "iex",
+                        "adjustment": "raw",
+                    }
+                    if page:
+                        params["page_token"] = page
+                    try:
+                        resp = await client.get(url, headers=self._headers, params=params)
+                    except Exception as exc:
+                        logger.warning("Alpaca multi-bars batch %d failed: %s", i // chunk, exc)
+                        break
+                    if resp.status_code != 200:
+                        logger.warning(
+                            "Alpaca multi-bars -> %s: %s", resp.status_code, resp.text[:200]
+                        )
+                        break
+                    body = resp.json() or {}
+                    for sym, rows in (body.get("bars") or {}).items():
+                        bucket = out.setdefault(sym.upper(), [])
+                        for b in rows or []:
+                            try:
+                                bucket.append(
+                                    QuoteHistoryPoint(
+                                        timestamp=datetime.fromisoformat(
+                                            b["t"].replace("Z", "+00:00")
+                                        ),
+                                        open=_f(b.get("o")),
+                                        high=_f(b.get("h")),
+                                        low=_f(b.get("l")),
+                                        close=_f(b.get("c")),
+                                        volume=int(_f(b.get("v"))),
+                                    )
+                                )
+                            except Exception:
+                                continue
+                    page = body.get("next_page_token")
+                    if not page:
+                        break
+        return out
+
     @cached("alpaca:bars", ttl=60, model=QuoteHistoryPoint)
     async def get_stock_bars(
         self,

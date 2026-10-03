@@ -33,6 +33,7 @@ import SettingsDialog from "../components/SettingsDialog.jsx";
 import ShareLayoutDialog from "../components/ShareLayoutDialog.jsx";
 import SizingPanel from "../components/SizingPanel.jsx";
 import SqlPanel from "../components/SqlPanel.jsx";
+import ScreenerPanel from "../components/ScreenerPanel.jsx";
 import Watchlist from "../components/Watchlist.jsx";
 import useAuth from "../hooks/useAuth.js";
 import useTheme from "../hooks/useTheme.js";
@@ -93,6 +94,7 @@ const INTENT_TO_PANEL = {
   bots: "bots",
   payoff: "payoff",
   sql: "sql",
+  screener: "screener",
   search: "search",
   help: "help",
   layout: "layout",
@@ -138,6 +140,7 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 8,  y: 40, w: 4, h: 10, minW: 3, minH: 6 },
     { i: "bots",         x: 0,  y: 50, w: 12, h: 11, minW: 4, minH: 7 },
     { i: "sql",          x: 0,  y: 61, w: 8, h: 12, minW: 4, minH: 6 },
+    { i: "screener",     x: 8,  y: 61, w: 4, h: 12, minW: 4, minH: 6 },
     { i: "search",       x: 8,  y: 50, w: 4, h: 12, minW: 3, minH: 6 },
     { i: "factors",      x: 0,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
     { i: "fixed",        x: 6,  y: 62, w: 6, h: 7, minW: 4, minH: 5 },
@@ -168,6 +171,7 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0,  y: 72, w: 12, h: 10 },
     { i: "bots",         x: 0,  y: 82, w: 12, h: 11 },
     { i: "sql",          x: 0,  y: 93, w: 12, h: 12 },
+    { i: "screener",     x: 0,  y: 105, w: 12, h: 12 },
     { i: "search",       x: 0,  y: 94, w: 12, h: 10 },
     { i: "factors",      x: 0,  y: 104, w: 12, h: 7 },
     { i: "fixed",        x: 0,  y: 111, w: 12, h: 7 },
@@ -199,6 +203,7 @@ const DEFAULT_LAYOUTS = {
     { i: "payoff",       x: 0, y: 123, w: 6, h: 10 },
     { i: "bots",         x: 0, y: 133, w: 6, h: 12 },
     { i: "sql",          x: 0, y: 145, w: 6, h: 12 },
+    { i: "screener",     x: 0, y: 157, w: 6, h: 12 },
     { i: "search",       x: 0, y: 145, w: 6, h: 10 },
     { i: "factors",      x: 0, y: 155, w: 6, h: 7 },
     { i: "fixed",        x: 0, y: 162, w: 6, h: 7 },
@@ -537,6 +542,7 @@ export default function Terminal() {
       { id: "bots",         render: () => <BotsPanel activeSymbol={activeSymbol} /> },
       { id: "payoff",       render: () => <PayoffPanel symbol={activeSymbol} /> },
       { id: "sql",          render: () => <SqlPanel /> },
+      { id: "screener",     render: () => <ScreenerPanel onSelectSymbol={setActiveSymbol} /> },
       { id: "search",       render: () => <FilingsSearchPanel symbol={activeSymbol} /> },
       { id: "factors",      render: () => <FactorAnalyticsPanel /> },
       { id: "fixed",        render: () => <FixedIncomePanel /> },

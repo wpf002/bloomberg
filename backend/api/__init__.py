@@ -31,6 +31,7 @@ from .routes import (
     provenance,
     quotes,
     risk,
+    screener,
     shared,
     sizing,
     sql,
@@ -68,6 +69,7 @@ api_router.include_router(futures.router, prefix="/futures", tags=["futures"])
 api_router.include_router(symbols.router, prefix="/symbols", tags=["symbols"])
 api_router.include_router(provenance.router, prefix="/provenance", tags=["provenance"])
 api_router.include_router(risk.router, prefix="/risk", tags=["risk"])
+api_router.include_router(screener.router, prefix="/screener", tags=["screener"])
 api_router.include_router(intelligence.router, prefix="/intelligence", tags=["intelligence"])
 api_router.include_router(advisor.router, prefix="/advisor", tags=["advisor"])
 api_router.include_router(audit.router, prefix="/audit", tags=["audit"])

@@ -163,6 +163,77 @@ class SqlEngine:
         self.con.executemany("INSERT INTO filings VALUES (?, ?, ?, ?, ?, ?)", rows)
         logger.info("sql.filings warm: %d rows across %d symbols", len(rows), len(symbols))
 
+    # ── screener universe ────────────────────────────────────────────────
+
+    async def refresh_universe(self, limit: int | None = None) -> int:
+        """Load daily bars for the whole tradable equity universe into `bars`.
+
+        `warm()` loads a handful of symbols for the SQL workbench; the screener
+        needs breadth, so this pulls Alpaca's active-asset list and fetches it
+        through the multi-symbol bars endpoint. Returns the row count written.
+
+        Runs on a schedule rather than per-request: a full pass is thousands of
+        symbols and takes minutes.
+        """
+        alpaca = get_alpaca_source()
+        if not alpaca.credentials_configured():
+            logger.info("screener universe refresh skipped: no Alpaca credentials")
+            return 0
+
+        assets = await alpaca.list_active_assets()
+        symbols = [
+            a["symbol"] for a in assets
+            if a.get("symbol") and a.get("tradable", True) and "/" not in a["symbol"]
+        ]
+        if limit:
+            symbols = symbols[:limit]
+        if not symbols:
+            return 0
+
+        by_symbol = await alpaca.get_bars_multi(symbols, days=400)
+        rows: list[tuple] = []
+        for sym, bars in by_symbol.items():
+            for b in bars:
+                rows.append(
+                    (sym, b.timestamp.replace(tzinfo=None), b.open, b.high, b.low, b.close, b.volume)
+                )
+        if not rows:
+            logger.warning("screener universe refresh returned no bars")
+            return 0
+
+        # Swap in one transaction so a concurrent screen never sees a half-built
+        # table. The workbench's warm symbols get re-fetched here anyway.
+        self.con.execute("BEGIN")
+        try:
+            self.con.execute("DELETE FROM bars")
+            self.con.executemany("INSERT INTO bars VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+            self.con.execute("COMMIT")
+        except Exception:
+            self.con.execute("ROLLBACK")
+            raise
+        logger.info(
+            "screener universe: %d rows across %d symbols", len(rows), len(by_symbol)
+        )
+        return len(rows)
+
+    async def run_screen(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        """Execute a screener query built by `core.screener.build_query`.
+
+        Bypasses `_validate` deliberately — the SQL is assembled from a fixed
+        template with bound parameters, never from user text, and it needs the
+        CTE form the read-only parser would otherwise have to re-inspect.
+        """
+        def _run() -> list[dict[str, Any]]:
+            cur = self.con.execute(sql, params)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+
+        return await asyncio.to_thread(_run)
+
+    def universe_size(self) -> int:
+        row = self.con.execute("SELECT COUNT(DISTINCT symbol) FROM bars").fetchone()
+        return int(row[0]) if row else 0
+
     # ── querying ─────────────────────────────────────────────────────────
 
     def list_tables(self) -> list[dict[str, Any]]:

@@ -304,6 +304,16 @@ export const api = {
     }),
   sqlRefresh: () => request(`/api/sql/refresh`, { method: "POST" }),
 
+  // ── Screener (EQS) ────────────────────────────────────────────────────
+  screenerFields: () => request(`/api/screener/fields`),
+  screenerRun: ({ filters = [], sort = "dollar_volume", desc = true, limit = 100 } = {}) =>
+    request(`/api/screener`, {
+      method: "POST",
+      body: JSON.stringify({ filters, sort, desc, limit }),
+    }),
+  screenerRefresh: (limit) =>
+    request(`/api/screener/refresh${limit ? `?limit=${limit}` : ""}`, { method: "POST" }),
+
   // ── V2.3: options flow + dark pool ────────────────────────────────────
   flowOptions: ({ symbol, side = "all", minPremium = 100000, expiry = "all", sector } = {}) => {
     const q = new URLSearchParams({
