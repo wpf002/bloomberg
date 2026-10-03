@@ -36,7 +36,7 @@ class Field:
     help: str
 
 
-# Every entry maps to a column produced by _METRICS_SQL below. Adding a field
+# Every entry maps to a column produced by METRICS_SQL below. Adding a field
 # means adding it in both places.
 FIELDS: tuple[Field, ...] = (
     Field("price", "Price", "usd", "Latest close"),
@@ -70,7 +70,7 @@ SORTABLE = FIELD_KEYS | {"symbol"}
 # RSI uses a simple average of gains/losses over 14 sessions rather than Wilder's
 # recursive smoothing — DuckDB has no native recursive window, and across a
 # screening universe the two rank almost identically.
-_METRICS_SQL = """
+METRICS_SQL = """
 WITH ordered AS (
     SELECT
         symbol, timestamp, open, high, low, close, volume,
@@ -87,6 +87,7 @@ WITH ordered AS (
         LAG(close, 63) OVER w AS close_63,
         COUNT(*) OVER (PARTITION BY symbol) AS bar_count
     FROM bars
+    {where}
     WINDOW w AS (PARTITION BY symbol ORDER BY timestamp)
 ),
 moves AS (
@@ -184,15 +185,15 @@ def build_query(
     sort: str = "dollar_volume",
     desc: bool = True,
     limit: int = 100,
-    min_bars: int = 60,
 ) -> tuple[str, list[Any]]:
     if sort not in SORTABLE:
         raise ValueError(f"cannot sort by: {sort}")
     limit = max(1, min(int(limit), 500))
     predicate, params = compile_filters(filters)
+    # Read the table `SqlEngine._rebuild_metrics` materialises at refresh
+    # time. `min_bars` is applied there, not here.
     sql = (
-        f"WITH metrics AS ({_METRICS_SQL.format(min_bars=int(min_bars))}) "
-        f"SELECT * FROM metrics WHERE {predicate} "
+        f"SELECT * FROM screener_metrics WHERE {predicate} "
         f'ORDER BY "{sort}" {"DESC" if desc else "ASC"} NULLS LAST '
         f"LIMIT {limit}"
     )

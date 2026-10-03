@@ -8,7 +8,7 @@ import random
 import duckdb
 import pytest
 
-from backend.core.screener import FIELD_KEYS, build_query, compile_filters
+from backend.core.screener import METRICS_SQL, FIELD_KEYS, build_query, compile_filters
 
 
 # ── filter compilation ─────────────────────────────────────────────────────
@@ -71,6 +71,11 @@ def test_limit_is_clamped():
     assert "LIMIT 500" in sql
 
 
+def test_query_reads_the_materialised_table():
+    sql, _ = build_query([])
+    assert "screener_metrics" in sql
+
+
 # ── metric SQL against real DuckDB ─────────────────────────────────────────
 
 def _con_with_bars(n_days: int = 300):
@@ -94,7 +99,15 @@ def _con_with_bars(n_days: int = 300):
     return con
 
 
+def _materialise(con, min_bars: int = 60):
+    """Mirror SqlEngine._rebuild_metrics so tests exercise the shipped SQL."""
+    con.execute("DROP TABLE IF EXISTS screener_metrics")
+    con.execute(f"CREATE TABLE screener_metrics AS {METRICS_SQL.format(min_bars=min_bars, where='')}")
+    return con
+
+
 def _screen(con, filters, **kw):
+    _materialise(con)
     sql, params = build_query(filters, **kw)
     cur = con.execute(sql, params)
     cols = [d[0] for d in cur.description]

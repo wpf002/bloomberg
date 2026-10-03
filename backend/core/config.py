@@ -147,6 +147,13 @@ class Settings(BaseSettings):
 
     # /api/sql safety rails.
     sql_query_max_rows: int = 5000
+    # Where DuckDB keeps the bars/metrics tables. Empty means in-memory, which
+    # is fine for the workbench's handful of symbols but holds the screener's
+    # full universe (~3.2M rows) in RAM — roughly 2.5GB, enough to OOM a normal
+    # container. Point this at a file and DuckDB spills to disk instead.
+    duckdb_path: str = Field(default="/tmp/aurora-sql.duckdb", alias="DUCKDB_PATH")
+    # Memory ceiling handed to DuckDB; it spills above this rather than growing.
+    duckdb_memory_limit: str = Field(default="512MB", alias="DUCKDB_MEMORY_LIMIT")
     sql_query_timeout_seconds: float = 8.0
 
     # Default-watchlist seed lists for the SQL workbench warm-up and the

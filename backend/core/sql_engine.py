@@ -52,7 +52,19 @@ class SqlEngine:
     """
 
     def __init__(self) -> None:
-        self.con = duckdb.connect(":memory:")
+        # File-backed by default so the screener universe spills to disk rather
+        # than living entirely in RAM. Falls back to in-memory if the path
+        # isn't writable, which keeps local dev and tests working.
+        path = settings.duckdb_path or ":memory:"
+        try:
+            self.con = duckdb.connect(path)
+        except Exception as exc:
+            logger.warning("duckdb at %s unavailable (%s); using in-memory", path, exc)
+            self.con = duckdb.connect(":memory:")
+        try:
+            self.con.execute(f"SET memory_limit='{settings.duckdb_memory_limit}'")
+        except Exception:
+            pass
         self.con.execute(
             """
             CREATE TABLE IF NOT EXISTS bars (
@@ -190,38 +202,97 @@ class SqlEngine:
         if not symbols:
             return 0
 
-        by_symbol = await alpaca.get_bars_multi(symbols, days=400)
-        rows: list[tuple] = []
-        for sym, bars in by_symbol.items():
-            for b in bars:
-                rows.append(
-                    (sym, b.timestamp.replace(tzinfo=None), b.open, b.high, b.low, b.close, b.volume)
-                )
-        if not rows:
-            logger.warning("screener universe refresh returned no bars")
-            return 0
+        # Build into a staging table and swap at the end, so a screen running
+        # concurrently keeps reading the previous universe rather than a
+        # half-filled one.
+        #
+        # Insert per chunk instead of accumulating every row first: a full pass
+        # is ~3.2M rows, and holding those as Python tuples peaked at ~3.2GB,
+        # which OOMs a normal container. Streaming keeps one chunk resident.
+        self.con.execute("DROP TABLE IF EXISTS bars_next")
+        self.con.execute("CREATE TABLE bars_next AS SELECT * FROM bars WHERE FALSE")
 
-        # Swap in one transaction so a concurrent screen never sees a half-built
-        # table. The workbench's warm symbols get re-fetched here anyway.
-        self.con.execute("BEGIN")
+        total = 0
+        seen: set[str] = set()
+        CHUNK = 500
         try:
-            self.con.execute("DELETE FROM bars")
-            self.con.executemany("INSERT INTO bars VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+            for i in range(0, len(symbols), CHUNK):
+                batch = symbols[i:i + CHUNK]
+                by_symbol = await alpaca.get_bars_multi(batch, days=400, chunk=CHUNK)
+                rows = [
+                    (sym, b.timestamp.replace(tzinfo=None), b.open, b.high, b.low, b.close, b.volume)
+                    for sym, bars in by_symbol.items()
+                    for b in bars
+                ]
+                if rows:
+                    self.con.executemany("INSERT INTO bars_next VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+                    total += len(rows)
+                    seen.update(by_symbol)
+                del by_symbol, rows
+
+            if total == 0:
+                logger.warning("screener universe refresh returned no bars")
+                self.con.execute("DROP TABLE IF EXISTS bars_next")
+                return 0
+
+            self.con.execute("BEGIN")
+            self.con.execute("DROP TABLE bars")
+            self.con.execute("ALTER TABLE bars_next RENAME TO bars")
             self.con.execute("COMMIT")
         except Exception:
-            self.con.execute("ROLLBACK")
+            try:
+                self.con.execute("ROLLBACK")
+            except Exception:
+                pass
+            self.con.execute("DROP TABLE IF EXISTS bars_next")
             raise
-        logger.info(
-            "screener universe: %d rows across %d symbols", len(rows), len(by_symbol)
-        )
-        return len(rows)
+
+        self._rebuild_metrics()
+        logger.info("screener universe: %d rows across %d symbols", total, len(seen))
+        return total
+
+    def _rebuild_metrics(self) -> None:
+        """Materialise the screener metrics into `screener_metrics`.
+
+        Computing the window functions on every request meant a full scan of
+        3.2M bars per screen (~1s). Doing it once per refresh makes a screen a
+        scan of one row per symbol.
+
+        Built in symbol batches: DuckDB's window operators don't spill to disk,
+        so running all ~12k symbols in one statement ignored `memory_limit` and
+        peaked near 1.8GB. Batching caps the working set to one batch.
+        """
+        from .screener import METRICS_SQL  # local import: screener imports nothing here
+
+        symbols = [
+            r[0] for r in self.con.execute("SELECT DISTINCT symbol FROM bars").fetchall()
+        ]
+        self.con.execute("DROP TABLE IF EXISTS screener_metrics")
+
+        created = False
+        BATCH = 1500
+        for i in range(0, len(symbols), BATCH):
+            batch = symbols[i:i + BATCH]
+            placeholders = ",".join("?" for _ in batch)
+            body = METRICS_SQL.format(min_bars=60, where=f"WHERE symbol IN ({placeholders})")
+            if not created:
+                self.con.execute(f"CREATE TABLE screener_metrics AS {body}", batch)
+                created = True
+            else:
+                self.con.execute(f"INSERT INTO screener_metrics {body}", batch)
+
+        if not created:
+            self.con.execute(
+                f"CREATE TABLE screener_metrics AS {METRICS_SQL.format(min_bars=60, where='')}"
+            )
+        count = self.con.execute("SELECT COUNT(*) FROM screener_metrics").fetchone()[0]
+        logger.info("screener metrics: %d symbols", int(count))
 
     async def run_screen(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
         """Execute a screener query built by `core.screener.build_query`.
 
         Bypasses `_validate` deliberately — the SQL is assembled from a fixed
-        template with bound parameters, never from user text, and it needs the
-        CTE form the read-only parser would otherwise have to re-inspect.
+        template with bound parameters, never from user text.
         """
         def _run() -> list[dict[str, Any]]:
             cur = self.con.execute(sql, params)
@@ -230,8 +301,17 @@ class SqlEngine:
 
         return await asyncio.to_thread(_run)
 
+    def metrics_ready(self) -> bool:
+        row = self.con.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema='main' AND table_name='screener_metrics'"
+        ).fetchone()
+        return bool(row and row[0])
+
     def universe_size(self) -> int:
-        row = self.con.execute("SELECT COUNT(DISTINCT symbol) FROM bars").fetchone()
+        if not self.metrics_ready():
+            return 0
+        row = self.con.execute("SELECT COUNT(*) FROM screener_metrics").fetchone()
         return int(row[0]) if row else 0
 
     # ── querying ─────────────────────────────────────────────────────────
