@@ -26,6 +26,7 @@ import time
 from typing import Any
 
 import duckdb
+import pandas as pd
 
 from ..data.sources import FredSource, SecEdgarSource, get_alpaca_source
 from .config import settings
@@ -43,6 +44,20 @@ _FORBIDDEN = re.compile(
     r"TRUNCATE|REINDEX|CALL|VACUUM|LOAD|INSTALL)\b",
     re.IGNORECASE,
 )
+
+
+class RefreshInProgress(RuntimeError):
+    """A universe refresh is already running; the caller should not queue another."""
+
+
+def _insert_frame(cur: "duckdb.DuckDBPyConnection", frame: "pd.DataFrame") -> None:
+    """Bulk-insert one chunk of bars. Registering the frame lets DuckDB read
+    it column-wise in a single statement, instead of binding row by row."""
+    cur.register("bars_chunk", frame)
+    try:
+        cur.execute("INSERT INTO bars_next SELECT * FROM bars_chunk")
+    finally:
+        cur.unregister("bars_chunk")
 
 
 class SqlEngine:
@@ -65,6 +80,7 @@ class SqlEngine:
             self.con.execute(f"SET memory_limit='{settings.duckdb_memory_limit}'")
         except Exception:
             pass
+        self._refresh_lock = asyncio.Lock()
         self.con.execute(
             """
             CREATE TABLE IF NOT EXISTS bars (
@@ -202,15 +218,34 @@ class SqlEngine:
         if not symbols:
             return 0
 
-        # Build into a staging table and swap at the end, so a screen running
-        # concurrently keeps reading the previous universe rather than a
-        # half-filled one.
+        if self._refresh_lock.locked():
+            raise RefreshInProgress("a universe refresh is already running")
+
+        async with self._refresh_lock:
+            return await self._refresh_universe_locked(alpaca, symbols)
+
+    async def _refresh_universe_locked(self, alpaca, symbols: list[str]) -> int:
+        # Every DuckDB call here runs on a worker thread through its own
+        # cursor. Running them on the event loop blocked the whole process
+        # between chunks — in production a refresh stalled HTTP and the bot
+        # manager's tick loop for 30+ minutes. A cursor is a separate DuckDB
+        # connection to the same database, so this never shares a connection
+        # object with the loop thread or with a concurrent screen.
         #
-        # Insert per chunk instead of accumulating every row first: a full pass
-        # is ~3.2M rows, and holding those as Python tuples peaked at ~3.2GB,
-        # which OOMs a normal container. Streaming keeps one chunk resident.
-        self.con.execute("DROP TABLE IF EXISTS bars_next")
-        self.con.execute("CREATE TABLE bars_next AS SELECT * FROM bars WHERE FALSE")
+        # Rows go in as one DataFrame per chunk rather than `executemany`,
+        # which binds row by row and was the bulk of that 30 minutes.
+        #
+        # Build into a staging table and swap at the end, so a concurrent
+        # screen keeps reading the previous universe rather than a half-filled
+        # one. Insert per chunk instead of accumulating: a full pass is ~3.2M
+        # rows, and holding them all peaked at ~3.2GB.
+        cur = self.con.cursor()
+
+        def _prepare() -> None:
+            cur.execute("DROP TABLE IF EXISTS bars_next")
+            cur.execute("CREATE TABLE bars_next AS SELECT * FROM bars WHERE FALSE")
+
+        await asyncio.to_thread(_prepare)
 
         total = 0
         seen: set[str] = set()
@@ -218,40 +253,45 @@ class SqlEngine:
         try:
             for i in range(0, len(symbols), CHUNK):
                 batch = symbols[i:i + CHUNK]
-                by_symbol = await alpaca.get_bars_multi(batch, days=400, chunk=CHUNK)
-                rows = [
-                    (sym, b.timestamp.replace(tzinfo=None), b.open, b.high, b.low, b.close, b.volume)
-                    for sym, bars in by_symbol.items()
-                    for b in bars
-                ]
-                if rows:
-                    self.con.executemany("INSERT INTO bars_next VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
-                    total += len(rows)
+                by_symbol = await alpaca.get_bars_multi(batch, days=400, chunk=CHUNK, raw=True)
+                frame = pd.DataFrame(
+                    [(sym, *bar) for sym, bars in by_symbol.items() for bar in bars],
+                    columns=["symbol", "timestamp", "open", "high", "low", "close", "volume"],
+                )
+                if not frame.empty:
+                    await asyncio.to_thread(_insert_frame, cur, frame)
+                    total += len(frame)
                     seen.update(by_symbol)
-                del by_symbol, rows
+                del by_symbol, frame
 
             if total == 0:
                 logger.warning("screener universe refresh returned no bars")
-                self.con.execute("DROP TABLE IF EXISTS bars_next")
+                await asyncio.to_thread(cur.execute, "DROP TABLE IF EXISTS bars_next")
                 return 0
 
-            self.con.execute("BEGIN")
-            self.con.execute("DROP TABLE bars")
-            self.con.execute("ALTER TABLE bars_next RENAME TO bars")
-            self.con.execute("COMMIT")
+            def _swap() -> None:
+                cur.execute("BEGIN")
+                cur.execute("DROP TABLE bars")
+                cur.execute("ALTER TABLE bars_next RENAME TO bars")
+                cur.execute("COMMIT")
+
+            await asyncio.to_thread(_swap)
         except Exception:
-            try:
-                self.con.execute("ROLLBACK")
-            except Exception:
-                pass
-            self.con.execute("DROP TABLE IF EXISTS bars_next")
+            def _cleanup() -> None:
+                try:
+                    cur.execute("ROLLBACK")
+                except Exception:
+                    pass
+                cur.execute("DROP TABLE IF EXISTS bars_next")
+
+            await asyncio.to_thread(_cleanup)
             raise
 
-        self._rebuild_metrics()
+        await asyncio.to_thread(self._rebuild_metrics, cur)
         logger.info("screener universe: %d rows across %d symbols", total, len(seen))
         return total
 
-    def _rebuild_metrics(self) -> None:
+    def _rebuild_metrics(self, cur: "duckdb.DuckDBPyConnection | None" = None) -> None:
         """Materialise the screener metrics into `screener_metrics`.
 
         Computing the window functions on every request meant a full scan of
@@ -261,13 +301,15 @@ class SqlEngine:
         Built in symbol batches: DuckDB's window operators don't spill to disk,
         so running all ~12k symbols in one statement ignored `memory_limit` and
         peaked near 1.8GB. Batching caps the working set to one batch.
+
+        Builds `screener_metrics_next` and swaps, so a screen arriving mid-build
+        reads the previous metrics instead of hitting a dropped table.
         """
         from .screener import METRICS_SQL  # local import: screener imports nothing here
 
-        symbols = [
-            r[0] for r in self.con.execute("SELECT DISTINCT symbol FROM bars").fetchall()
-        ]
-        self.con.execute("DROP TABLE IF EXISTS screener_metrics")
+        cur = cur or self.con.cursor()
+        symbols = [r[0] for r in cur.execute("SELECT DISTINCT symbol FROM bars").fetchall()]
+        cur.execute("DROP TABLE IF EXISTS screener_metrics_next")
 
         created = False
         BATCH = 1500
@@ -276,28 +318,40 @@ class SqlEngine:
             placeholders = ",".join("?" for _ in batch)
             body = METRICS_SQL.format(min_bars=60, where=f"WHERE symbol IN ({placeholders})")
             if not created:
-                self.con.execute(f"CREATE TABLE screener_metrics AS {body}", batch)
+                cur.execute(f"CREATE TABLE screener_metrics_next AS {body}", batch)
                 created = True
             else:
-                self.con.execute(f"INSERT INTO screener_metrics {body}", batch)
+                cur.execute(f"INSERT INTO screener_metrics_next {body}", batch)
 
         if not created:
-            self.con.execute(
-                f"CREATE TABLE screener_metrics AS {METRICS_SQL.format(min_bars=60, where='')}"
+            cur.execute(
+                "CREATE TABLE screener_metrics_next AS "
+                f"{METRICS_SQL.format(min_bars=60, where='')}"
             )
-        count = self.con.execute("SELECT COUNT(*) FROM screener_metrics").fetchone()[0]
+
+        cur.execute("BEGIN")
+        cur.execute("DROP TABLE IF EXISTS screener_metrics")
+        cur.execute("ALTER TABLE screener_metrics_next RENAME TO screener_metrics")
+        cur.execute("COMMIT")
+
+        count = cur.execute("SELECT COUNT(*) FROM screener_metrics").fetchone()[0]
         logger.info("screener metrics: %d symbols", int(count))
 
     async def run_screen(self, sql: str, params: list[Any]) -> list[dict[str, Any]]:
         """Execute a screener query built by `core.screener.build_query`.
 
         Bypasses `_validate` deliberately — the SQL is assembled from a fixed
-        template with bound parameters, never from user text.
+        template with bound parameters, never from user text. Runs on its own
+        cursor so it never shares a connection object with a refresh in flight.
         """
         def _run() -> list[dict[str, Any]]:
-            cur = self.con.execute(sql, params)
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+            cur = self.con.cursor()
+            try:
+                res = cur.execute(sql, params)
+                cols = [d[0] for d in res.description]
+                return [dict(zip(cols, r)) for r in res.fetchall()]
+            finally:
+                cur.close()
 
         return await asyncio.to_thread(_run)
 
@@ -358,7 +412,9 @@ class SqlEngine:
 
         def _run() -> dict[str, Any]:
             t0 = time.perf_counter()
-            cur = self.con.execute(cleaned)
+            # Own cursor: this runs on an executor thread, and the shared
+            # connection object is also used from the event loop.
+            cur = self.con.cursor().execute(cleaned)
             cols = [d[0] for d in (cur.description or [])]
             data = cur.fetchmany(cap + 1)
             truncated = len(data) > cap

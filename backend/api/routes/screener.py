@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field as PField
 
 from ...core.screener import FIELDS, build_query
-from ...core.sql_engine import engine
+from ...core.sql_engine import RefreshInProgress, engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,6 +84,8 @@ async def refresh_universe(
     """Re-ingest daily bars for the equity universe. Minutes for a full pass."""
     try:
         written = await engine.refresh_universe(limit=limit)
+    except RefreshInProgress as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("universe refresh failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

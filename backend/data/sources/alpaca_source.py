@@ -205,7 +205,8 @@ class AlpacaSource:
         *,
         days: int = 400,
         chunk: int = 200,
-    ) -> dict[str, list[QuoteHistoryPoint]]:
+        raw: bool = False,
+    ) -> dict[str, list]:
         """Daily bars for many symbols via /v2/stocks/bars (the multi-symbol
         endpoint), which the screener ingest needs — fetching 12k symbols one
         at a time through `get_stock_bars` would be 12k round trips.
@@ -213,8 +214,12 @@ class AlpacaSource:
         Alpaca caps the response, so we page on `next_page_token` and chunk the
         symbol list. Returns {symbol: [bars]}; symbols the feed doesn't carry
         are simply absent. Uncached: the caller writes straight to DuckDB.
+
+        `raw=True` returns `(timestamp, open, high, low, close, volume)` tuples
+        with a naive UTC timestamp instead of QuoteHistoryPoint models. The
+        ingest only needs the values, and the models cost ~1.3KB per bar.
         """
-        out: dict[str, list[QuoteHistoryPoint]] = {}
+        out: dict[str, list] = {}
         if not self._enabled() or not symbols:
             return out
 
@@ -250,6 +255,19 @@ class AlpacaSource:
                     for sym, rows in (body.get("bars") or {}).items():
                         bucket = out.setdefault(sym.upper(), [])
                         for b in rows or []:
+                            if raw:
+                                try:
+                                    bucket.append((
+                                        datetime.fromisoformat(
+                                            b["t"].replace("Z", "+00:00")
+                                        ).replace(tzinfo=None),
+                                        _f(b.get("o")), _f(b.get("h")),
+                                        _f(b.get("l")), _f(b.get("c")),
+                                        int(_f(b.get("v"))),
+                                    ))
+                                except Exception:
+                                    pass
+                                continue
                             try:
                                 bucket.append(
                                     QuoteHistoryPoint(

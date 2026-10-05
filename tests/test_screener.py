@@ -327,3 +327,126 @@ async def test_cron_disabled_returns_immediately(monkeypatch):
 
     monkeypatch.setattr(main.settings, "screener_refresh_enabled", False)
     await main._screener_universe_cron()  # must return, not hang
+
+
+# ── refresh concurrency (regressions from the first production deploy) ─────
+
+class _FakeAlpaca:
+    """Stands in for AlpacaSource: N symbols x 300 daily bars each."""
+
+    # A real multi-symbol request always yields to the loop; a fake that never
+    # awaits would hide on-loop blocking, so default to a small delay.
+    def __init__(self, n_symbols: int = 1200, delay: float = 0.01):
+        self.n = n_symbols
+        self.delay = delay
+
+    def credentials_configured(self):
+        return True
+
+    async def list_active_assets(self):
+        return [{"symbol": f"S{i:04d}", "tradable": True} for i in range(self.n)]
+
+    async def get_bars_multi(self, symbols, *, days=400, chunk=200, raw=False):
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        start = dt.datetime(2025, 1, 1)
+        out = {}
+        for k, sym in enumerate(symbols):
+            px = 10.0 + k % 50
+            out[sym] = [
+                (start + dt.timedelta(days=d), px, px * 1.01, px * 0.99, px * (1 + (d % 7 - 3) / 300), 100_000 + d)
+                for d in range(300)
+            ]
+        return out
+
+
+@pytest.fixture
+def fresh_engine(monkeypatch):
+    """A SqlEngine on its own in-memory database, wired to the fake source."""
+    from backend.core import sql_engine as se
+
+    monkeypatch.setattr(se.settings, "duckdb_path", "")
+    eng = se.SqlEngine()
+    monkeypatch.setattr(se, "get_alpaca_source", lambda: _FakeAlpaca())
+    return eng
+
+
+@pytest.mark.asyncio
+async def test_refresh_builds_bars_and_metrics(fresh_engine):
+    rows = await fresh_engine.refresh_universe()
+    assert rows == 1200 * 300
+    assert fresh_engine.universe_size() == 1200
+    leftover = fresh_engine.con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_name IN ('bars_next', 'screener_metrics_next')"
+    ).fetchone()[0]
+    assert leftover == 0, "staging tables should be swapped away"
+
+
+@pytest.mark.asyncio
+async def test_refresh_writes_run_off_the_event_loop(fresh_engine, monkeypatch):
+    """DuckDB writes must run on a worker thread. In production they ran on the
+    loop and stalled HTTP and the bot tick loop for 30+ minutes.
+
+    Asserts thread identity rather than loop lag: with the bulk insert, on-loop
+    and off-loop lag differ by only a few hundred ms at test sizes, which is
+    too close to be a reliable signal on a slow machine.
+    """
+    import threading
+    from backend.core import sql_engine as se
+
+    loop_thread = threading.get_ident()
+    seen: dict[str, set[int]] = {"insert": set(), "metrics": set()}
+
+    real_insert = se._insert_frame
+
+    def spy_insert(cur, frame):
+        seen["insert"].add(threading.get_ident())
+        return real_insert(cur, frame)
+
+    real_rebuild = fresh_engine._rebuild_metrics
+
+    def spy_rebuild(cur=None):
+        seen["metrics"].add(threading.get_ident())
+        return real_rebuild(cur)
+
+    monkeypatch.setattr(se, "_insert_frame", spy_insert)
+    monkeypatch.setattr(fresh_engine, "_rebuild_metrics", spy_rebuild)
+
+    await fresh_engine.refresh_universe()
+
+    assert seen["insert"], "no bulk inserts recorded"
+    assert seen["metrics"], "metrics rebuild never ran"
+    assert loop_thread not in seen["insert"], "bar inserts ran on the event loop thread"
+    assert loop_thread not in seen["metrics"], "metrics rebuild ran on the event loop thread"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_refresh_is_refused(fresh_engine, monkeypatch):
+    from backend.core import sql_engine as se
+
+    monkeypatch.setattr(se, "get_alpaca_source", lambda: _FakeAlpaca(n_symbols=600, delay=0.2))
+    first = asyncio.create_task(fresh_engine.refresh_universe())
+    await asyncio.sleep(0.05)
+    with pytest.raises(se.RefreshInProgress):
+        await fresh_engine.refresh_universe()
+    assert await first == 600 * 300
+
+
+@pytest.mark.asyncio
+async def test_screen_reads_previous_metrics_during_refresh(fresh_engine, monkeypatch):
+    """A screen mid-refresh must see the old universe, never a dropped table."""
+    from backend.core import sql_engine as se
+
+    await fresh_engine.refresh_universe()
+    before = fresh_engine.universe_size()
+
+    monkeypatch.setattr(se, "get_alpaca_source", lambda: _FakeAlpaca(n_symbols=600, delay=0.2))
+    second = asyncio.create_task(fresh_engine.refresh_universe())
+    await asyncio.sleep(0.05)
+    sql, params = build_query([], limit=5)
+    rows = await fresh_engine.run_screen(sql, params)
+    assert rows, "screen returned nothing mid-refresh"
+    assert fresh_engine.universe_size() == before
+    await second
+    assert fresh_engine.universe_size() == 600

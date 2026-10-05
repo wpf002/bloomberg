@@ -15,7 +15,7 @@ from .core.config import settings
 from .core.database import cache, database
 from .core.observability import RequestLoggingMiddleware, configure_logging
 from .core.schema import ensure_schema
-from .core.sql_engine import engine as sql_engine
+from .core.sql_engine import RefreshInProgress, engine as sql_engine
 from .core.streaming import streamer
 from .data.sources import SecEdgarSource, get_meilisearch
 
@@ -238,6 +238,8 @@ async def _screener_universe_cron() -> None:
             )
         except asyncio.CancelledError:
             raise
+        except RefreshInProgress:
+            logger.info("screener refresh skipped: one already running")
         except Exception as exc:
             # Keep looping — a failed night just means yesterday's metrics
             # stay queryable until the next tick.
