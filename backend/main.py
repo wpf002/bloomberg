@@ -195,6 +195,31 @@ async def _screener_universe_cron() -> None:
     if not settings.screener_refresh_enabled:
         logger.info("screener universe cron disabled")
         return
+
+    # Cold start: with no metrics table every screen 503s until the first
+    # scheduled tick, which can be most of a day. The DuckDB file survives
+    # restarts, so this only fires on a genuinely fresh volume. Give the
+    # leader lock a moment to settle first, otherwise no replica sees itself
+    # as leader yet and the seed is skipped entirely.
+    try:
+        await asyncio.sleep(30)
+        if sql_engine.universe_size() == 0 and leader_lock.is_leader():
+            logger.info("screener universe empty at startup; seeding")
+            started = time.monotonic()
+            rows = await sql_engine.refresh_universe()
+            logger.info(
+                "screener universe seeded",
+                extra={
+                    "rows": rows,
+                    "symbols": sql_engine.universe_size(),
+                    "seconds": round(time.monotonic() - started),
+                },
+            )
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("screener universe seed failed: %s", exc)
+
     while True:
         try:
             await asyncio.sleep(_seconds_until_universe_refresh())

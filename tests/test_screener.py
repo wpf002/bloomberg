@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import random
 
@@ -226,3 +227,103 @@ def test_refresh_schedule_is_always_positive(monkeypatch):
         monkeypatch.setattr(main, "datetime", FrozenDT)
         secs = main._seconds_until_universe_refresh()
         assert 0 < secs <= 4 * 24 * 3600
+
+
+# ── cold-start seed ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cold_start_seeds_when_universe_empty(monkeypatch):
+    import backend.main as main
+
+    calls = []
+
+    async def fake_refresh(limit=None):
+        calls.append("refresh")
+        return 123
+
+    async def no_sleep(_):
+        raise asyncio.CancelledError  # stop after the seed block
+
+    monkeypatch.setattr(main.sql_engine, "universe_size", lambda: 0)
+    monkeypatch.setattr(main.sql_engine, "refresh_universe", fake_refresh)
+    monkeypatch.setattr(main.leader_lock, "is_leader", lambda: True)
+    monkeypatch.setattr(main.settings, "screener_refresh_enabled", True)
+
+    sleeps = {"n": 0}
+
+    async def seed_then_stop(_secs):
+        sleeps["n"] += 1
+        if sleeps["n"] > 1:
+            raise asyncio.CancelledError
+        return None
+
+    monkeypatch.setattr(main.asyncio, "sleep", seed_then_stop)
+    with pytest.raises(asyncio.CancelledError):
+        await main._screener_universe_cron()
+    assert calls == ["refresh"]
+
+
+@pytest.mark.asyncio
+async def test_cold_start_skips_when_universe_populated(monkeypatch):
+    import backend.main as main
+
+    calls = []
+
+    async def fake_refresh(limit=None):
+        calls.append("refresh")
+        return 0
+
+    monkeypatch.setattr(main.sql_engine, "universe_size", lambda: 9000)
+    monkeypatch.setattr(main.sql_engine, "refresh_universe", fake_refresh)
+    monkeypatch.setattr(main.leader_lock, "is_leader", lambda: True)
+    monkeypatch.setattr(main.settings, "screener_refresh_enabled", True)
+
+    sleeps = {"n": 0}
+
+    async def seed_then_stop(_secs):
+        sleeps["n"] += 1
+        if sleeps["n"] > 1:
+            raise asyncio.CancelledError
+        return None
+
+    monkeypatch.setattr(main.asyncio, "sleep", seed_then_stop)
+    with pytest.raises(asyncio.CancelledError):
+        await main._screener_universe_cron()
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_cold_start_skips_when_not_leader(monkeypatch):
+    import backend.main as main
+
+    calls = []
+
+    async def fake_refresh(limit=None):
+        calls.append("refresh")
+        return 0
+
+    monkeypatch.setattr(main.sql_engine, "universe_size", lambda: 0)
+    monkeypatch.setattr(main.sql_engine, "refresh_universe", fake_refresh)
+    monkeypatch.setattr(main.leader_lock, "is_leader", lambda: False)
+    monkeypatch.setattr(main.settings, "screener_refresh_enabled", True)
+
+    sleeps = {"n": 0}
+
+    async def seed_then_stop(_secs):
+        sleeps["n"] += 1
+        if sleeps["n"] > 1:
+            raise asyncio.CancelledError
+        return None
+
+    monkeypatch.setattr(main.asyncio, "sleep", seed_then_stop)
+    with pytest.raises(asyncio.CancelledError):
+        await main._screener_universe_cron()
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_cron_disabled_returns_immediately(monkeypatch):
+    import backend.main as main
+
+    monkeypatch.setattr(main.settings, "screener_refresh_enabled", False)
+    await main._screener_universe_cron()  # must return, not hang
