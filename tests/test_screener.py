@@ -173,3 +173,56 @@ def test_empty_bars_table_returns_nothing():
            high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT)"""
     )
     assert _screen(con, []) == []
+
+
+# ── refresh schedule ───────────────────────────────────────────────────────
+
+def test_refresh_schedule_skips_weekends(monkeypatch):
+    """A Friday-evening tick must land on Monday, not Saturday."""
+    import backend.main as main
+    from datetime import datetime, timezone
+
+    class FrozenDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # Fri 2026-10-02 23:00 UTC — past that day's 22:00 target.
+            return datetime(2026, 10, 2, 23, 0, tzinfo=tz or timezone.utc)
+
+    monkeypatch.setattr(main, "datetime", FrozenDT)
+    secs = main._seconds_until_universe_refresh()
+    landing = FrozenDT.now(timezone.utc).timestamp() + secs
+    landed = datetime.fromtimestamp(landing, tz=timezone.utc)
+    assert landed.weekday() == 0, f"expected Monday, got {landed:%A}"
+    assert landed.hour == 22
+
+
+def test_refresh_schedule_same_day_when_before_target(monkeypatch):
+    import backend.main as main
+    from datetime import datetime, timezone
+
+    class FrozenDT(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # Tue 2026-10-06 09:00 UTC — target is later the same day.
+            return datetime(2026, 10, 6, 9, 0, tzinfo=tz or timezone.utc)
+
+    monkeypatch.setattr(main, "datetime", FrozenDT)
+    assert main._seconds_until_universe_refresh() == 13 * 3600
+
+
+def test_refresh_schedule_is_always_positive(monkeypatch):
+    import backend.main as main
+    from datetime import datetime, timedelta, timezone
+
+    base = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    for hours in range(0, 24 * 9):
+        moment = base + timedelta(hours=hours)
+
+        class FrozenDT(datetime):
+            @classmethod
+            def now(cls, tz=None, _m=moment):
+                return _m
+
+        monkeypatch.setattr(main, "datetime", FrozenDT)
+        secs = main._seconds_until_universe_refresh()
+        assert 0 < secs <= 4 * 24 * 3600

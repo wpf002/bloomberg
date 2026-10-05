@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api import api_router
 from .core.alerts import engine as alert_engine
 from .core.bots import manager as bot_manager
+from .core.bots.coordination import leader_lock
 from .core.config import settings
 from .core.database import cache, database
 from .core.observability import RequestLoggingMiddleware, configure_logging
@@ -55,6 +58,9 @@ async def lifespan(app: FastAPI):
     # so an Alpaca/FRED/EDGAR outage at startup doesn't leave SQL empty
     # for the rest of the process lifetime.
     asyncio.create_task(_sql_warm_cron())
+    # Nightly screener universe re-ingest (~12.5k symbols). Leader-gated;
+    # see _screener_universe_cron.
+    asyncio.create_task(_screener_universe_cron())
     yield
     try:
         await bot_manager.stop()
@@ -157,6 +163,60 @@ async def _filings_indexer_cron() -> None:
             # Log + keep looping. A flaky 24h tick beats a dead task.
             logger.warning("filings indexer cron tick failed: %s", exc)
             backoff = min(backoff * 2, FILINGS_INDEX_INTERVAL_SECONDS)
+
+
+def _seconds_until_universe_refresh() -> float:
+    """Seconds until the next weekday run at SCREENER_REFRESH_UTC_HOUR.
+
+    Defaults to 22:00 UTC — after the 20:00/21:00 UTC US close (the offset
+    moves with daylight saving), so the last session's bars are settled.
+    Weekends are skipped: the universe doesn't change and a full pass is
+    ~8 minutes of upstream requests.
+    """
+    now = datetime.now(timezone.utc)
+    target = now.replace(
+        hour=settings.screener_refresh_utc_hour, minute=0, second=0, microsecond=0
+    )
+    if target <= now:
+        target += timedelta(days=1)
+    while target.weekday() >= 5:  # 5=Sat, 6=Sun
+        target += timedelta(days=1)
+    return (target - now).total_seconds()
+
+
+async def _screener_universe_cron() -> None:
+    """Nightly re-ingest of the screener universe (~12.5k symbols, ~8 min).
+
+    Only the leader refreshes: the work is identical on every replica and a
+    full pass rewrites the bars table, so running it twice is wasted upstream
+    quota. Reuses the bot manager's Redis lock, which is a no-op single-leader
+    when Redis is absent.
+    """
+    if not settings.screener_refresh_enabled:
+        logger.info("screener universe cron disabled")
+        return
+    while True:
+        try:
+            await asyncio.sleep(_seconds_until_universe_refresh())
+            if not leader_lock.is_leader():
+                logger.debug("screener refresh skipped: not leader")
+                continue
+            started = time.monotonic()
+            rows = await sql_engine.refresh_universe()
+            logger.info(
+                "screener universe refreshed",
+                extra={
+                    "rows": rows,
+                    "symbols": sql_engine.universe_size(),
+                    "seconds": round(time.monotonic() - started),
+                },
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Keep looping — a failed night just means yesterday's metrics
+            # stay queryable until the next tick.
+            logger.warning("screener universe refresh failed: %s", exc)
 
 
 async def _sql_warm_cron() -> None:

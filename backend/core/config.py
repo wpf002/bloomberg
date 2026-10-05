@@ -154,6 +154,10 @@ class Settings(BaseSettings):
     duckdb_path: str = Field(default="/tmp/aurora-sql.duckdb", alias="DUCKDB_PATH")
     # Memory ceiling handed to DuckDB; it spills above this rather than growing.
     duckdb_memory_limit: str = Field(default="512MB", alias="DUCKDB_MEMORY_LIMIT")
+    # Nightly screener universe re-ingest. 22:00 UTC sits after the US close
+    # year-round (20:00 UTC in summer, 21:00 in winter).
+    screener_refresh_enabled: bool = Field(default=True, alias="SCREENER_REFRESH_ENABLED")
+    screener_refresh_utc_hour: int = Field(default=22, ge=0, le=23, alias="SCREENER_REFRESH_UTC_HOUR")
     sql_query_timeout_seconds: float = 8.0
 
     # Default-watchlist seed lists for the SQL workbench warm-up and the
