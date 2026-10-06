@@ -30,6 +30,7 @@ from typing import Any, AsyncIterator, Iterable
 
 import httpx
 
+from . import market_feed
 from .config import settings
 
 logger = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ hub = StreamHub()
 
 # ─────────────────────── Alpaca upstream streamer ──────────────────────────
 
-ALPACA_DATA_WS = "wss://stream.data.alpaca.markets/v2/iex"  # free IEX feed
+# Feed segment (iex | sip) is appended per connection; see core/market_feed.py.
+ALPACA_DATA_WS_BASE = "wss://stream.data.alpaca.markets/v2"
 ALPACA_NEWS_WS = "wss://stream.data.alpaca.markets/v1beta1/news"
 
 
@@ -107,6 +109,7 @@ class AlpacaStreamer:
         self._symbols: set[str] = set()
         self._symbols_lock = asyncio.Lock()
         self._quote_ws_subscribed: set[str] = set()
+        self._logged_errors: set[tuple] = set()
         self._stop = asyncio.Event()
         # Lazy import — websockets is optional at install time so the
         # smoke test (which only imports modules) doesn't pull a network
@@ -170,7 +173,8 @@ class AlpacaStreamer:
         backoff = 1.0
         while not self._stop.is_set():
             try:
-                async with self._ws_lib.connect(ALPACA_DATA_WS, ping_interval=20) as ws:
+                url = f"{ALPACA_DATA_WS_BASE}/{market_feed.current()}"
+                async with self._ws_lib.connect(url, ping_interval=20) as ws:
                     await ws.send(
                         json.dumps(
                             {
@@ -198,14 +202,49 @@ class AlpacaStreamer:
                             continue
                         if not isinstance(msgs, list):
                             msgs = [msgs]
-                        for m in msgs:
-                            await self._dispatch_quote_msg(m)
+                        if await self._handle_quote_frames(msgs):
+                            break  # entitlement changed; reconnect on the fallback feed
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.warning("alpaca quote ws crashed: %s; reconnect in %.1fs", exc, backoff)
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 30.0)
+
+    async def _handle_quote_frames(self, msgs: list) -> bool:
+        """Dispatch one batch of upstream frames. Returns True when the
+        connection should be re-opened."""
+        for m in msgs:
+            if m.get("T") == "error":
+                if self._handle_upstream_error(m):
+                    return True
+                continue
+            await self._dispatch_quote_msg(m)
+        return False
+
+    def _handle_upstream_error(self, m: dict) -> bool:
+        """Surface Alpaca stream errors instead of dropping them.
+
+        These used to vanish silently. The one that bit: on the free plan the
+        stream accepts at most 30 symbols and answers the rest with 405, so a
+        long watchlist just stopped updating with nothing in the logs.
+
+        Returns True when the connection should be dropped and re-opened, which
+        is the case for 409 (no SIP entitlement): the reconnect picks up IEX.
+        """
+        code, msg = m.get("code"), m.get("msg") or ""
+        if code == 409 and market_feed.current() == "sip":
+            market_feed.downgrade(f"stream error 409: {msg}")
+            return True
+        key = (code, msg)
+        if key not in self._logged_errors:
+            self._logged_errors.add(key)
+            hint = ""
+            if code == 405:
+                hint = (f" — {len(self._symbols)} symbols requested; the free IEX plan "
+                        "streams at most 30. Extra symbols get no live updates.")
+            logger.warning("alpaca quote stream error %s: %s%s", code, msg, hint)
+        return False
 
     async def _send_quote_sub(self, symbols: set[str], *, subscribe: bool) -> None:
         ws = getattr(self, "_quote_ws", None)

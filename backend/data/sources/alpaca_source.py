@@ -6,6 +6,7 @@ import httpx
 
 from ...core.bsm import bsm_greeks, year_fraction
 from ...core.cache_utils import cached
+from ...core import market_feed
 from ...core.config import settings
 from ..normalizer import get_normalizer
 from ...models.schemas import (
@@ -237,7 +238,7 @@ class AlpacaSource:
                         "timeframe": "1Day",
                         "start": start,
                         "limit": 10000,
-                        "feed": "iex",
+                        **market_feed.bar_params("1Day"),
                         # Split-adjusted: raw bars show every split as a crash.
                         # See get_stock_bars.
                         "adjustment": "split",
@@ -249,6 +250,9 @@ class AlpacaSource:
                     except Exception as exc:
                         logger.warning("Alpaca multi-bars batch %d failed: %s", i // chunk, exc)
                         break
+                    if market_feed.is_entitlement_error(resp.status_code, resp.text) and \
+                            market_feed.downgrade(f"multi-bars: {resp.text[:120]}", timeframe="1Day"):
+                        continue  # same page again, now on the fallback feed
                     if resp.status_code != 200:
                         logger.warning(
                             "Alpaca multi-bars -> %s: %s", resp.status_code, resp.text[:200]
@@ -300,7 +304,9 @@ class AlpacaSource:
     ) -> List[QuoteHistoryPoint]:
         """OHLCV bars from Alpaca's /v2/stocks/{symbol}/bars. Maps the
         yfinance-style period/interval strings (e.g. '1mo' / '1d') onto
-        Alpaca's timeframe enum and a start/end window. Free-tier IEX feed."""
+        Alpaca's timeframe enum and a start/end window. Daily bars come from
+        SIP (consolidated, free with a 16-minute lag); intraday follows the
+        live feed. See core/market_feed.py."""
         if not self._enabled():
             return []
         tf = _INTERVAL_TO_TIMEFRAME.get(interval, "1Day")
@@ -315,7 +321,7 @@ class AlpacaSource:
             "timeframe": tf,
             "start": start.isoformat().replace("+00:00", "Z"),
             "limit": 10000,
-            "feed": "iex",
+            **market_feed.bar_params(tf, now),
             # Split-adjusted, not raw. Raw bars show a split as a one-day crash
             # (a 10:1 split reads as -90%), and every consumer of these bars
             # treated it as real: bot indicators and backtests, the risk
@@ -327,6 +333,11 @@ class AlpacaSource:
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers=self._headers, params=params)
+            if market_feed.is_entitlement_error(resp.status_code, resp.text) and \
+                    market_feed.downgrade(f"bars {symbol}: {resp.text[:120]}", timeframe=tf):
+                params.pop("end", None)
+                params.update(market_feed.bar_params(tf, now))
+                resp = await client.get(url, headers=self._headers, params=params)
         if resp.status_code != 200:
             logger.warning(
                 "Alpaca bars %s (%s/%s) -> %s: %s",

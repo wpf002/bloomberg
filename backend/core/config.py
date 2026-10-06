@@ -185,7 +185,9 @@ class Settings(BaseSettings):
     # V2.6 — supplemental data sources (all optional; the app falls back
     # to Alpaca / yfinance when these are unset). Massive replaces the
     # legacy Polygon integration — set MASSIVE_API_KEY above.
-    alpaca_data_tier: str = "iex"  # "iex" (free) or "premium" (paid SIP+L2)
+    # "iex" (free, one venue) or "sip" (all US exchanges; needs Alpaca Algo
+    # Trader Plus). See core/market_feed.py — an unentitled "sip" falls back.
+    alpaca_data_feed: str = Field(default="iex", alias="ALPACA_DATA_FEED")
 
     risk_free_rate: float = 0.045
     default_cache_ttl: int = 60
