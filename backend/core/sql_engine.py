@@ -23,6 +23,7 @@ import asyncio
 import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import duckdb
@@ -48,6 +49,62 @@ _FORBIDDEN = re.compile(
 
 class RefreshInProgress(RuntimeError):
     """A universe refresh is already running; the caller should not queue another."""
+
+
+def _adjust_spin_offs(
+    cur: "duckdb.DuckDBPyConnection", spin_offs: list[dict], table: str = "bars_next"
+) -> dict[str, int]:
+    """Back-adjust parent prices for spin-offs so the distribution doesn't read
+    as a crash.
+
+    Value method, using only ex-date closes so the day's market move stays out
+    of the factor:
+
+        f = P_parent / (P_parent + ratio * P_child)
+
+    and every parent bar before the ex-date is scaled by f. Volume is left
+    alone; a spin-off doesn't change the parent's share count.
+
+    Factors are all computed before any are applied. A parent with two
+    spin-offs in the window would otherwise have its earlier ex-date close
+    already scaled by the later factor, skewing the earlier one.
+    """
+    factors: list[tuple[str, Any, float]] = []
+    skipped = 0
+    for so in spin_offs:
+        row = cur.execute(
+            f"""
+            SELECT p.timestamp, p.close, c.close
+            FROM {table} p
+            JOIN {table} c ON c.symbol = ? AND c.timestamp = p.timestamp
+            WHERE p.symbol = ? AND p.timestamp >= CAST(? AS TIMESTAMP)
+            ORDER BY p.timestamp
+            LIMIT 1
+            """,
+            [so["child"], so["parent"], so["ex_date"]],
+        ).fetchone()
+        if not row:
+            # Child isn't in the universe (escrow/CVR CUSIPs, OTC listings) or
+            # the ex-date is outside the window.
+            skipped += 1
+            continue
+        ex_ts, p_parent, p_child = row
+        if not p_parent or not p_child or p_parent <= 0 or p_child <= 0:
+            skipped += 1
+            continue
+        f = p_parent / (p_parent + so["ratio"] * p_child)
+        if not (0.0 < f < 1.0):
+            skipped += 1
+            continue
+        factors.append((so["parent"], ex_ts, f))
+
+    for parent, ex_ts, f in factors:
+        cur.execute(
+            f"UPDATE {table} SET open = open * ?, high = high * ?, low = low * ?, close = close * ? "
+            "WHERE symbol = ? AND timestamp < ?",
+            [f, f, f, f, parent, ex_ts],
+        )
+    return {"applied": len(factors), "skipped": skipped}
 
 
 def _insert_frame(cur: "duckdb.DuckDBPyConnection", frame: "pd.DataFrame") -> None:
@@ -268,6 +325,23 @@ class SqlEngine:
                 logger.warning("screener universe refresh returned no bars")
                 await asyncio.to_thread(cur.execute, "DROP TABLE IF EXISTS bars_next")
                 return 0
+
+            # Split adjustment comes from Alpaca; spin-offs don't, so back-adjust
+            # them here. Best-effort: a corporate-actions outage leaves those few
+            # parents unadjusted rather than failing the whole refresh.
+            try:
+                today = datetime.now(timezone.utc).date()
+                spins = await alpaca.get_spin_offs(
+                    (today - timedelta(days=400)).isoformat(), today.isoformat()
+                )
+                if spins:
+                    stats = await asyncio.to_thread(_adjust_spin_offs, cur, spins)
+                    logger.info(
+                        "screener spin-off adjustment",
+                        extra={"spin_offs": len(spins), **stats},
+                    )
+            except Exception as exc:
+                logger.warning("spin-off adjustment skipped: %s", exc)
 
             def _swap() -> None:
                 cur.execute("BEGIN")

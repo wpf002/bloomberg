@@ -346,6 +346,9 @@ class _FakeAlpaca:
     async def list_active_assets(self):
         return [{"symbol": f"S{i:04d}", "tradable": True} for i in range(self.n)]
 
+    async def get_spin_offs(self, start, end):
+        return []
+
     async def get_bars_multi(self, symbols, *, days=400, chunk=200, raw=False):
         if self.delay:
             await asyncio.sleep(self.delay)
@@ -450,3 +453,174 @@ async def test_screen_reads_previous_metrics_during_refresh(fresh_engine, monkey
     assert fresh_engine.universe_size() == before
     await second
     assert fresh_engine.universe_size() == 600
+
+
+# ── Wilder smoothing matches a step-by-step reference ──────────────────────
+
+def _wilder(values, n=14):
+    """Reference RMA: SMA seed over the first n values, then the recursion.
+    Same definition as TradingView's ta.rma."""
+    if len(values) < n:
+        return None
+    avg = sum(values[:n]) / n
+    for v in values[n:]:
+        avg = (avg * (n - 1) + v) / n
+    return avg
+
+
+def _reference_rsi_atr(bars):
+    gains, losses, trs = [], [], []
+    for prev, cur in zip(bars, bars[1:]):
+        pc = prev[3]
+        o, h, l, c = cur
+        gains.append(max(c - pc, 0.0))
+        losses.append(max(pc - c, 0.0))
+        trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+    g, lo, atr = _wilder(gains), _wilder(losses), _wilder(trs)
+    rsi = 100.0 if lo == 0 else 100.0 - 100.0 / (1.0 + g / lo)
+    return rsi, atr / bars[-1][3] * 100.0
+
+
+@pytest.mark.parametrize("n_days", [61, 120, 300])
+def test_rsi_and_atr_match_wilder_recursion(n_days):
+    con = duckdb.connect(":memory:")
+    con.execute(
+        """CREATE TABLE bars(symbol TEXT, timestamp TIMESTAMP, open DOUBLE,
+           high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT)"""
+    )
+    rng = random.Random(n_days)
+    px, ohlc, rows = 100.0, [], []
+    for i in range(n_days):
+        o = px
+        px *= 1 + rng.uniform(-0.04, 0.04)
+        h, l = max(o, px) * (1 + rng.uniform(0, 0.01)), min(o, px) * (1 - rng.uniform(0, 0.01))
+        ohlc.append((o, h, l, px))
+        rows.append(("REF", dt.datetime(2025, 1, 1) + dt.timedelta(days=i), o, h, l, px, 1000))
+    con.executemany("INSERT INTO bars VALUES (?,?,?,?,?,?,?)", rows)
+
+    (row,) = _screen(con, [])
+    want_rsi, want_atr = _reference_rsi_atr(ohlc)
+    assert row["rsi14"] == pytest.approx(want_rsi, rel=1e-9)
+    assert row["atr14_pct"] == pytest.approx(want_atr, rel=1e-9)
+
+
+def test_wilder_rsi_is_less_extreme_than_simple_average():
+    """The reason for the switch: a sustained decline read RSI ~4 under the
+    simple average. Wilder carries older, calmer sessions forward."""
+    con = duckdb.connect(":memory:")
+    con.execute(
+        """CREATE TABLE bars(symbol TEXT, timestamp TIMESTAMP, open DOUBLE,
+           high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT)"""
+    )
+    rng = random.Random(3)
+    px, rows = 150.0, []
+    for i in range(200):
+        # 186 sessions of chop, then 14 straight down days
+        px *= (1 + rng.uniform(-0.01, 0.01)) if i < 186 else 0.98
+        rows.append(("DOWN", dt.datetime(2025, 1, 1) + dt.timedelta(days=i), px, px * 1.005, px * 0.995, px, 1000))
+    con.executemany("INSERT INTO bars VALUES (?,?,?,?,?,?,?)", rows)
+    (row,) = _screen(con, [])
+    assert 0.0 < row["rsi14"] < 30.0      # still flags oversold
+    assert row["rsi14"] > 5.0             # but not the simple-average extreme of ~0
+
+
+# ── spin-off adjustment ────────────────────────────────────────────────────
+
+def _bars_table(rows):
+    con = duckdb.connect(":memory:")
+    con.execute(
+        """CREATE TABLE bars_next(symbol TEXT, timestamp TIMESTAMP, open DOUBLE,
+           high DOUBLE, low DOUBLE, close DOUBLE, volume BIGINT)"""
+    )
+    con.executemany("INSERT INTO bars_next VALUES (?,?,?,?,?,?,?)", rows)
+    return con
+
+
+def _day(i):
+    return dt.datetime(2026, 9, 1) + dt.timedelta(days=i)
+
+
+def test_spin_off_removes_the_cliff():
+    """Parent trades 100 then 20 after spinning off a child worth 80, 1:1.
+    f = 20 / (20 + 80) = 0.2, so pre-ex parent bars scale to 20."""
+    from backend.core.sql_engine import _adjust_spin_offs
+
+    rows = [("PAR", _day(i), 100, 101, 99, 100, 5000) for i in range(10)]
+    rows += [("PAR", _day(i), 20, 20.2, 19.8, 20, 5000) for i in range(10, 20)]
+    rows += [("KID", _day(i), 80, 81, 79, 80, 3000) for i in range(10, 20)]
+    con = _bars_table(rows)
+
+    stats = _adjust_spin_offs(con, [{"parent": "PAR", "child": "KID", "ratio": 1.0,
+                                     "ex_date": _day(10).date().isoformat()}])
+    assert stats == {"applied": 1, "skipped": 0}
+    closes = [r[0] for r in con.execute(
+        "SELECT close FROM bars_next WHERE symbol='PAR' ORDER BY timestamp").fetchall()]
+    assert closes[9] == pytest.approx(20.0)   # day before ex, now continuous
+    assert closes[10] == pytest.approx(20.0)  # ex-date untouched
+    worst = min(b / a - 1 for a, b in zip(closes, closes[1:]))
+    assert worst > -0.01, "cliff should be gone"
+
+
+def test_spin_off_leaves_volume_and_child_alone():
+    from backend.core.sql_engine import _adjust_spin_offs
+
+    rows = [("PAR", _day(i), 100, 100, 100, 100, 5000) for i in range(5)]
+    rows += [("PAR", _day(i), 50, 50, 50, 50, 5000) for i in range(5, 10)]
+    rows += [("KID", _day(i), 50, 50, 50, 50, 3000) for i in range(5, 10)]
+    con = _bars_table(rows)
+    _adjust_spin_offs(con, [{"parent": "PAR", "child": "KID", "ratio": 1.0,
+                             "ex_date": _day(5).date().isoformat()}])
+    vols = {r[0] for r in con.execute("SELECT volume FROM bars_next WHERE symbol='PAR'").fetchall()}
+    assert vols == {5000}
+    kid = {r[0] for r in con.execute("SELECT close FROM bars_next WHERE symbol='KID'").fetchall()}
+    assert kid == {50.0}
+
+
+def test_spin_off_ratio_scales_child_value():
+    """2 child shares per parent share at 10 each = 20 distributed;
+    parent 80 after, so f = 80 / (80 + 20) = 0.8."""
+    from backend.core.sql_engine import _adjust_spin_offs
+
+    rows = [("PAR", _day(i), 100, 100, 100, 100, 1) for i in range(3)]
+    rows += [("PAR", _day(i), 80, 80, 80, 80, 1) for i in range(3, 6)]
+    rows += [("KID", _day(i), 10, 10, 10, 10, 1) for i in range(3, 6)]
+    con = _bars_table(rows)
+    _adjust_spin_offs(con, [{"parent": "PAR", "child": "KID", "ratio": 2.0,
+                             "ex_date": _day(3).date().isoformat()}])
+    first = con.execute("SELECT close FROM bars_next WHERE symbol='PAR' ORDER BY timestamp LIMIT 1").fetchone()[0]
+    assert first == pytest.approx(80.0)
+
+
+def test_spin_off_skipped_when_child_not_trading():
+    """Escrow / CVR children (CUSIP-style symbols) have no bars: skip, don't guess."""
+    from backend.core.sql_engine import _adjust_spin_offs
+
+    rows = [("PAR", _day(i), 100, 100, 100, 100, 1) for i in range(6)]
+    con = _bars_table(rows)
+    stats = _adjust_spin_offs(con, [{"parent": "PAR", "child": "494ESC015", "ratio": 0.07,
+                                     "ex_date": _day(3).date().isoformat()}])
+    assert stats == {"applied": 0, "skipped": 1}
+    assert {r[0] for r in con.execute("SELECT close FROM bars_next").fetchall()} == {100.0}
+
+
+def test_two_spin_offs_on_one_parent_compose():
+    """Factors are computed before any are applied, so the earlier spin-off's
+    factor isn't skewed by the later one's adjustment."""
+    from backend.core.sql_engine import _adjust_spin_offs
+
+    # 100 -> (spin A worth 50) -> 50 -> (spin B worth 25) -> 25
+    rows = [("PAR", _day(i), 100, 100, 100, 100, 1) for i in range(0, 3)]
+    rows += [("PAR", _day(i), 50, 50, 50, 50, 1) for i in range(3, 6)]
+    rows += [("PAR", _day(i), 25, 25, 25, 25, 1) for i in range(6, 9)]
+    rows += [("KA", _day(i), 50, 50, 50, 50, 1) for i in range(3, 9)]
+    rows += [("KB", _day(i), 25, 25, 25, 25, 1) for i in range(6, 9)]
+    con = _bars_table(rows)
+    stats = _adjust_spin_offs(con, [
+        {"parent": "PAR", "child": "KB", "ratio": 1.0, "ex_date": _day(6).date().isoformat()},
+        {"parent": "PAR", "child": "KA", "ratio": 1.0, "ex_date": _day(3).date().isoformat()},
+    ])
+    assert stats["applied"] == 2
+    closes = [r[0] for r in con.execute(
+        "SELECT close FROM bars_next WHERE symbol='PAR' ORDER BY timestamp").fetchall()]
+    # Each spin halves the parent; fully adjusted, the series is flat at 25.
+    assert closes == pytest.approx([25.0] * 9)

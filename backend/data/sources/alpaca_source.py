@@ -26,6 +26,7 @@ ALPACA_DATA_BASE = "https://data.alpaca.markets/v2"
 ALPACA_NEWS_BASE = "https://data.alpaca.markets/v1beta1/news"
 ALPACA_CRYPTO_BASE = "https://data.alpaca.markets/v1beta3/crypto/us"
 ALPACA_OPTIONS_BASE = "https://data.alpaca.markets/v1beta1/options"
+ALPACA_CORP_ACTIONS = "https://data.alpaca.markets/v1/corporate-actions"
 
 
 def _pick_default_expiration(expirations: list[str]) -> str:
@@ -237,7 +238,9 @@ class AlpacaSource:
                         "start": start,
                         "limit": 10000,
                         "feed": "iex",
-                        "adjustment": "raw",
+                        # Split-adjusted: raw bars show every split as a crash.
+                        # See get_stock_bars.
+                        "adjustment": "split",
                     }
                     if page:
                         params["page_token"] = page
@@ -313,7 +316,14 @@ class AlpacaSource:
             "start": start.isoformat().replace("+00:00", "Z"),
             "limit": 10000,
             "feed": "iex",
-            "adjustment": "raw",
+            # Split-adjusted, not raw. Raw bars show a split as a one-day crash
+            # (a 10:1 split reads as -90%), and every consumer of these bars
+            # treated it as real: bot indicators and backtests, the risk
+            # engine's VaR and drawdown, factor regressions, advisor context.
+            # 313 of ~13k symbols had a split in the last year. "split" rather
+            # than "all" matches charting tools' default, which adjust for
+            # splits but not dividends.
+            "adjustment": "split",
         }
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(url, headers=self._headers, params=params)
@@ -434,6 +444,47 @@ class AlpacaSource:
         return quote
 
     @cached("alpaca:assets_active", ttl=86400, model=None)
+    async def get_spin_offs(self, start: str, end: str) -> list[dict]:
+        """Spin-offs with an ex-date in [start, end] (YYYY-MM-DD).
+
+        Alpaca's split adjustment doesn't cover spin-offs, so the parent's bars
+        show the distribution as a one-day crash (CTVA read 77.67 -> 12.57 on
+        its 2026-10-01 spin-off). The screener ingest uses these to back-adjust.
+
+        Returns [{parent, child, ratio, ex_date}] where ratio is child shares
+        received per parent share.
+        """
+        if not self._enabled():
+            return []
+        out: list[dict] = []
+        page: str | None = None
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                params = {"types": "spin_off", "start": start, "end": end, "limit": 1000}
+                if page:
+                    params["page_token"] = page
+                resp = await client.get(ALPACA_CORP_ACTIONS, headers=self._headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning("Alpaca corporate actions -> %s: %s", resp.status_code, resp.text[:200])
+                    break
+                body = resp.json() or {}
+                for s in (body.get("corporate_actions") or {}).get("spin_offs", []) or []:
+                    try:
+                        ratio = float(s["new_rate"]) / float(s["source_rate"])
+                    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                        continue
+                    if s.get("source_symbol") and s.get("new_symbol") and s.get("ex_date") and ratio > 0:
+                        out.append({
+                            "parent": s["source_symbol"].upper(),
+                            "child": s["new_symbol"].upper(),
+                            "ratio": ratio,
+                            "ex_date": s["ex_date"],
+                        })
+                page = body.get("next_page_token")
+                if not page:
+                    break
+        return out
+
     async def list_active_assets(self) -> list[dict]:
         """Snapshot of every active US-equity / ETF asset Alpaca carries.
         ~12k rows; cache for a day. Used by /api/symbols/search to

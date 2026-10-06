@@ -52,9 +52,9 @@ FIELDS: tuple[Field, ...] = (
     Field("sma200", "SMA 200", "usd", "200-session simple moving average"),
     Field("price_vs_sma50", "Price vs SMA50 %", "pct", "Close relative to its 50-day average"),
     Field("price_vs_sma200", "Price vs SMA200 %", "pct", "Close relative to its 200-day average"),
-    Field("rsi14", "RSI 14", "num", "Wilder-style RSI, 14 sessions"),
+    Field("rsi14", "RSI 14", "num", "Wilder RSI, 14 sessions (matches charting tools)"),
     Field("gap_pct", "Gap %", "pct", "Latest open vs prior close"),
-    Field("atr14_pct", "ATR 14 %", "pct", "Average true range as a share of price"),
+    Field("atr14_pct", "ATR 14 %", "pct", "Wilder ATR as a share of price"),
     Field("ret_1w", "Return 1w", "pct", "5-session return"),
     Field("ret_1m", "Return 1m", "pct", "21-session return"),
     Field("ret_3m", "Return 3m", "pct", "63-session return"),
@@ -67,9 +67,11 @@ SORTABLE = FIELD_KEYS | {"symbol"}
 # One pass over `bars` building every metric per symbol. Window functions do the
 # work so there is no Python-side loop over the universe.
 #
-# RSI uses a simple average of gains/losses over 14 sessions rather than Wilder's
-# recursive smoothing — DuckDB has no native recursive window, and across a
-# screening universe the two rank almost identically.
+# RSI and ATR use Wilder's smoothing (RMA, alpha = 1/14), the same definition
+# TradingView and most charting tools use, so the numbers here match what a
+# trader sees elsewhere. A simple 14-session average reads far more extreme:
+# CHTR showed 4.2 against roughly 15 on a chart. See `agg` for how the
+# recursion is computed without a recursive window.
 METRICS_SQL = """
 WITH ordered AS (
     SELECT
@@ -92,20 +94,35 @@ WITH ordered AS (
 ),
 moves AS (
     SELECT
-        symbol, timestamp,
+        symbol,
         GREATEST(close - prev_close, 0) AS gain,
         GREATEST(prev_close - close, 0) AS loss,
         GREATEST(high - low, ABS(high - prev_close), ABS(low - prev_close)) AS tr,
-        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp DESC) AS rn_desc
+        ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY timestamp) AS rn,
+        COUNT(*)     OVER (PARTITION BY symbol)                    AS n
     FROM ordered
     WHERE prev_close IS NOT NULL
 ),
 agg AS (
+    -- Wilder's recursion A[t] = (1-a)*A[t-1] + a*x[t], seeded with the simple
+    -- mean of the first 14 values, unrolls to
+    --     A[T] = (1-a)^(T-14) * mean(x[1..14]) + a * SUM over t>14 of (1-a)^(T-t) * x[t]
+    -- which is an ordinary aggregate. Exact, not an approximation.
+    -- (No braces in this comment: METRICS_SQL goes through str.format.)
     SELECT
         symbol,
-        AVG(gain) FILTER (WHERE rn_desc <= 14) AS avg_gain,
-        AVG(loss) FILTER (WHERE rn_desc <= 14) AS avg_loss,
-        AVG(tr)   FILTER (WHERE rn_desc <= 14) AS atr14
+        CASE WHEN MAX(n) >= 14 THEN
+            POW(13.0 / 14.0, MAX(n) - 14) * AVG(gain) FILTER (WHERE rn <= 14)
+            + (1.0 / 14.0) * COALESCE(SUM(gain * POW(13.0 / 14.0, n - rn)) FILTER (WHERE rn > 14), 0)
+        END AS avg_gain,
+        CASE WHEN MAX(n) >= 14 THEN
+            POW(13.0 / 14.0, MAX(n) - 14) * AVG(loss) FILTER (WHERE rn <= 14)
+            + (1.0 / 14.0) * COALESCE(SUM(loss * POW(13.0 / 14.0, n - rn)) FILTER (WHERE rn > 14), 0)
+        END AS avg_loss,
+        CASE WHEN MAX(n) >= 14 THEN
+            POW(13.0 / 14.0, MAX(n) - 14) * AVG(tr) FILTER (WHERE rn <= 14)
+            + (1.0 / 14.0) * COALESCE(SUM(tr * POW(13.0 / 14.0, n - rn)) FILTER (WHERE rn > 14), 0)
+        END AS atr14
     FROM moves
     GROUP BY symbol
 )
