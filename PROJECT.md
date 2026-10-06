@@ -150,7 +150,7 @@ market-hours gate.
   distance-to-trigger, orders-today) → live "Heartbeat" strip in the panel.
 - **Watchdog** flags any stale heartbeat during market hours straight into the
   bot's Activity feed (one warning per episode + recovery note).
-- Token-gated `GET /bots/monitor` → sessionless health pull for an external
+- `GET /bots/monitor` (`Authorization: Bearer <BOTS_MONITOR_TOKEN>`) → sessionless health pull for an external
   watcher; a weekday-morning routine sends a daily health ping.
 - Backtest engine replays a strategy over ~6mo of daily bars before arming.
 

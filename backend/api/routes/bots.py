@@ -7,9 +7,11 @@ paper-only; see core/bots/executor.is_paper.
 
 from __future__ import annotations
 
+import hmac
+
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from ...core.auth import User, require_user
 from ...core.bots import health as health_mod
@@ -79,14 +81,33 @@ async def bots_status() -> dict:
 
 
 @router.get("/monitor")
-async def bots_monitor(token: str = Query(default="")) -> dict:
+async def bots_monitor(
+    request: Request,
+    authorization: str | None = Header(default=None),
+) -> dict:
     """Sessionless heartbeat of every active bot — for an external watcher (or
     an assistant) answering "how are my bots doing". Gated by BOTS_MONITOR_TOKEN
-    so it never leaks bot state to the public. Read-only; no secrets."""
+    so it never leaks bot state to the public. Read-only; no secrets.
+
+    The token goes in `Authorization: Bearer <token>`. It used to be a `?token=`
+    query param, which put the secret into proxy and access logs on every
+    call; a request still using that form is refused with a 400 so a stale
+    caller fails visibly instead of silently.
+    """
     expected = settings.bots_monitor_token
     if not expected:
         raise HTTPException(status_code=503, detail="BOTS_MONITOR_TOKEN not configured on this server")
-    if token != expected:
+    if "token" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail="pass the monitor token as 'Authorization: Bearer <token>', not ?token=",
+        )
+    scheme, _, supplied = (authorization or "").partition(" ")
+    if scheme.lower() != "bearer" or not supplied:
+        raise HTTPException(status_code=401, detail="missing bearer token")
+    # Constant-time compare: `!=` returns faster the earlier the first
+    # mismatching character, which leaks the token one prefix at a time.
+    if not hmac.compare_digest(supplied.strip().encode(), expected.encode()):
         raise HTTPException(status_code=401, detail="invalid monitor token")
     active = await store.list_active_bots()
     health = await health_mod.read_many([b.id for b in active])
