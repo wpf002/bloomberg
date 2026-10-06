@@ -140,3 +140,64 @@ def test_formatter_output_is_valid_json():
     payload = json.loads(JsonFormatter().format(_record("plain message")))
     assert payload["msg"] == "plain message"
     assert payload["name"] == "httpx"
+
+
+# ── logging must not block the event loop ─────────────────────────────────
+
+class _SlowStream:
+    """A stderr whose consumer has fallen behind: every write takes 200ms."""
+
+    def __init__(self):
+        self.lines = []
+
+    def write(self, s):
+        import time
+        time.sleep(0.2)
+        self.lines.append(s)
+
+    def flush(self):
+        pass
+
+
+def test_log_calls_do_not_wait_on_a_slow_consumer(monkeypatch):
+    """Railway's log forwarder fell 27s behind in production; with a stream
+    handler on the event loop, every log call then blocked the process."""
+    import sys
+    import time
+    from backend.core import observability
+
+    slow = _SlowStream()
+    monkeypatch.setattr(sys, "stderr", slow)
+    observability.configure_logging("INFO")
+    try:
+        log = logging.getLogger("backend.test.slow")
+        t0 = time.perf_counter()
+        for i in range(5):
+            log.warning("line %d", i)
+        elapsed = time.perf_counter() - t0
+        assert elapsed < 0.1, f"5 log calls took {elapsed:.2f}s; the caller is blocking on the write"
+    finally:
+        observability._stop_listener()
+    assert len(slow.lines) == 5, "queued records should still be written"
+
+
+def test_root_logs_through_a_queue():
+    from logging.handlers import QueueHandler
+    from backend.core import observability
+
+    observability.configure_logging("INFO")
+    try:
+        handlers = logging.getLogger().handlers
+        assert len(handlers) == 1 and isinstance(handlers[0], QueueHandler)
+    finally:
+        observability._stop_listener()
+
+
+def test_httpx_request_lines_quiet_outside_debug():
+    from backend.core import observability
+
+    observability.configure_logging("INFO")
+    try:
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+    finally:
+        observability._stop_listener()

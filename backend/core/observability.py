@@ -21,10 +21,13 @@ Helpers:
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
+import queue
 import re
 import time
+from logging.handlers import QueueHandler, QueueListener
 from typing import Any, Callable
 
 from fastapi import Request
@@ -117,18 +120,53 @@ def configure_logging(level: str = "INFO") -> None:
 
     Called once at import time from main.py — calling twice is harmless
     because we tear down existing handlers first.
+
+    Records go through a queue to a background thread that does the actual
+    write. A stream handler writes synchronously on whichever thread logs,
+    which here is the event loop: when Railway's log forwarder fell behind
+    (up to 27s), the stderr pipe filled and every log call blocked the whole
+    process. /healthz took 14.6s during a fundamentals ingest, and an
+    undrained pipe reproduces a 5.4s stall locally. With the queue, a slow
+    consumer only backs up the queue.
     """
-    handler = logging.StreamHandler()
-    handler.setFormatter(JsonFormatter())
+    global _listener
+    stream = logging.StreamHandler()
+    stream.setFormatter(JsonFormatter())
+    _stop_listener()
+    log_queue: queue.SimpleQueue = queue.SimpleQueue()
+    _listener = QueueListener(log_queue, stream)
+    _listener.start()
+    atexit.register(_stop_listener)
+
     root = logging.getLogger()
     for existing in list(root.handlers):
         root.removeHandler(existing)
-    root.addHandler(handler)
+    root.addHandler(QueueHandler(log_queue))
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
     # Uvicorn brings its own access log that fights with ours. Silence
     # its access logger; we emit our own structured access lines via
     # RequestLoggingMiddleware.
     logging.getLogger("uvicorn.access").disabled = True
+    # httpx logs every request at INFO. During a fundamentals refresh that was
+    # 93% of all log lines (one per SEC filer), which is what swamped the log
+    # pipe. Upstream calls that matter are logged deliberately via
+    # log_upstream(); failures still surface at WARNING.
+    if level.upper() != "DEBUG":
+        for noisy in ("httpx", "httpcore"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+_listener: "QueueListener | None" = None
+
+
+def _stop_listener() -> None:
+    """Flush queued records and stop the writer thread. Idempotent: it runs
+    from atexit and from reconfiguration, and QueueListener.stop() raises if
+    called twice."""
+    global _listener
+    if _listener is not None:
+        listener, _listener = _listener, None
+        listener.stop()
 
 
 # ── per-request access log ─────────────────────────────────────────────────
