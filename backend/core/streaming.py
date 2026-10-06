@@ -110,6 +110,7 @@ class AlpacaStreamer:
         self._symbols_lock = asyncio.Lock()
         self._quote_ws_subscribed: set[str] = set()
         self._logged_errors: set[tuple] = set()
+        self._backoff = 1.0
         self._stop = asyncio.Event()
         # Lazy import — websockets is optional at install time so the
         # smoke test (which only imports modules) doesn't pull a network
@@ -170,7 +171,11 @@ class AlpacaStreamer:
     # ── upstream: quotes ────────────────────────────────────────────────
 
     async def _run_quote_ws(self) -> None:
-        backoff = 1.0
+        # Backoff resets only on a confirmed "authenticated" frame, not on a
+        # successful socket connect: Alpaca accepts the socket and then refuses
+        # the session (406 connection limit, 402 bad keys), so resetting on
+        # connect retried those once a second indefinitely.
+        self._backoff = 1.0
         while not self._stop.is_set():
             try:
                 url = f"{ALPACA_DATA_WS_BASE}/{market_feed.current()}"
@@ -194,7 +199,6 @@ class AlpacaStreamer:
                                 )
                             )
                             self._quote_ws_subscribed = set(self._symbols)
-                    backoff = 1.0
                     async for raw in ws:
                         try:
                             msgs = json.loads(raw)
@@ -203,19 +207,30 @@ class AlpacaStreamer:
                         if not isinstance(msgs, list):
                             msgs = [msgs]
                         if await self._handle_quote_frames(msgs):
-                            break  # entitlement changed; reconnect on the fallback feed
+                            break  # reconnect: fallback feed, or the slot freed up
+                # The socket ended, by the server or by us. Wait before reopening
+                # so a refusal loop can't hammer Alpaca.
+                await asyncio.sleep(self._backoff)
+                self._backoff = min(self._backoff * 2, 30.0)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.warning("alpaca quote ws crashed: %s; reconnect in %.1fs", exc, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30.0)
+                logger.warning("alpaca quote ws crashed: %s; reconnect in %.1fs", exc, self._backoff)
+                await asyncio.sleep(self._backoff)
+                self._backoff = min(self._backoff * 2, 30.0)
 
     async def _handle_quote_frames(self, msgs: list) -> bool:
         """Dispatch one batch of upstream frames. Returns True when the
         connection should be re-opened."""
         for m in msgs:
-            if m.get("T") == "error":
+            t = m.get("T")
+            if t == "success" and m.get("msg") == "authenticated":
+                self._backoff = 1.0
+                # Once per connection: the positive signal that live quotes are
+                # flowing, so recovery after a 406 is visible in the logs.
+                logger.info("alpaca quote stream authenticated", extra={"feed": market_feed.current()})
+                continue
+            if t == "error":
                 if self._handle_upstream_error(m):
                     return True
                 continue
@@ -235,6 +250,19 @@ class AlpacaStreamer:
         code, msg = m.get("code"), m.get("msg") or ""
         if code == 409 and market_feed.current() == "sip":
             market_feed.downgrade(f"stream error 409: {msg}")
+            return True
+        if code == 406:
+            # One stream connection per account on the free plan. During a
+            # deploy the outgoing container still holds it, so the new one is
+            # refused and, before this, sat on the dead socket for its whole
+            # lifetime: no live quotes after every deploy. Retry with backoff
+            # until the old connection is released.
+            if (code, msg) not in self._logged_errors:
+                self._logged_errors.add((code, msg))
+                logger.warning(
+                    "alpaca quote stream refused (406: %s); another connection holds "
+                    "the slot, likely the previous deploy. Retrying with backoff.", msg,
+                )
             return True
         key = (code, msg)
         if key not in self._logged_errors:

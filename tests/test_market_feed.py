@@ -118,3 +118,75 @@ def test_error_frames_are_not_dispatched_as_quotes():
     ]))
     assert reconnect is False
     assert [m["T"] for m in dispatched] == ["q"]
+
+
+# ── connection limit (406) during deploys ──────────────────────────────────
+
+def test_stream_406_reconnects_and_logs_once(caplog):
+    """The free plan allows one stream connection. During a deploy the old
+    container holds it; the new one used to sit on the refused socket forever,
+    so live quotes died after every deploy."""
+    s = _streamer()
+    frame = {"T": "error", "code": 406, "msg": "connection limit exceeded"}
+    with caplog.at_level("WARNING"):
+        assert s._handle_upstream_error(frame) is True
+        assert s._handle_upstream_error(frame) is True
+    hits = [r for r in caplog.records if "406" in r.getMessage()]
+    assert len(hits) == 1
+
+
+def test_backoff_resets_only_on_authenticated():
+    s = _streamer()
+    s._backoff = 16.0
+    reconnect = asyncio.run(s._handle_quote_frames([{"T": "success", "msg": "connected"}]))
+    assert reconnect is False and s._backoff == 16.0   # a socket isn't a session
+    asyncio.run(s._handle_quote_frames([{"T": "success", "msg": "authenticated"}]))
+    assert s._backoff == 1.0
+
+
+# ── event-loop lag monitor ─────────────────────────────────────────────────
+
+def _run_monitor(monkeypatch, body):
+    """Run the monitor around `body`, recording its warnings directly.
+
+    Not caplog: importing backend.main runs configure_logging(), which replaces
+    the root handlers, pytest's capture handler included.
+    """
+    import backend.main as main
+
+    monkeypatch.setattr(main, "LOOP_LAG_INTERVAL", 0.05)
+    monkeypatch.setattr(main, "LOOP_LAG_WARN_SECONDS", 0.2)
+    seen = []
+    monkeypatch.setattr(main.logger, "warning", lambda msg, *a, **kw: seen.append((msg, kw.get("extra", {}))))
+
+    async def scenario():
+        monitor = asyncio.create_task(main._loop_lag_monitor())
+        await body()
+        monitor.cancel()
+        try:
+            await monitor
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(scenario())
+    return [extra for msg, extra in seen if msg == "event loop blocked"]
+
+
+def test_loop_lag_monitor_reports_a_blocked_loop(monkeypatch):
+    import time
+
+    async def body():
+        await asyncio.sleep(0.1)
+        time.sleep(0.5)          # block the loop the way a synchronous call would
+        await asyncio.sleep(0.2)
+
+    blocked = _run_monitor(monkeypatch, body)
+    assert blocked, "a 0.5s block should be reported"
+    assert blocked[0]["seconds"] >= 0.3
+
+
+def test_loop_lag_monitor_quiet_when_idle(monkeypatch):
+    async def body():
+        await asyncio.sleep(0.4)
+
+    assert _run_monitor(monkeypatch, body) == []

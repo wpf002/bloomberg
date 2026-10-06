@@ -229,6 +229,18 @@ def _adjust_spin_offs(
     return {"applied": len(factors), "skipped": skipped}
 
 
+def _insert_bars(cur: "duckdb.DuckDBPyConnection", by_symbol: dict[str, list]) -> int:
+    """Build one chunk's frame and bulk-insert it. Runs on a worker thread."""
+    frame = pd.DataFrame(
+        [(sym, *bar) for sym, bars in by_symbol.items() for bar in bars],
+        columns=["symbol", "timestamp", "open", "high", "low", "close", "volume"],
+    )
+    if frame.empty:
+        return 0
+    _insert_frame(cur, frame)
+    return len(frame)
+
+
 def _insert_frame(cur: "duckdb.DuckDBPyConnection", frame: "pd.DataFrame") -> None:
     """Bulk-insert one chunk of bars. Registering the frame lets DuckDB read
     it column-wise in a single statement, instead of binding row by row."""
@@ -437,15 +449,13 @@ class SqlEngine:
             for i in range(0, len(symbols), CHUNK):
                 batch = symbols[i:i + CHUNK]
                 by_symbol = await alpaca.get_bars_multi(batch, days=400, chunk=CHUNK, raw=True)
-                frame = pd.DataFrame(
-                    [(sym, *bar) for sym, bars in by_symbol.items() for bar in bars],
-                    columns=["symbol", "timestamp", "open", "high", "low", "close", "volume"],
-                )
-                if not frame.empty:
-                    await asyncio.to_thread(_insert_frame, cur, frame)
-                    total += len(frame)
+                # Frame construction (~130k tuples) runs on the worker too; on
+                # the loop it cost a few hundred ms per chunk on Railway's CPUs.
+                inserted = await asyncio.to_thread(_insert_bars, cur, by_symbol)
+                if inserted:
+                    total += inserted
                     seen.update(by_symbol)
-                del by_symbol, frame
+                del by_symbol
 
             if total == 0:
                 logger.warning("screener universe refresh returned no bars")

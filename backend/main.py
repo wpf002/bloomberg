@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     # Nightly screener universe re-ingest (~12.5k symbols). Leader-gated;
     # see _screener_universe_cron.
     asyncio.create_task(_screener_universe_cron())
+    asyncio.create_task(_loop_lag_monitor())
     yield
     try:
         await bot_manager.stop()
@@ -182,6 +183,29 @@ def _seconds_until_universe_refresh() -> float:
     while target.weekday() >= 5:  # 5=Sat, 6=Sun
         target += timedelta(days=1)
     return (target - now).total_seconds()
+
+
+LOOP_LAG_INTERVAL = 0.5
+LOOP_LAG_WARN_SECONDS = 1.0
+
+
+async def _loop_lag_monitor() -> None:
+    """Log whenever the event loop was blocked for more than a second.
+
+    A blocked loop stalls every HTTP request and the bot tick loop together,
+    and until now nothing reported it: two separate causes (synchronous
+    DuckDB writes, then synchronous log writes into a backed-up pipe) were
+    found only by timing /healthz from outside. This measures how late a
+    short sleep wakes up. Logging is queued, so the warning can't itself
+    block.
+    """
+    loop = asyncio.get_running_loop()
+    while True:
+        start = loop.time()
+        await asyncio.sleep(LOOP_LAG_INTERVAL)
+        lag = loop.time() - start - LOOP_LAG_INTERVAL
+        if lag > LOOP_LAG_WARN_SECONDS:
+            logger.warning("event loop blocked", extra={"seconds": round(lag, 2)})
 
 
 FUNDAMENTALS_MAX_AGE_DAYS = 6  # weekly: filings change quarterly
