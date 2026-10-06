@@ -46,7 +46,7 @@ frontend/
   src/i18n/        en (authoritative) + es/pt/zh
 tests/             pytest suite (26 files)
 scripts/           smoke test, docker preflight
-docker-compose.yml · railway.toml · Makefile
+docker-compose.yml · Makefile
 Docs: README · GAPS_AND_ROADMAP · GO_LIVE · RAILWAY_DEPLOY
 ```
 
