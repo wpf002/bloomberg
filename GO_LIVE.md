@@ -23,9 +23,11 @@ Alpaca issues **separate** keys for paper vs. live — your existing Railway
 3. Generate an API key + secret under the live environment. Copy both (the
    secret is shown once).
 
-## 2. Add the live keys to Railway (backend service)
-Add these two variables (the master switch `BOTS_ALLOW_LIVE=true` is already set):
+## 2. Turn on the master switch and add the live keys (backend service)
+The master switch stays **off** until this step, so the three gates above stay
+independent. Set all three variables together:
 ```
+BOTS_ALLOW_LIVE=true
 ALPACA_LIVE_API_KEY=<your Alpaca LIVE key>
 ALPACA_LIVE_API_SECRET=<your Alpaca LIVE secret>
 ```
@@ -43,6 +45,10 @@ You want:
 {"paper": true, "alpaca_configured": true, "live_enabled": true, "live_keys_present": true, ...}
 ```
 `live_enabled: true` **and** `live_keys_present: true` means you're ready.
+
+`live_keys_present` only reflects the `ALPACA_LIVE_*` env vars. If you entered
+the keys through **SETTINGS** instead, it reads `false` even though the engine
+will use them — that's expected for the per-user path.
 
 ## 4. Create a conservative live bot (recommended first run)
 In the app: **BOTS → New bot**, then set **Mode → Live** (now selectable).
