@@ -651,3 +651,78 @@ def test_two_spin_offs_on_one_parent_compose():
         "SELECT close FROM bars_next WHERE symbol='PAR' ORDER BY timestamp").fetchall()]
     # Each spin halves the parent; fully adjusted, the series is flat at 25.
     assert closes == pytest.approx([25.0] * 9)
+
+
+# ── workbench warm-up stays off the event loop ─────────────────────────────
+
+class _WarmAlpaca:
+    def __init__(self):
+        self.calls = 0
+
+    async def get_stock_bars(self, sym, period="1y", interval="1d"):
+        from backend.models.schemas import QuoteHistoryPoint
+        self.calls += 1
+        return [QuoteHistoryPoint(timestamp=dt.datetime(2026, 1, 1) + dt.timedelta(days=i),
+                                  open=1, high=1, low=1, close=1, volume=1) for i in range(250)]
+
+
+def _warm_fakes(monkeypatch, alpaca):
+    from types import SimpleNamespace
+    from backend.core import sql_engine as se
+
+    class FakeFred:
+        async def get_series(self, sid, limit=240):
+            obs = [SimpleNamespace(date=dt.date(2026, 1, 1) + dt.timedelta(days=i), value=1.0) for i in range(240)]
+            return SimpleNamespace(observations=obs)
+
+    class FakeEdgar:
+        async def recent_filings(self, sym, limit=20):
+            return [SimpleNamespace(accession_number=f"{sym}-{i}", form_type="10-K",
+                                    filed_at=dt.datetime(2026, 1, 1), primary_document="d.htm",
+                                    url="https://example.test") for i in range(14)]
+
+    monkeypatch.setattr(se, "get_alpaca_source", lambda: alpaca)
+    monkeypatch.setattr(se, "FredSource", lambda: FakeFred())
+    monkeypatch.setattr(se, "SecEdgarSource", lambda: FakeEdgar())
+
+
+def test_warm_writes_run_off_the_event_loop(fresh_engine, monkeypatch):
+    """warm() did row-by-row executemany on the loop: 8.5s and 5.1s blocks at
+    every Railway boot, and again on each warm cron tick."""
+    import threading
+    from backend.core import sql_engine as se
+
+    _warm_fakes(monkeypatch, _WarmAlpaca())
+    loop_thread = threading.get_ident()
+    threads = []
+    real = se._replace_rows
+
+    def spy(cur, table, key, keys, frame):
+        threads.append((table, threading.get_ident()))
+        return real(cur, table, key, keys, frame)
+
+    monkeypatch.setattr(se, "_replace_rows", spy)
+    asyncio.run(fresh_engine.warm())
+
+    assert {t for t, _ in threads} == {"bars", "macro", "filings"}
+    assert all(tid != loop_thread for _, tid in threads), "warm wrote on the event loop thread"
+    con = fresh_engine.con
+    assert con.execute("SELECT COUNT(*) FROM bars").fetchone()[0] > 0
+    assert con.execute("SELECT COUNT(*) FROM macro").fetchone()[0] > 0
+    assert con.execute("SELECT COUNT(*) FROM filings").fetchone()[0] > 0
+
+
+def test_warm_bars_skips_once_the_universe_is_loaded(fresh_engine, monkeypatch):
+    alpaca = _WarmAlpaca()
+    _warm_fakes(monkeypatch, alpaca)
+    fresh_engine.con.execute("CREATE TABLE screener_metrics AS SELECT 'AAPL' AS symbol, 1.0 AS price")
+    asyncio.run(fresh_engine.warm())
+    assert alpaca.calls == 0
+
+
+def test_warm_replaces_rather_than_duplicates(fresh_engine, monkeypatch):
+    _warm_fakes(monkeypatch, _WarmAlpaca())
+    asyncio.run(fresh_engine.warm())
+    first = fresh_engine.con.execute("SELECT COUNT(*) FROM macro").fetchone()[0]
+    asyncio.run(fresh_engine.warm())
+    assert fresh_engine.con.execute("SELECT COUNT(*) FROM macro").fetchone()[0] == first

@@ -229,6 +229,35 @@ def _adjust_spin_offs(
     return {"applied": len(factors), "skipped": skipped}
 
 
+def _replace_rows(
+    cur: "duckdb.DuckDBPyConnection", table: str, key: str, keys: list[str], frame: "pd.DataFrame"
+) -> None:
+    """Replace `table` rows whose `key` is in `keys` with `frame`, in one
+    transaction on its own cursor. For the workbench warm-up, which used to
+    do this on the event loop with row-by-row executemany: 2,510 bars took
+    262ms locally against 3.6ms as a frame, and blocked the loop for 8.5s on
+    Railway at every boot. Takes a cursor made by the caller on the loop
+    thread, so the shared connection is never touched off it."""
+    try:
+        placeholders = ",".join("?" for _ in keys)
+        cur.execute("BEGIN")
+        cur.execute(f"DELETE FROM {table} WHERE {key} IN ({placeholders})", list(keys))
+        cur.register("warm_chunk", frame)
+        try:
+            cur.execute(f"INSERT INTO {table} SELECT * FROM warm_chunk")
+        finally:
+            cur.unregister("warm_chunk")
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        cur.close()
+
+
 def _insert_bars(cur: "duckdb.DuckDBPyConnection", by_symbol: dict[str, list]) -> int:
     """Build one chunk's frame and bulk-insert it. Runs on a worker thread."""
     frame = pd.DataFrame(
@@ -324,6 +353,11 @@ class SqlEngine:
             logger.warning("sql warm filings failed: %s", exc)
 
     async def _warm_bars(self, symbols: list[str]) -> None:
+        if self.universe_size() > 0:
+            # The screener universe already holds these symbols' bars, from the
+            # same split-adjusted feed. Re-writing them here would only race
+            # the universe refresh for the same table.
+            return
         alpaca = get_alpaca_source()
         rows: list[tuple] = []
         for sym in symbols:
@@ -337,12 +371,8 @@ class SqlEngine:
                 )
         if not rows:
             return
-        self.con.execute("DELETE FROM bars WHERE symbol IN (SELECT * FROM (VALUES " +
-                         ",".join(f"('{s}')" for s in symbols) + ") AS t(s))")
-        self.con.executemany(
-            "INSERT INTO bars VALUES (?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
+        frame = pd.DataFrame(rows, columns=["symbol", "timestamp", "open", "high", "low", "close", "volume"])
+        await asyncio.to_thread(_replace_rows, self.con.cursor(), "bars", "symbol", symbols, frame)
         logger.info("sql.bars warm: %d rows across %d symbols", len(rows), len(symbols))
 
     async def _warm_macro(self, series_ids: list[str]) -> None:
@@ -357,9 +387,8 @@ class SqlEngine:
                 rows.append((sid, obs.date, obs.value))
         if not rows:
             return
-        placeholders = ",".join(f"'{s}'" for s in series_ids)
-        self.con.execute(f"DELETE FROM macro WHERE series_id IN ({placeholders})")
-        self.con.executemany("INSERT INTO macro VALUES (?, ?, ?)", rows)
+        frame = pd.DataFrame(rows, columns=["series_id", "observation_date", "value"])
+        await asyncio.to_thread(_replace_rows, self.con.cursor(), "macro", "series_id", series_ids, frame)
         logger.info("sql.macro warm: %d obs across %d series", len(rows), len(series_ids))
 
     async def _warm_filings(self, symbols: list[str]) -> None:
@@ -383,9 +412,10 @@ class SqlEngine:
                 )
         if not rows:
             return
-        placeholders = ",".join(f"'{s}'" for s in symbols)
-        self.con.execute(f"DELETE FROM filings WHERE symbol IN ({placeholders})")
-        self.con.executemany("INSERT INTO filings VALUES (?, ?, ?, ?, ?, ?)", rows)
+        frame = pd.DataFrame(rows, columns=[
+            "symbol", "accession_number", "form_type", "filed_at", "primary_document", "url",
+        ])
+        await asyncio.to_thread(_replace_rows, self.con.cursor(), "filings", "symbol", symbols, frame)
         logger.info("sql.filings warm: %d rows across %d symbols", len(rows), len(symbols))
 
     # ── screener universe ────────────────────────────────────────────────
