@@ -289,3 +289,61 @@ def test_screenable_keeps_common_stock_mlps_adrs_and_etfs(name, symbol, exchange
 def test_screenable_drops_non_common_and_otc(name, symbol, exchange):
     from backend.core.sql_engine import _screenable
     assert not _screenable({"symbol": symbol, "name": name, "exchange": exchange, "tradable": True})
+
+
+# ── investment products get no company fundamentals ───────────────────────
+
+@pytest.mark.parametrize("name,exchange", [
+    ("SPDR Gold Shares", "ARCA"),
+    ("iShares Silver Trust", "ARCA"),
+    ("United States Oil Fund, LP", "ARCA"),
+    ("Invesco CurrencyShares Euro Currency Trust", "ARCA"),
+    ("Alerian MLP Index ETNs due January 28, 2028", "ARCA"),   # shares JPM's CIK
+    ("iShares Bitcoin Trust ETF", "NASDAQ"),                   # crypto on Nasdaq
+    ("iShares Ethereum Trust ETF", "NASDAQ"),
+])
+def test_investment_products(name, exchange):
+    from backend.core.sql_engine import _investment_product
+    assert _investment_product({"name": name, "exchange": exchange})
+
+
+@pytest.mark.parametrize("name,exchange", [
+    ("Cboe Global Markets, Inc. Common Stock", "BATS"),        # lists on its own exchange
+    ("Truist Financial Corporation Common Stock", "NYSE"),     # bank: no revenue tag
+    ("Annaly Capital Management Inc. Common Stock", "NYSE"),   # mortgage REIT
+    ("Vornado Realty Trust Common Stock", "NYSE"),             # "Trust", but a REIT
+    ("Ares Capital Corporation Common Stock", "NASDAQ"),       # BDC
+    ("Bitcoin Depot Inc. Class A Common Stock", "NASDAQ"),     # crypto operating co
+    ("MPLX LP Common Units Representing Limited Partner Interests", "NYSE"),
+])
+def test_operating_companies_are_not_products(name, exchange):
+    from backend.core.sql_engine import _investment_product
+    assert not _investment_product({"name": name, "exchange": exchange})
+
+
+def test_refresh_skips_investment_products(monkeypatch):
+    """SLV files a 10-K with "net income" from marking silver; it got a P/E and
+    topped the Value screen."""
+    from backend.core import sql_engine as se
+
+    monkeypatch.setattr(se.settings, "duckdb_path", "")
+    eng = se.SqlEngine()
+    eng.con.execute("""CREATE TABLE screener_metrics AS SELECT * FROM (VALUES
+        ('SLV', 40.0), ('TFC', 45.0)) AS t(symbol, price)""")
+    eng.con.execute("""INSERT INTO universe_assets VALUES
+        ('SLV', 'iShares Silver Trust', 'ARCA', true),
+        ('TFC', 'Truist Financial Corporation', 'NYSE', false)""")
+
+    class FakeEdgar:
+        async def ticker_map(self):
+            return {"SLV": "0001330568", "TFC": "0000092230"}
+
+        async def company_facts(self, client, cik):
+            return _filing(shares=1.3e9, public_float=5e10)
+
+    monkeypatch.setattr(se, "SecEdgarSource", lambda: FakeEdgar())
+    monkeypatch.setattr(eng, "_rebuild_metrics", lambda cur=None: None)
+
+    assert asyncio.run(eng.refresh_fundamentals()) == 1
+    syms = [r[0] for r in eng.con.execute("SELECT symbol FROM fundamentals").fetchall()]
+    assert syms == ["TFC"]

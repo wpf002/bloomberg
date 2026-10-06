@@ -75,6 +75,35 @@ def _screenable(asset: dict) -> bool:
     return not _NON_COMMON.search(asset.get("name") or "")
 
 
+_COMPANY_NAME = re.compile(
+    r"\b(inc|corp|corporation|company|holdings?|ltd|limited|plc|group|bancorp|bancshares)\b",
+    re.IGNORECASE,
+)
+_CRYPTO_NAME = re.compile(r"\b(bitcoin|ether|ethereum|solana|xrp|crypto|digital assets?)\b", re.IGNORECASE)
+
+
+def _investment_product(asset: dict) -> bool:
+    """ETFs, ETNs, commodity pools and grantor trusts: screenable on price,
+    but company fundamentals don't apply to them.
+
+    The ones that file 10-Ks (gold and silver trusts, commodity pools, crypto
+    trusts) carry "net income" from marking their holdings, which gave SLV and
+    SIVR a P/E and put them at the top of the Value screen. Some ETNs share
+    their issuing bank's CIK in SEC's ticker list, so AMJB inherited
+    JPMorgan's margins. Listing venue separates them cleanly: every such
+    product in the data trades on NYSE Arca or Cboe, and every bank, REIT and
+    BDC with the same "no revenue tag" shape on NYSE or Nasdaq. Crypto trusts
+    list on Nasdaq too (IBIT, ETHA), so they're caught by name. A name that
+    reads as a company ("Inc", "Corp", "Holdings") is never a product, which
+    keeps Cboe Global Markets, listed on its own exchange, and crypto
+    operating companies such as Bitcoin Depot.
+    """
+    name = asset.get("name") or ""
+    if _COMPANY_NAME.search(name):
+        return False
+    return asset.get("exchange") in ("ARCA", "BATS") or bool(_CRYPTO_NAME.search(name))
+
+
 class RefreshInProgress(RuntimeError):
     """A universe refresh is already running; the caller should not queue another."""
 
@@ -252,6 +281,12 @@ class SqlEngine:
                 primary_document TEXT,
                 url TEXT
             );
+            CREATE TABLE IF NOT EXISTS universe_assets (
+                symbol TEXT,
+                name TEXT,
+                exchange TEXT,
+                investment_product BOOLEAN
+            );
             """ + FUNDAMENTALS_DDL.format(table="fundamentals", exists="IF NOT EXISTS ") + ";"
         )
 
@@ -359,7 +394,8 @@ class SqlEngine:
             return 0
 
         assets = await alpaca.list_active_assets()
-        symbols = [a["symbol"] for a in assets if _screenable(a)]
+        screenable = [a for a in assets if _screenable(a)]
+        symbols = [a["symbol"] for a in screenable]
         if limit:
             symbols = symbols[:limit]
         if not symbols:
@@ -369,9 +405,9 @@ class SqlEngine:
             raise RefreshInProgress("a universe refresh is already running")
 
         async with self._refresh_lock:
-            return await self._refresh_universe_locked(alpaca, symbols)
+            return await self._refresh_universe_locked(alpaca, symbols, screenable)
 
-    async def _refresh_universe_locked(self, alpaca, symbols: list[str]) -> int:
+    async def _refresh_universe_locked(self, alpaca, symbols: list[str], assets: list[dict] | None = None) -> int:
         # Every DuckDB call here runs on a worker thread through its own
         # cursor. Running them on the event loop blocked the whole process
         # between chunks — in production a refresh stalled HTTP and the bot
@@ -433,10 +469,23 @@ class SqlEngine:
             except Exception as exc:
                 logger.warning("spin-off adjustment skipped: %s", exc)
 
+            meta = pd.DataFrame(
+                [(a["symbol"], a.get("name"), a.get("exchange"), _investment_product(a))
+                 for a in (assets or [])],
+                columns=["symbol", "name", "exchange", "investment_product"],
+            )
+
             def _swap() -> None:
                 cur.execute("BEGIN")
                 cur.execute("DROP TABLE bars")
                 cur.execute("ALTER TABLE bars_next RENAME TO bars")
+                if not meta.empty:
+                    cur.execute("DELETE FROM universe_assets")
+                    cur.register("meta_chunk", meta)
+                    try:
+                        cur.execute("INSERT INTO universe_assets SELECT * FROM meta_chunk")
+                    finally:
+                        cur.unregister("meta_chunk")
                 cur.execute("COMMIT")
 
             await asyncio.to_thread(_swap)
@@ -486,6 +535,15 @@ class SqlEngine:
             if not prices:
                 logger.info("fundamentals skipped: screener universe is empty")
                 return 0
+            products = {
+                r[0] for r in await asyncio.to_thread(
+                    lambda: cur.execute(
+                        "SELECT symbol FROM universe_assets WHERE investment_product"
+                    ).fetchall()
+                )
+            }
+            for sym in products:
+                prices.pop(sym, None)
 
             edgar = SecEdgarSource()
             tickers = await edgar.ticker_map()
