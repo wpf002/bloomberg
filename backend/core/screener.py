@@ -58,6 +58,16 @@ FIELDS: tuple[Field, ...] = (
     Field("ret_1w", "Return 1w", "pct", "5-session return"),
     Field("ret_1m", "Return 1m", "pct", "21-session return"),
     Field("ret_3m", "Return 3m", "pct", "63-session return"),
+    # Fundamentals, from SEC XBRL filings (see core/xbrl.py). Trailing twelve
+    # months; ratios use the latest close. Null where a filer has no usable
+    # data (funds, foreign IFRS filers) or the ratio is meaningless (P/E with
+    # a loss, P/B with negative equity).
+    Field("market_cap", "Market cap", "usd", "Shares outstanding x latest close"),
+    Field("pe_ratio", "P/E", "x", "Market cap / TTM net income (profitable only)"),
+    Field("ps_ratio", "P/S", "x", "Market cap / TTM revenue"),
+    Field("pb_ratio", "P/B", "x", "Market cap / stockholders' equity"),
+    Field("net_margin", "Net margin %", "pct", "TTM net income / TTM revenue"),
+    Field("revenue_growth", "Revenue growth %", "pct", "TTM revenue vs the year before"),
 )
 
 FIELD_KEYS = frozenset(f.key for f in FIELDS)
@@ -159,9 +169,21 @@ SELECT
     CASE WHEN o.close_5  > 0 THEN (o.close / o.close_5  - 1) * 100 END AS ret_1w,
     CASE WHEN o.close_21 > 0 THEN (o.close / o.close_21 - 1) * 100 END AS ret_1m,
     CASE WHEN o.close_63 > 0 THEN (o.close / o.close_63 - 1) * 100 END AS ret_3m,
-    o.timestamp                                                AS as_of
+    o.timestamp                                                AS as_of,
+    f.shares_out * o.close                                     AS market_cap,
+    CASE WHEN f.ttm_net_income > 0
+         THEN f.shares_out * o.close / f.ttm_net_income END    AS pe_ratio,
+    CASE WHEN f.ttm_revenue > 0
+         THEN f.shares_out * o.close / f.ttm_revenue END       AS ps_ratio,
+    CASE WHEN f.equity > 0
+         THEN f.shares_out * o.close / f.equity END            AS pb_ratio,
+    CASE WHEN f.ttm_revenue > 0
+         THEN f.ttm_net_income / f.ttm_revenue * 100 END       AS net_margin,
+    f.revenue_growth_pct                                       AS revenue_growth,
+    f.period_end                                               AS fundamentals_as_of
 FROM ordered o
 LEFT JOIN agg a USING (symbol)
+LEFT JOIN fundamentals f USING (symbol)
 WHERE o.rn_desc = 1 AND o.bar_count >= {min_bars}
 """
 

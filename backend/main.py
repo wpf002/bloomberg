@@ -184,6 +184,29 @@ def _seconds_until_universe_refresh() -> float:
     return (target - now).total_seconds()
 
 
+FUNDAMENTALS_MAX_AGE_DAYS = 6  # weekly: filings change quarterly
+
+
+async def _refresh_fundamentals_if_stale() -> None:
+    """SEC fundamentals take ~20 minutes for the universe, so they refresh
+    weekly instead of with the nightly price ingest. Errors are logged, never
+    raised: stale fundamentals beat a dead cron."""
+    age = sql_engine.fundamentals_age_days()
+    if age is not None and age < FUNDAMENTALS_MAX_AGE_DAYS:
+        return
+    started = time.monotonic()
+    try:
+        n = await sql_engine.refresh_fundamentals()
+        logger.info(
+            "fundamentals refreshed",
+            extra={"symbols": n, "seconds": round(time.monotonic() - started)},
+        )
+    except RefreshInProgress:
+        logger.info("fundamentals refresh skipped: a refresh is already running")
+    except Exception as exc:
+        logger.warning("fundamentals refresh failed: %s", exc)
+
+
 async def _screener_universe_cron() -> None:
     """Nightly re-ingest of the screener universe (~12.5k symbols, ~8 min).
 
@@ -215,6 +238,8 @@ async def _screener_universe_cron() -> None:
                     "seconds": round(time.monotonic() - started),
                 },
             )
+        if sql_engine.universe_size() > 0 and leader_lock.is_leader():
+            await _refresh_fundamentals_if_stale()
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -236,6 +261,7 @@ async def _screener_universe_cron() -> None:
                     "seconds": round(time.monotonic() - started),
                 },
             )
+            await _refresh_fundamentals_if_stale()
         except asyncio.CancelledError:
             raise
         except RefreshInProgress:

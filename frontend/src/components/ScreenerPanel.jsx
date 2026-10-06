@@ -53,12 +53,36 @@ const PRESETS = [
     ],
     sort: "gap_pct",
   },
+  {
+    // P/E is null for loss-makers, so "< 15" already means profitable.
+    key: "value",
+    label: "Value",
+    filters: [
+      { field: "pe_ratio", op: "lt", value: 15 },
+      { field: "market_cap", op: "gt", value: 2_000_000_000 },
+      { field: "dollar_volume", op: "gt", value: 5_000_000 },
+    ],
+    sort: "pe_ratio",
+    desc: false,
+  },
+  {
+    key: "growth",
+    label: "Profitable growth",
+    filters: [
+      { field: "revenue_growth", op: "gt", value: 20 },
+      { field: "net_margin", op: "gt", value: 10 },
+      { field: "market_cap", op: "gt", value: 1_000_000_000 },
+    ],
+    sort: "revenue_growth",
+  },
 ];
 
 // Columns shown in the results grid. Kept short on purpose — the full metric
 // set is available through the filter builder and the SQL workbench.
 const COLUMNS = [
   { key: "price", label: "Price", unit: "usd" },
+  { key: "market_cap", label: "MCap", unit: "usd" },
+  { key: "pe_ratio", label: "P/E", unit: "num" },
   { key: "change_pct", label: "Chg%", unit: "pct" },
   { key: "rel_volume", label: "RVol", unit: "x" },
   { key: "rsi14", label: "RSI", unit: "num" },
@@ -75,6 +99,7 @@ function fmt(value, unit) {
   if (unit === "pct") return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
   if (unit === "x") return `${n.toFixed(2)}x`;
   if (unit === "usd") {
+    if (Math.abs(n) >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
     if (Math.abs(n) >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
     if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
     return `$${n.toFixed(2)}`;

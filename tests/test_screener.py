@@ -100,8 +100,14 @@ def _con_with_bars(n_days: int = 300):
     return con
 
 
+FUNDAMENTALS_DDL = """CREATE TABLE IF NOT EXISTS fundamentals (
+    symbol TEXT, cik TEXT, shares_out DOUBLE, ttm_revenue DOUBLE, ttm_net_income DOUBLE,
+    equity DOUBLE, revenue_growth_pct DOUBLE, period_end DATE, fetched_at TIMESTAMP)"""
+
+
 def _materialise(con, min_bars: int = 60):
     """Mirror SqlEngine._rebuild_metrics so tests exercise the shipped SQL."""
+    con.execute(FUNDAMENTALS_DDL)
     con.execute("DROP TABLE IF EXISTS screener_metrics")
     con.execute(f"CREATE TABLE screener_metrics AS {METRICS_SQL.format(min_bars=min_bars, where='')}")
     return con
@@ -233,6 +239,12 @@ def test_refresh_schedule_is_always_positive(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_cold_start_seeds_when_universe_empty(monkeypatch):
+    fund_calls = []
+
+    async def fake_fund():
+        fund_calls.append("fund")
+
+    monkeypatch.setattr(__import__("backend.main", fromlist=["x"]), "_refresh_fundamentals_if_stale", fake_fund)
     import backend.main as main
 
     calls = []
@@ -261,10 +273,17 @@ async def test_cold_start_seeds_when_universe_empty(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await main._screener_universe_cron()
     assert calls == ["refresh"]
+    assert fund_calls == []  # universe_size stays 0 in this fake
 
 
 @pytest.mark.asyncio
 async def test_cold_start_skips_when_universe_populated(monkeypatch):
+    fund_calls = []
+
+    async def fake_fund():
+        fund_calls.append("fund")
+
+    monkeypatch.setattr(__import__("backend.main", fromlist=["x"]), "_refresh_fundamentals_if_stale", fake_fund)
     import backend.main as main
 
     calls = []
@@ -290,10 +309,17 @@ async def test_cold_start_skips_when_universe_populated(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await main._screener_universe_cron()
     assert calls == []
+    assert fund_calls == ["fund"]  # populated universe: fundamentals checked for staleness
 
 
 @pytest.mark.asyncio
 async def test_cold_start_skips_when_not_leader(monkeypatch):
+    fund_calls = []
+
+    async def fake_fund():
+        fund_calls.append("fund")
+
+    monkeypatch.setattr(__import__("backend.main", fromlist=["x"]), "_refresh_fundamentals_if_stale", fake_fund)
     import backend.main as main
 
     calls = []
@@ -319,6 +345,7 @@ async def test_cold_start_skips_when_not_leader(monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         await main._screener_universe_cron()
     assert calls == []
+    assert fund_calls == []
 
 
 @pytest.mark.asyncio

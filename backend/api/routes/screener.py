@@ -90,3 +90,18 @@ async def refresh_universe(
         logger.exception("universe refresh failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return {"rows": written, "symbols": engine.universe_size()}
+
+
+@router.post("/fundamentals/refresh")
+async def refresh_fundamentals(
+    limit: int | None = Query(None, ge=1, le=20000, description="Cap filers, for a quick test run"),
+) -> dict[str, int]:
+    """Re-pull SEC XBRL fundamentals for the universe. ~20 minutes in full."""
+    try:
+        n = await engine.refresh_fundamentals(limit=limit)
+    except RefreshInProgress as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("fundamentals refresh failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"symbols": n}

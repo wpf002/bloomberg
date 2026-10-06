@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import duckdb
+import httpx
 import pandas as pd
 
 from ..data.sources import FredSource, SecEdgarSource, get_alpaca_source
@@ -47,8 +48,100 @@ _FORBIDDEN = re.compile(
 )
 
 
+# Securities a stock screener shouldn't list. Calibrated on Alpaca's asset
+# names, with two traps checked: "depositary shares" alone would also drop
+# ADRs (TSM, BABA), and "units" alone would drop MLPs, whose equity is
+# "Common Units" (EPD, ET, MPLX).
+_NON_COMMON = re.compile(
+    r"\bpreferred\b|\bpfd\b|\bwarrants?\b|(?<!common )(?<!partner )\bunits\b|\brights\b"
+    r"|\bnotes due\b|\bdebentures?\b|\bsenior notes\b",
+    re.IGNORECASE,
+)
+
+
+def _screenable(asset: dict) -> bool:
+    """Exchange-listed common stock or ETF.
+
+    Leaves out OTC (thin, often stale prints) and listed non-common securities:
+    preferreds, warrants, rights, SPAC units, baby bonds. Together they were
+    about 2,500 of 14,400 Alpaca assets and most of the junk at the top of the
+    oversold screen once real volume let them past the liquidity filter.
+    """
+    sym = asset.get("symbol") or ""
+    if not sym or "/" in sym or not asset.get("tradable", True):
+        return False
+    if asset.get("exchange") == "OTC" or ".PR" in sym:
+        return False
+    return not _NON_COMMON.search(asset.get("name") or "")
+
+
 class RefreshInProgress(RuntimeError):
     """A universe refresh is already running; the caller should not queue another."""
+
+
+FUNDAMENTALS_COLUMNS = (
+    "symbol", "cik", "shares_out", "ttm_revenue", "ttm_net_income", "equity",
+    "revenue_growth_pct", "public_float", "period_end", "fetched_at",
+)
+FUNDAMENTALS_DDL = """
+            CREATE TABLE {exists}{table} (
+                symbol TEXT,
+                cik TEXT,
+                shares_out DOUBLE,
+                ttm_revenue DOUBLE,
+                ttm_net_income DOUBLE,
+                equity DOUBLE,
+                revenue_growth_pct DOUBLE,
+                public_float DOUBLE,
+                period_end DATE,
+                fetched_at TIMESTAMP
+            )"""
+
+# Market cap from shares x price must land within this multiple of the filer's
+# reported public float. Wide enough for a year of price moves (the float is
+# measured at the end of the prior Q2), tight enough to catch a share count in
+# the wrong units: Berkshire reports diluted shares in Class A equivalents,
+# which priced at BRK.B gave a $0.8B "market cap", and a preferred ticker
+# sharing its issuer's CIK gets the common share count at a $25 price.
+FLOAT_BAND = (0.2, 5.0)
+
+
+def _plausible_market_cap(shares: float | None, price: float | None, public_float: float | None) -> bool:
+    if not shares or not price:
+        return False
+    if not public_float:
+        return True  # nothing to check against; trust the filing
+    ratio = float(shares) * float(price) / float(public_float)
+    return FLOAT_BAND[0] <= ratio <= FLOAT_BAND[1]
+
+
+class _Pacer:
+    """Spaces request starts to stay under a per-second limit across tasks."""
+
+    def __init__(self, per_second: float) -> None:
+        self._interval = 1.0 / per_second
+        self._next = 0.0
+        self._lock = asyncio.Lock()
+
+    async def wait(self) -> None:
+        async with self._lock:
+            loop = asyncio.get_running_loop()
+            now = loop.time()
+            if now < self._next:
+                await asyncio.sleep(self._next - now)
+                now = loop.time()
+            self._next = now + self._interval
+
+
+def _parse_facts(body: bytes, today, extract) -> dict | None:
+    """json.loads plus extraction, run on a worker thread: large filers'
+    companyfacts run to several MB, too slow to parse on the event loop."""
+    import json
+
+    try:
+        return extract(json.loads(body), today)
+    except Exception:
+        return None
 
 
 def _adjust_spin_offs(
@@ -159,7 +252,7 @@ class SqlEngine:
                 primary_document TEXT,
                 url TEXT
             );
-            """
+            """ + FUNDAMENTALS_DDL.format(table="fundamentals", exists="IF NOT EXISTS ") + ";"
         )
 
     # ── ingestion ───────────────────────────────────────────────────────
@@ -266,10 +359,7 @@ class SqlEngine:
             return 0
 
         assets = await alpaca.list_active_assets()
-        symbols = [
-            a["symbol"] for a in assets
-            if a.get("symbol") and a.get("tradable", True) and "/" not in a["symbol"]
-        ]
+        symbols = [a["symbol"] for a in assets if _screenable(a)]
         if limit:
             symbols = symbols[:limit]
         if not symbols:
@@ -364,6 +454,113 @@ class SqlEngine:
         await asyncio.to_thread(self._rebuild_metrics, cur)
         logger.info("screener universe: %d rows across %d symbols", total, len(seen))
         return total
+
+    # ── fundamentals (SEC XBRL) ──────────────────────────────────────────
+
+    def fundamentals_age_days(self) -> float | None:
+        """Days since the last fundamentals refresh, or None if never."""
+        row = self.con.cursor().execute("SELECT MAX(fetched_at) FROM fundamentals").fetchone()
+        if not row or row[0] is None:
+            return None
+        return (datetime.now(timezone.utc).replace(tzinfo=None) - row[0]).total_seconds() / 86400
+
+    async def refresh_fundamentals(self, limit: int | None = None) -> int:
+        """Pull TTM fundamentals from SEC XBRL for every universe symbol with a
+        CIK, then rebuild the screener metrics. Returns symbols covered.
+
+        ~7k filers at SEC's fair-access pace takes around 20 minutes, so it runs
+        weekly rather than nightly; filings only change quarterly anyway. Shares
+        the refresh lock with the universe ingest, since both rebuild metrics.
+        """
+        from .xbrl import extract_fundamentals
+
+        if self._refresh_lock.locked():
+            raise RefreshInProgress("a refresh is already running")
+        async with self._refresh_lock:
+            cur = self.con.cursor()
+            prices = {
+                sym: float(px) for sym, px in await asyncio.to_thread(
+                    lambda: cur.execute("SELECT symbol, price FROM screener_metrics").fetchall()
+                ) if px is not None
+            }
+            if not prices:
+                logger.info("fundamentals skipped: screener universe is empty")
+                return 0
+
+            edgar = SecEdgarSource()
+            tickers = await edgar.ticker_map()
+            by_cik: dict[str, list[str]] = {}
+            for sym in prices:
+                # SEC writes class suffixes with a dash (BRK-B); Alpaca with a dot.
+                cik = tickers.get(sym) or tickers.get(sym.replace(".", "-"))
+                if cik:
+                    by_cik.setdefault(cik, []).append(sym)
+            ciks = sorted(by_cik)
+            if limit:
+                ciks = ciks[:limit]
+
+            today = datetime.now(timezone.utc).date()
+            fetched_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            rows: list[tuple] = []
+            pace = _Pacer(per_second=8)  # SEC allows 10/s
+            sem = asyncio.Semaphore(4)
+
+            async def one(client: httpx.AsyncClient, cik: str) -> None:
+                async with sem:
+                    await pace.wait()
+                    try:
+                        body = await edgar.company_facts(client, cik)
+                    except Exception as exc:
+                        logger.debug("companyfacts %s failed: %s", cik, exc)
+                        return
+                if body is None:
+                    return
+                f = await asyncio.to_thread(_parse_facts, body, today, extract_fundamentals)
+                if f is None:
+                    return
+                for sym in by_cik[cik]:
+                    # Checked per ticker: one CIK can list share classes and
+                    # preferreds at very different prices, and the company-wide
+                    # share count is only right for some of them.
+                    shares = f["shares_out"]
+                    if not _plausible_market_cap(shares, prices.get(sym), f["public_float"]):
+                        shares = None
+                    rows.append((
+                        sym, cik, shares, f["ttm_revenue"], f["ttm_net_income"], f["equity"],
+                        f["revenue_growth_pct"], f["public_float"], f["period_end"], fetched_at,
+                    ))
+
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                await asyncio.gather(*(one(client, c) for c in ciks))
+
+            if not rows:
+                logger.warning("fundamentals refresh produced no rows")
+                return 0
+
+            frame = pd.DataFrame(rows, columns=list(FUNDAMENTALS_COLUMNS))
+
+            def _store() -> None:
+                cur.execute("DROP TABLE IF EXISTS fundamentals_next")
+                # Explicit DDL rather than copying the live table's shape, so a
+                # new column lands on the first refresh after a deploy.
+                cur.execute(FUNDAMENTALS_DDL.format(table="fundamentals_next", exists=""))
+                cur.register("fund_chunk", frame)
+                try:
+                    cur.execute("INSERT INTO fundamentals_next SELECT * FROM fund_chunk")
+                finally:
+                    cur.unregister("fund_chunk")
+                cur.execute("BEGIN")
+                cur.execute("DROP TABLE fundamentals")
+                cur.execute("ALTER TABLE fundamentals_next RENAME TO fundamentals")
+                cur.execute("COMMIT")
+
+            await asyncio.to_thread(_store)
+            await asyncio.to_thread(self._rebuild_metrics, cur)
+            logger.info(
+                "fundamentals refreshed",
+                extra={"symbols": len(rows), "filers": len(ciks)},
+            )
+            return len(rows)
 
     def _rebuild_metrics(self, cur: "duckdb.DuckDBPyConnection | None" = None) -> None:
         """Materialise the screener metrics into `screener_metrics`.
